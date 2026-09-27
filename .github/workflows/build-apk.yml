@@ -1,17 +1,18 @@
 name: Build Android APK
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
-  workflow_dispatch:
 
 jobs:
   build:
+    name: Build Debug APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout source code
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -19,16 +20,30 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - name: Create environment files
+        run: |
+          printf '%s\n' '# Environment variables' > .env.example
+          printf '%s\n' '# Environment variables' > .env
+
+      - name: Create local.properties
+        run: |
+          printf '%s\n' 'MAPS_API_KEY=' > local.properties
+
+      - name: Install Gradle
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-9.3.1-bin.zip -O /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /tmp
+          echo "/tmp/gradle-9.3.1/bin" >> "$GITHUB_PATH"
+          /tmp/gradle-9.3.1/bin/gradle --version
 
       - name: Build Debug APK
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: |
+          /tmp/gradle-9.3.1/bin/gradle assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: liquid-chat-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
