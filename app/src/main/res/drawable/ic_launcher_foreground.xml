@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Outer liquid drop glow -->
+    <path
+        android:pathData="M54,23 C41,37 32,49 32,62 C32,74.1 41.9,84 54,84 C66.1,84 76,74.1 76,62 C76,49 67,37 54,23 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="32"
+                android:startY="23"
+                android:endX="76"
+                android:endY="84"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#00F2FE" />
+                <item android:offset="0.6" android:color="#4FACFE" />
+                <item android:offset="1.0" android:color="#0072FF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Inner Chat Bubble Silhouette Cutout / Contrast -->
+    <path
+        android:pathData="M44,48 C41.8,48 40,49.8 40,52 L40,64 C40,66.2 41.8,68 44,68 L46,68 L46,73 L52,68 L64,68 C66.2,68 68,66.2 68,64 L68,52 C68,49.8 66.2,48 64,48 Z"
+        android:fillColor="#0A0F1D" />
+    <!-- Three Liquid Chat Dots in Cyan/White -->
+    <path
+        android:pathData="M48,58 A2.2,2.2 0 1,1 48,57.99 Z"
+        android:fillColor="#00F2FE" />
+    <path
+        android:pathData="M54,58 A2.2,2.2 0 1,1 54,57.99 Z"
+        android:fillColor="#38E1FF" />
+    <path
+        android:pathData="M60,58 A2.2,2.2 0 1,1 60,57.99 Z"
+        android:fillColor="#76EEFF" />
+    <!-- Specular highlight arc on the droplet for glass reflection -->
+    <path
+        android:pathData="M42,42 C40,47 38,54 38,62 C38,65 39,69 40.5,72"
+        android:strokeWidth="3.2"
+        android:strokeColor="#80FFFFFF"
+        android:strokeLineCap="round" />
+</vector>

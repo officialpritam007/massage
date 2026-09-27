@@ -1,0 +1,6 @@
+{
+  "name": "Liquid Chat",
+  "description": "Production real-time messaging application with Liquid Glass UI system, voice notes, media, groups, updates, calls, and business card.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

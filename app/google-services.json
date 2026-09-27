@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "556885337302",
+    "project_id": "liquid-chat-v2",
+    "storage_bucket": "liquid-chat-v2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:556885337302:android:cbc60cbecd7eff6a0c1577",
+        "android_client_info": {
+          "package_name": "com.aistudio.liquidchat.vwnxkp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "556885337302-to5i3ercuuilr7390qaumgnngoo1jrq6.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBEBew5cYp_52N-FI3PZr6_p2XgavbXPSw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "556885337302-to5i3ercuuilr7390qaumgnngoo1jrq6.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

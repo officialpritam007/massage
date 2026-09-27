@@ -1,0 +1,126 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isParticipant(conversationData) {
+      return isAuthenticated() && (
+        ('participantIds' in conversationData && request.auth.uid in conversationData.participantIds) ||
+        ('participants' in conversationData && request.auth.uid in conversationData.participants)
+      );
+    }
+    
+    function isGroupMember(groupData) {
+      return isAuthenticated() && (request.auth.uid in groupData.memberIds);
+    }
+    
+    function isGroupAdmin(groupData) {
+      return isAuthenticated() && (request.auth.uid in groupData.adminIds);
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId);
+      allow delete: if false; // Soft delete via field flag
+    }
+
+    // Usernames uniqueness index
+    match /usernames/{username} {
+      allow read: if true;
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated();
+    }
+
+    // Conversations Collection
+    match /conversations/{conversationId} {
+      allow read: if isParticipant(resource.data);
+      allow create: if isAuthenticated() && (
+        ('participantIds' in request.resource.data && request.auth.uid in request.resource.data.participantIds) ||
+        ('participants' in request.resource.data && request.auth.uid in request.resource.data.participants)
+      );
+      allow update: if isParticipant(resource.data);
+      allow delete: if false;
+
+      // Messages Subcollection
+      match /messages/{messageId} {
+        allow read: if isParticipant(get(/databases/$(database)/documents/conversations/$(conversationId)).data);
+        allow create: if isAuthenticated() 
+          && request.auth.uid == request.resource.data.senderId
+          && isParticipant(get(/databases/$(database)/documents/conversations/$(conversationId)).data);
+        allow update: if isAuthenticated() && isParticipant(get(/databases/$(database)/documents/conversations/$(conversationId)).data) && (
+          // Sender editing their own text or message fields
+          (request.auth.uid == resource.data.senderId)
+          // Any participant adding an emoji reaction, pinning, or read receipt
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions', 'status', 'isPinned', 'isEdited', 'isDeleted', 'text'])
+        );
+        allow delete: if isAuthenticated() && request.auth.uid == resource.data.senderId;
+      }
+    }
+
+    // Groups Collection
+    match /groups/{groupId} {
+      allow read: if isGroupMember(resource.data);
+      allow create: if isAuthenticated() && (request.auth.uid in request.resource.data.adminIds);
+      allow update: if isGroupMember(resource.data) && (
+        isGroupAdmin(resource.data) || !resource.data.onlyAdminsCanPost
+      );
+      allow delete: if isGroupAdmin(resource.data);
+
+      match /messages/{messageId} {
+        allow read: if isGroupMember(get(/databases/$(database)/documents/groups/$(groupId)).data);
+        allow create: if isGroupMember(get(/databases/$(database)/documents/groups/$(groupId)).data)
+          && request.auth.uid == request.resource.data.senderId;
+        allow update: if isAuthenticated();
+        allow delete: if isGroupAdmin(get(/databases/$(database)/documents/groups/$(groupId)).data)
+          || request.auth.uid == resource.data.senderId;
+      }
+    }
+
+    // Statuses (Stories) Collection - 24hr auto expiry
+    match /statuses/{statusId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(request.resource.data.userId);
+      allow update: if isAuthenticated() && (
+        isOwner(resource.data.userId) 
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewedBy', 'viewerNames'])
+      );
+      allow delete: if isOwner(resource.data.userId);
+    }
+
+    // Calls (Signaling for WebRTC)
+    match /calls/{callId} {
+      allow create: if isAuthenticated() && (
+        request.auth.uid == request.resource.data.callerId ||
+        request.auth.uid == request.resource.data.receiverId
+      );
+      allow read: if isAuthenticated() && (
+        request.auth.uid == resource.data.callerId ||
+        request.auth.uid == resource.data.receiverId
+      );
+      allow update: if isAuthenticated() && (
+        request.auth.uid == resource.data.callerId ||
+        request.auth.uid == resource.data.receiverId
+      );
+      allow delete: if isAuthenticated() && (
+        request.auth.uid == resource.data.callerId ||
+        request.auth.uid == resource.data.receiverId
+      );
+    }
+
+    // Reports Collection (Private to admins/server)
+    match /reports/{reportId} {
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.reporterId;
+      allow read, update, delete: if false; // Only Cloud Functions or Admin SDK
+    }
+  }
+}
