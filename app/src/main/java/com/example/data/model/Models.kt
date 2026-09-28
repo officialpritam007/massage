@@ -135,6 +135,13 @@ data class AppearanceSettings(
   val isReducedMotion: Boolean = false
 )
 
+data class NotificationSettings(
+  val messages: Boolean = true,
+  val calls: Boolean = true,
+  val status: Boolean = true,
+  val vibration: Boolean = true
+)
+
 data class PrivacySettings(
   val lastSeenVisibility: String = "Everyone",
   val onlineVisibility: String = "Everyone",

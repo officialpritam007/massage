@@ -12,6 +12,7 @@ import com.example.data.model.Group
 import com.example.data.model.Message
 import com.example.data.model.MessageType
 import com.example.data.model.PrivacySettings
+import com.example.data.model.NotificationSettings
 import com.example.data.model.StatusType
 import com.example.data.model.User
 import com.example.data.model.UserStatus
@@ -37,6 +38,7 @@ class LiquidChatViewModel(
   val activeCall: StateFlow<ActiveCallState?> = repository.activeCall
   val appearance: StateFlow<AppearanceSettings> = repository.appearance
   val privacy: StateFlow<PrivacySettings> = repository.privacy
+  val notifications: StateFlow<NotificationSettings> = repository.notifications
   val searchHistory: StateFlow<List<String>> = repository.searchHistory
   val blockedUserIds: StateFlow<Set<String>> = repository.blockedUserIds
 
@@ -223,6 +225,20 @@ class LiquidChatViewModel(
 
   fun logout() {
     repository.logout()
+  }
+
+  fun updateNotifications(settings: NotificationSettings) {
+    repository.updateNotifications(settings)
+  }
+
+  fun blockUser(userId: String) { repository.blockUser(userId) }
+  fun unblockUser(userId: String) { repository.unblockUser(userId) }
+
+  fun deleteAccount(onResult: (Boolean, String?) -> Unit) {
+    viewModelScope.launch {
+      val result = repository.deleteAccount()
+      onResult(result.isSuccess, result.exceptionOrNull()?.message)
+    }
   }
 
   fun getOrCreateConversationId(otherUid: String): String {

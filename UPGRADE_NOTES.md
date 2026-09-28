@@ -1,12 +1,9 @@
-# Liquid Chat v3.3.0
+# Liquid Chat v3.5.0 — Phase 7
 
-- Added incoming-call detection from Firestore.
-- Added Accept/Reject flow.
-- Added runtime microphone/camera permission flow for calls.
-- Connected WebRTC offer/answer/ICE observation to the call signaling document.
-- Fixed missing FirestoreCallSignaling repository instance.
-- Auto-opens the active-call screen for incoming calls.
+- Persistent blocked-user list in Firestore
+- Blocked Users management UI
+- Persistent notification preferences
+- Account deletion flow (Firestore profile + profile image + Firebase Auth)
+- Existing WebRTC, media, typing, presence, settings and Liquid Glass features retained
 
-Note: TURN credentials are not bundled. A production deployment should configure a TURN service for networks where direct/STUN connectivity fails.
-
-Build through GitHub Actions; Android Studio is not required.
+Build from GitHub Actions; Android Studio is not required.

@@ -76,6 +76,7 @@ fun SettingsScreen(
   val currentUser by viewModel.currentUser.collectAsState()
   val blockedUserIds by viewModel.blockedUserIds.collectAsState()
   val privacy by viewModel.privacy.collectAsState()
+  val notifications by viewModel.notifications.collectAsState()
 
   var showEditProfileDialog by remember { mutableStateOf(false) }
   var showLogoutConfirmDialog by remember { mutableStateOf(false) }
@@ -83,6 +84,9 @@ fun SettingsScreen(
   var showPrivacyDialog by remember { mutableStateOf(false) }
   var showNotificationsDialog by remember { mutableStateOf(false) }
   var showStorageDialog by remember { mutableStateOf(false) }
+  var showBlockedDialog by remember { mutableStateOf(false) }
+  var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+  var deleteBusy by remember { mutableStateOf(false) }
   var activePrivacyField by remember { mutableStateOf<String?>(null) }
   var photoUploading by remember { mutableStateOf(false) }
 
@@ -227,13 +231,13 @@ fun SettingsScreen(
               icon = Icons.Default.Block,
               title = "Blocked Users",
               subtitle = "${blockedUserIds.size} contacts blocked",
-              onClick = { }
+              onClick = { showBlockedDialog = true }
             )
 
             SettingsNavigationRow(
               icon = Icons.Default.Info,
               title = "About Liquid Chat",
-              subtitle = "Version 2.7.0 • Liquid Glass Protocol",
+              subtitle = "Version 3.5.0 • Liquid Glass Protocol",
               onClick = { showAboutDialog = true },
               testTag = "settings_about_row"
             )
@@ -262,7 +266,7 @@ fun SettingsScreen(
             Row(
               modifier = Modifier
                 .fillMaxWidth()
-                .clickable { showLogoutConfirmDialog = true }
+                .clickable { showDeleteConfirmDialog = true }
                 .padding(horizontal = 14.dp, vertical = 12.dp),
               verticalAlignment = Alignment.CenterVertically
             ) {
@@ -420,8 +424,16 @@ fun SettingsScreen(
     AlertDialog(
       onDismissRequest = { showNotificationsDialog = false },
       title = { Text("Notifications", color = TextPrimary, fontWeight = FontWeight.Bold) },
-      text = { Text("Message, group and call notifications are delivered through Firebase Cloud Messaging. Android notification permission can be changed from system settings.", color = TextSecondary) },
-      confirmButton = { TextButton(onClick = { showNotificationsDialog = false }) { Text("Close", color = CyanAccent) } },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+          NotificationToggle("Messages", notifications.messages) { viewModel.updateNotifications(notifications.copy(messages = it)) }
+          NotificationToggle("Calls", notifications.calls) { viewModel.updateNotifications(notifications.copy(calls = it)) }
+          NotificationToggle("Status updates", notifications.status) { viewModel.updateNotifications(notifications.copy(status = it)) }
+          NotificationToggle("Vibration", notifications.vibration) { viewModel.updateNotifications(notifications.copy(vibration = it)) }
+          Text("Android system notification permission is still controlled by your device settings.", color = TextMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+        }
+      },
+      confirmButton = { TextButton(onClick = { showNotificationsDialog = false }) { Text("Done", color = CyanAccent) } },
       containerColor = Color(0xFF0F172A)
     )
   }
@@ -443,7 +455,7 @@ fun SettingsScreen(
       title = { Text("About Liquid Chat", color = TextPrimary, fontWeight = FontWeight.Bold) },
       text = {
         Text(
-          text = "Liquid Chat v2.7.0\n\nBuilt with the Liquid Glass UI system for real-time messaging, media sharing, groups, status, privacy controls, and call experiences. Firebase and device-level security features require the project configuration described in the setup guide.",
+          text = "Liquid Chat v3.5.0\n\nBuilt with the Liquid Glass UI system for real-time messaging, media sharing, groups, status, privacy controls, and call experiences. Firebase and device-level security features require the project configuration described in the setup guide.",
           color = TextSecondary,
           fontSize = 14.sp
         )
@@ -453,6 +465,49 @@ fun SettingsScreen(
           Text("Close", color = CyanAccent)
         }
       },
+      containerColor = Color(0xFF0F172A)
+    )
+  }
+
+  if (showBlockedDialog) {
+    AlertDialog(
+      onDismissRequest = { showBlockedDialog = false },
+      title = { Text("Blocked Users", color = TextPrimary, fontWeight = FontWeight.Bold) },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          if (blockedUserIds.isEmpty()) {
+            Text("No blocked contacts.", color = TextSecondary)
+          } else {
+            blockedUserIds.forEach { blockedId ->
+              val user = viewModel.users.collectAsState().value.firstOrNull { it.uid == blockedId }
+              Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(user?.displayName ?: blockedId.take(8), color = TextPrimary, modifier = Modifier.weight(1f))
+                TextButton(onClick = { viewModel.unblockUser(blockedId) }) { Text("Unblock", color = CyanAccent) }
+              }
+            }
+          }
+        }
+      },
+      confirmButton = { TextButton(onClick = { showBlockedDialog = false }) { Text("Done", color = CyanAccent) } },
+      containerColor = Color(0xFF0F172A)
+    )
+  }
+
+  if (showDeleteConfirmDialog) {
+    AlertDialog(
+      onDismissRequest = { if (!deleteBusy) showDeleteConfirmDialog = false },
+      title = { Text("Delete Account?", color = TextPrimary, fontWeight = FontWeight.Bold) },
+      text = { Text("This permanently removes your Liquid Chat profile and signs you out. This action cannot be undone.", color = TextSecondary) },
+      confirmButton = {
+        TextButton(enabled = !deleteBusy, onClick = {
+          deleteBusy = true
+          viewModel.deleteAccount { success, _ ->
+            deleteBusy = false
+            if (success) { showDeleteConfirmDialog = false; onLogout() }
+          }
+        }) { Text(if (deleteBusy) "Deleting…" else "Delete", color = Color(0xFFEF4444)) }
+      },
+      dismissButton = { TextButton(enabled = !deleteBusy, onClick = { showDeleteConfirmDialog = false }) { Text("Cancel", color = TextSecondary) } },
       containerColor = Color(0xFF0F172A)
     )
   }
@@ -479,6 +534,14 @@ fun SettingsScreen(
       },
       containerColor = Color(0xFF0F172A)
     )
+  }
+}
+
+@Composable
+private fun NotificationToggle(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+  Row(modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+    Text(title, color = TextPrimary, modifier = Modifier.weight(1f), fontSize = 14.sp)
+    Switch(checked = checked, onCheckedChange = onCheckedChange)
   }
 }
 

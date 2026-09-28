@@ -19,6 +19,7 @@ import com.example.data.model.MessageDeliveryStatus
 import com.example.data.model.MessageReaction
 import com.example.data.model.MessageType
 import com.example.data.model.PrivacySettings
+import com.example.data.model.NotificationSettings
 import com.example.data.model.StatusType
 import com.example.data.model.User
 import com.example.data.model.UserStatus
@@ -129,6 +130,9 @@ class ChatRepository(
 
   private val _privacy = MutableStateFlow(PrivacySettings())
   val privacy: StateFlow<PrivacySettings> = _privacy.asStateFlow()
+
+  private val _notifications = MutableStateFlow(NotificationSettings())
+  val notifications: StateFlow<NotificationSettings> = _notifications.asStateFlow()
 
   // Search History
   private val _searchHistory = MutableStateFlow<List<String>>(emptyList())
@@ -815,6 +819,19 @@ class ChatRepository(
   // --- Document Mappers ---
 
   private fun loadPersistedSettings(doc: DocumentSnapshot) {
+    val blocked = (doc.get("blockedUserIds") as? List<*>)?.filterIsInstance<String>().orEmpty()
+    _blockedUserIds.value = blocked.toSet()
+
+    val notificationMap = doc.get("notifications") as? Map<*, *>
+    if (notificationMap != null) {
+      _notifications.value = NotificationSettings(
+        messages = notificationMap["messages"] as? Boolean ?: true,
+        calls = notificationMap["calls"] as? Boolean ?: true,
+        status = notificationMap["status"] as? Boolean ?: true,
+        vibration = notificationMap["vibration"] as? Boolean ?: true
+      )
+    }
+
     val appearanceMap = doc.get("appearance") as? Map<*, *>
     if (appearanceMap != null) {
       _appearance.value = AppearanceSettings(
@@ -1620,10 +1637,58 @@ class ChatRepository(
 
   fun blockUser(userId: String) {
     _blockedUserIds.update { it + userId }
+    persistBlockedUsers()
   }
 
   fun unblockUser(userId: String) {
     _blockedUserIds.update { it - userId }
+    persistBlockedUsers()
+  }
+
+  private fun persistBlockedUsers() {
+    val uid = auth?.currentUser?.uid ?: return
+    scope.launch {
+      runCatching {
+        firestore?.collection("users")?.document(uid)?.set(
+          mapOf("blockedUserIds" to _blockedUserIds.value.toList()), SetOptions.merge()
+        )?.await()
+      }.onFailure { Log.w("ChatRepository", "Blocked users sync failed", it) }
+    }
+  }
+
+  fun updateNotifications(newSettings: NotificationSettings) {
+    _notifications.value = newSettings
+    val uid = auth?.currentUser?.uid ?: return
+    scope.launch {
+      runCatching {
+        firestore?.collection("users")?.document(uid)?.set(
+          mapOf("notifications" to mapOf(
+            "messages" to newSettings.messages,
+            "calls" to newSettings.calls,
+            "status" to newSettings.status,
+            "vibration" to newSettings.vibration
+          )), SetOptions.merge()
+        )?.await()
+      }.onFailure { Log.w("ChatRepository", "Notification settings sync failed", it) }
+    }
+  }
+
+  suspend fun deleteAccount(): Result<Unit> {
+    val uid = auth?.currentUser?.uid ?: return Result.failure(IllegalStateException("Not signed in"))
+    return try {
+      firestore?.collection("users")?.document(uid)?.delete()?.await()
+      storage?.reference?.child("users/$uid/profile.jpg")?.delete()?.await()
+      auth?.currentUser?.delete()?.await()
+      stopFirebaseSync()
+      _currentUser.value = User(uid = "usr_guest", displayName = "Liquid User", username = "liquid.user")
+      _conversations.value = emptyList()
+      _messages.value = emptyMap()
+      _blockedUserIds.value = emptySet()
+      Result.success(Unit)
+    } catch (e: Exception) {
+      Log.e("ChatRepository", "Account deletion failed", e)
+      Result.failure(e)
+    }
   }
 
   fun addSearchHistory(query: String) {
