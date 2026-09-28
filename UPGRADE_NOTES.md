@@ -1,0 +1,30 @@
+# Liquid Chat 2.6.0 Upgrade
+
+This build keeps the existing Firebase/source architecture and upgrades the app without Android Studio.
+
+## Included
+- Premium lighter Liquid Glass surfaces and reduced heavy shadows
+- 6.7-inch friendly edge-to-edge Compose layout foundation
+- Card navigation removed; Settings is now the fifth bottom-navigation destination
+- Settings profile photo picker -> Firebase Storage -> Firestore profile URL
+- Functional privacy/read-receipts control with Firestore persistence
+- Functional notification/data-storage information panels
+- Online presence updates on app foreground/background
+- Firestore-backed 24-hour status records
+- Gallery photo status upload
+- Gallery video status upload limited to 30 seconds
+- Video status playback in the status viewer
+- App version bumped to 2.6.0 / versionCode 260
+
+## GitHub-only build
+1. Create/open your GitHub repository.
+2. Upload the contents of this project to the repository root.
+3. Commit to `main`.
+4. Open GitHub -> Actions -> `Build Android APK`.
+5. Run the workflow if it does not start automatically.
+6. Download the `liquid-chat-debug-apk` artifact.
+
+No Android Studio is required for the included debug build workflow.
+
+## Important next phase
+For production-level parity with a modern messaging app, the next implementation phase should add real WebRTC media transport for voice/video calls, media compression/trimming, richer privacy controls, persistent appearance settings loading, and end-to-end encryption architecture.

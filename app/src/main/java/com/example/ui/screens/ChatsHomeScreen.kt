@@ -25,7 +25,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Mic
@@ -84,9 +83,8 @@ fun ChatsHomeScreen(
   onNavigateToGroups: () -> Unit,
   onNavigateToUpdates: () -> Unit,
   onNavigateToCalls: () -> Unit,
-  onNavigateToCard: () -> Unit,
-  onNavigateToSearch: () -> Unit,
   onNavigateToSettings: () -> Unit,
+  onNavigateToSearch: () -> Unit,
   onNavigateToAppearance: () -> Unit,
   onNavigateToProfile: (String) -> Unit,
   modifier: Modifier = Modifier
@@ -193,7 +191,7 @@ fun ChatsHomeScreen(
           onNavigateToGroups = onNavigateToGroups,
           onNavigateToUpdates = onNavigateToUpdates,
           onNavigateToCalls = onNavigateToCalls,
-          onNavigateToCard = onNavigateToCard
+          onNavigateToSettings = onNavigateToSettings
         )
       },
       floatingActionButton = {
@@ -540,7 +538,7 @@ fun GlassBottomBar(
   onNavigateToGroups: () -> Unit,
   onNavigateToUpdates: () -> Unit,
   onNavigateToCalls: () -> Unit,
-  onNavigateToCard: () -> Unit,
+  onNavigateToSettings: () -> Unit,
   modifier: Modifier = Modifier
 ) {
   Box(
@@ -590,11 +588,11 @@ fun GlassBottomBar(
           testTag = "nav_calls"
         )
         BottomNavItem(
-          icon = Icons.Default.CreditCard,
-          label = "Card",
-          isSelected = selectedRoute == "card",
-          onClick = onNavigateToCard,
-          testTag = "nav_card"
+          icon = Icons.Default.Settings,
+          label = "Settings",
+          isSelected = selectedRoute == "settings",
+          onClick = onNavigateToSettings,
+          testTag = "nav_settings"
         )
       }
     }

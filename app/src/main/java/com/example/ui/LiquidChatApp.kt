@@ -4,7 +4,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.runtime.DisposableEffect
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -15,7 +19,6 @@ import com.example.ui.navigation.Screen
 import com.example.ui.screens.ActiveCallScreen
 import com.example.ui.screens.AppearanceScreen
 import com.example.ui.screens.AuthScreen
-import com.example.ui.screens.BusinessCardScreen
 import com.example.ui.screens.CallsScreen
 import com.example.ui.screens.CameraScreen
 import com.example.ui.screens.ChatsHomeScreen
@@ -36,6 +39,19 @@ fun LiquidChatApp(
 ) {
   val appearance by chatViewModel.appearance.collectAsState()
   val activeCall by chatViewModel.activeCall.collectAsState()
+  val lifecycleOwner = LocalLifecycleOwner.current
+
+  DisposableEffect(lifecycleOwner) {
+    val observer = LifecycleEventObserver { _, event ->
+      when (event) {
+        Lifecycle.Event.ON_START -> chatViewModel.setPresence(true)
+        Lifecycle.Event.ON_STOP -> chatViewModel.setPresence(false)
+        else -> Unit
+      }
+    }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+  }
 
   val glassConfig = LiquidGlassConfig(
     glassIntensity = appearance.glassIntensity,
@@ -85,14 +101,11 @@ fun LiquidChatApp(
           onNavigateToCalls = {
             navController.navigate(Screen.Calls.route)
           },
-          onNavigateToCard = {
-            navController.navigate(Screen.BusinessCard.route)
+          onNavigateToSettings = {
+            navController.navigate(Screen.Settings.route)
           },
           onNavigateToSearch = {
             navController.navigate(Screen.Search.route)
-          },
-          onNavigateToSettings = {
-            navController.navigate(Screen.Settings.route)
           },
           onNavigateToAppearance = {
             navController.navigate(Screen.Appearance.route)
@@ -159,8 +172,8 @@ fun LiquidChatApp(
           onNavigateToCalls = {
             navController.navigate(Screen.Calls.route)
           },
-          onNavigateToCard = {
-            navController.navigate(Screen.BusinessCard.route)
+          onNavigateToSettings = {
+            navController.navigate(Screen.Settings.route)
           },
           onNavigateToSearch = {
             navController.navigate(Screen.Search.route)
@@ -192,8 +205,8 @@ fun LiquidChatApp(
           onNavigateToCalls = {
             navController.navigate(Screen.Calls.route)
           },
-          onNavigateToCard = {
-            navController.navigate(Screen.BusinessCard.route)
+          onNavigateToSettings = {
+            navController.navigate(Screen.Settings.route)
           }
         )
       }
@@ -213,8 +226,8 @@ fun LiquidChatApp(
           onNavigateToUpdates = {
             navController.navigate(Screen.Updates.route)
           },
-          onNavigateToCard = {
-            navController.navigate(Screen.BusinessCard.route)
+          onNavigateToSettings = {
+            navController.navigate(Screen.Settings.route)
           }
         )
       }
@@ -256,24 +269,6 @@ fun LiquidChatApp(
           },
           onNavigateToActiveCall = {
             navController.navigate(Screen.ActiveCall.route)
-          }
-        )
-      }
-
-      composable(Screen.BusinessCard.route) {
-        BusinessCardScreen(
-          viewModel = chatViewModel,
-          onNavigateToChats = {
-            navController.navigate(Screen.Chats.route)
-          },
-          onNavigateToGroups = {
-            navController.navigate(Screen.Groups.route)
-          },
-          onNavigateToUpdates = {
-            navController.navigate(Screen.Updates.route)
-          },
-          onNavigateToCalls = {
-            navController.navigate(Screen.Calls.route)
           }
         )
       }

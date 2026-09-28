@@ -81,7 +81,7 @@ data class Group(
 )
 
 enum class StatusType {
-  TEXT, IMAGE
+  TEXT, IMAGE, VIDEO
 }
 
 data class UserStatus(

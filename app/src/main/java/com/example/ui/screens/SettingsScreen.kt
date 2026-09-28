@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -32,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import android.net.Uri
 import com.example.ui.components.GlassAvatar
 import com.example.ui.components.GlassButton
 import com.example.ui.components.GlassCard
@@ -71,10 +75,23 @@ fun SettingsScreen(
 ) {
   val currentUser by viewModel.currentUser.collectAsState()
   val blockedUserIds by viewModel.blockedUserIds.collectAsState()
+  val privacy by viewModel.privacy.collectAsState()
 
   var showEditProfileDialog by remember { mutableStateOf(false) }
   var showLogoutConfirmDialog by remember { mutableStateOf(false) }
   var showAboutDialog by remember { mutableStateOf(false) }
+  var showPrivacyDialog by remember { mutableStateOf(false) }
+  var showNotificationsDialog by remember { mutableStateOf(false) }
+  var showStorageDialog by remember { mutableStateOf(false) }
+  var photoUploading by remember { mutableStateOf(false) }
+
+  val profilePhotoPicker = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.GetContent()
+  ) { uri: Uri? ->
+    uri ?: return@rememberLauncherForActivityResult
+    photoUploading = true
+    viewModel.uploadProfilePhoto(uri) { photoUploading = false }
+  }
 
   LiquidBackground(modifier = modifier) {
     Scaffold(
@@ -133,7 +150,10 @@ fun SettingsScreen(
               photoUrl = currentUser.photoUrl,
               name = currentUser.displayName,
               size = 64.dp,
-              isOnline = true
+              isOnline = currentUser.isOnline,
+              modifier = Modifier.clickable(enabled = !photoUploading) {
+                profilePhotoPicker.launch("image/*")
+              }
             )
 
             Spacer(modifier = Modifier.width(14.dp))
@@ -185,34 +205,34 @@ fun SettingsScreen(
               icon = Icons.Default.Lock,
               title = "Privacy & Security",
               subtitle = "Last seen, read receipts, end-to-end encryption",
-              onClick = {}
+              onClick = { showPrivacyDialog = true }
             )
 
             SettingsNavigationRow(
               icon = Icons.Default.Notifications,
               title = "Notifications & Sounds",
               subtitle = "Messages, groups, ringtones, vibration",
-              onClick = {}
+              onClick = { showNotificationsDialog = true }
             )
 
             SettingsNavigationRow(
               icon = Icons.Default.Storage,
               title = "Data & Storage",
               subtitle = "Network usage, auto-download media",
-              onClick = {}
+              onClick = { showStorageDialog = true }
             )
 
             SettingsNavigationRow(
               icon = Icons.Default.Block,
               title = "Blocked Users",
               subtitle = "${blockedUserIds.size} contacts blocked",
-              onClick = {}
+              onClick = { }
             )
 
             SettingsNavigationRow(
               icon = Icons.Default.Info,
               title = "About Liquid Chat",
-              subtitle = "Version 2.5.0 • Liquid Glass Protocol",
+              subtitle = "Version 2.6.0 • Liquid Glass Protocol",
               onClick = { showAboutDialog = true },
               testTag = "settings_about_row"
             )
@@ -307,6 +327,52 @@ fun SettingsScreen(
     }
   }
 
+  if (showPrivacyDialog) {
+    AlertDialog(
+      onDismissRequest = { showPrivacyDialog = false },
+      title = { Text("Privacy", color = TextPrimary, fontWeight = FontWeight.Bold) },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text("Last seen: ${privacy.lastSeenVisibility}", color = TextSecondary)
+          Text("Online: ${privacy.onlineVisibility}", color = TextSecondary)
+          Text("Profile photo: ${privacy.profilePhotoVisibility}", color = TextSecondary)
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+              Text("Read receipts", color = TextPrimary, fontWeight = FontWeight.SemiBold)
+              Text("Show when messages are read", color = TextMuted, fontSize = 12.sp)
+            }
+            Switch(
+              checked = privacy.readReceipts,
+              onCheckedChange = { viewModel.updatePrivacy(privacy.copy(readReceipts = it)) }
+            )
+          }
+        }
+      },
+      confirmButton = { TextButton(onClick = { showPrivacyDialog = false }) { Text("Done", color = CyanAccent) } },
+      containerColor = Color(0xFF0F172A)
+    )
+  }
+
+  if (showNotificationsDialog) {
+    AlertDialog(
+      onDismissRequest = { showNotificationsDialog = false },
+      title = { Text("Notifications", color = TextPrimary, fontWeight = FontWeight.Bold) },
+      text = { Text("Message, group and call notifications are delivered through Firebase Cloud Messaging. Android notification permission can be changed from system settings.", color = TextSecondary) },
+      confirmButton = { TextButton(onClick = { showNotificationsDialog = false }) { Text("Close", color = CyanAccent) } },
+      containerColor = Color(0xFF0F172A)
+    )
+  }
+
+  if (showStorageDialog) {
+    AlertDialog(
+      onDismissRequest = { showStorageDialog = false },
+      title = { Text("Data & Storage", color = TextPrimary, fontWeight = FontWeight.Bold) },
+      text = { Text("Media is stored in Firebase Storage. You can control Android photo/media permissions and notification permissions from system settings.", color = TextSecondary) },
+      confirmButton = { TextButton(onClick = { showStorageDialog = false }) { Text("Close", color = CyanAccent) } },
+      containerColor = Color(0xFF0F172A)
+    )
+  }
+
   // About Dialog
   if (showAboutDialog) {
     AlertDialog(
@@ -314,7 +380,7 @@ fun SettingsScreen(
       title = { Text("About Liquid Chat", color = TextPrimary, fontWeight = FontWeight.Bold) },
       text = {
         Text(
-          text = "Liquid Chat v2.5.0\n\nBuilt with the Liquid Glass UI system for real-time messaging, media sharing, groups, status, privacy controls, and call experiences. Firebase and device-level security features require the project configuration described in the setup guide.",
+          text = "Liquid Chat v2.6.0\n\nBuilt with the Liquid Glass UI system for real-time messaging, media sharing, groups, status, privacy controls, and call experiences. Firebase and device-level security features require the project configuration described in the setup guide.",
           color = TextSecondary,
           fontSize = 14.sp
         )

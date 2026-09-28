@@ -61,7 +61,7 @@ fun CallsScreen(
   onNavigateToChats: () -> Unit,
   onNavigateToGroups: () -> Unit,
   onNavigateToUpdates: () -> Unit,
-  onNavigateToCard: () -> Unit,
+  onNavigateToSettings: () -> Unit,
   modifier: Modifier = Modifier
 ) {
   val callRecords by viewModel.callRecords.collectAsState()
@@ -101,7 +101,7 @@ fun CallsScreen(
           onNavigateToGroups = onNavigateToGroups,
           onNavigateToUpdates = onNavigateToUpdates,
           onNavigateToCalls = {},
-          onNavigateToCard = onNavigateToCard
+          onNavigateToSettings = onNavigateToSettings
         )
       },
       floatingActionButton = {

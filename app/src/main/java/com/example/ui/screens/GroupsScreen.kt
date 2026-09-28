@@ -73,7 +73,7 @@ fun GroupsScreen(
   onNavigateToChats: () -> Unit,
   onNavigateToUpdates: () -> Unit,
   onNavigateToCalls: () -> Unit,
-  onNavigateToCard: () -> Unit,
+  onNavigateToSettings: () -> Unit,
   onNavigateToSearch: () -> Unit,
   modifier: Modifier = Modifier
 ) {
@@ -120,7 +120,7 @@ fun GroupsScreen(
           onNavigateToGroups = {},
           onNavigateToUpdates = onNavigateToUpdates,
           onNavigateToCalls = onNavigateToCalls,
-          onNavigateToCard = onNavigateToCard
+          onNavigateToSettings = onNavigateToSettings
         )
       },
       floatingActionButton = {

@@ -70,13 +70,13 @@ fun GlassCard(
   shape: Shape = RoundedCornerShape(24.dp),
   backgroundColor: Color? = null,
   borderColor: Color? = null,
-  elevation: Dp = 8.dp,
+  elevation: Dp = 3.dp,
   onClick: (() -> Unit)? = null,
   content: @Composable () -> Unit
 ) {
   val glassConfig = LocalLiquidGlass.current
-  val defaultBg = backgroundColor ?: Color(0xFF131D35).copy(
-    alpha = (0.50f + (glassConfig.glassIntensity * 0.35f)).coerceIn(0.2f, 0.95f)
+  val defaultBg = backgroundColor ?: Color(0xFF13213A).copy(
+    alpha = (0.34f + (glassConfig.glassIntensity * 0.22f)).coerceIn(0.20f, 0.72f)
   )
   val borderBrush = Brush.linearGradient(
     colors = listOf(
@@ -90,8 +90,8 @@ fun GlassCard(
     .shadow(
       elevation = elevation,
       shape = shape,
-      ambientColor = Color.Black.copy(alpha = 0.5f),
-      spotColor = CyanAccent.copy(alpha = 0.15f)
+      ambientColor = Color.Black.copy(alpha = 0.24f),
+      spotColor = CyanAccent.copy(alpha = 0.08f)
     )
     .clip(shape)
     .background(defaultBg)

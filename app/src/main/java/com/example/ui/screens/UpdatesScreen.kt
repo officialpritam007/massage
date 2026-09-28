@@ -1,5 +1,11 @@
 package com.example.ui.screens
 
+import android.media.MediaMetadataRetriever
+import android.net.Uri
+import android.widget.VideoView
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -46,6 +52,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -79,7 +87,7 @@ fun UpdatesScreen(
   onNavigateToChats: () -> Unit,
   onNavigateToGroups: () -> Unit,
   onNavigateToCalls: () -> Unit,
-  onNavigateToCard: () -> Unit,
+  onNavigateToSettings: () -> Unit,
   modifier: Modifier = Modifier
 ) {
   val statuses by viewModel.statuses.collectAsState()
@@ -87,6 +95,34 @@ fun UpdatesScreen(
 
   var viewingStatus by remember { mutableStateOf<UserStatus?>(null) }
   var showPostStatusDialog by remember { mutableStateOf(false) }
+  val context = LocalContext.current
+
+  val imagePicker = rememberLauncherForActivityResult(
+    ActivityResultContracts.GetContent()
+  ) { uri: Uri? ->
+    uri ?: return@rememberLauncherForActivityResult
+    viewModel.uploadAndPostStatus(uri, StatusType.IMAGE) { }
+    showPostStatusDialog = false
+  }
+
+  val videoPicker = rememberLauncherForActivityResult(
+    ActivityResultContracts.GetContent()
+  ) { uri: Uri? ->
+    uri ?: return@rememberLauncherForActivityResult
+    val retriever = MediaMetadataRetriever()
+    try {
+      retriever.setDataSource(context, uri)
+      val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+      if (durationMs <= 30_000L) {
+        viewModel.uploadAndPostStatus(uri, StatusType.VIDEO) { }
+        showPostStatusDialog = false
+      } else {
+        Toast.makeText(context, "Please choose or trim a video to 30 seconds or less.", Toast.LENGTH_LONG).show()
+      }
+    } finally {
+      retriever.release()
+    }
+  }
 
   val statusGradients = listOf(
     listOf(Color(0xFF0072FF), Color(0xFF00D2FF)),
@@ -133,7 +169,7 @@ fun UpdatesScreen(
           onNavigateToGroups = onNavigateToGroups,
           onNavigateToUpdates = {},
           onNavigateToCalls = onNavigateToCalls,
-          onNavigateToCard = onNavigateToCard
+          onNavigateToSettings = onNavigateToSettings
         )
       },
       floatingActionButton = {
@@ -378,6 +414,22 @@ fun UpdatesScreen(
                 modifier = Modifier.fillMaxSize()
               )
             }
+          } else if (status.type == StatusType.VIDEO) {
+            AndroidView(
+              factory = { ctx ->
+                VideoView(ctx).apply {
+                  setVideoURI(Uri.parse(status.content))
+                  setOnPreparedListener { player ->
+                    player.isLooping = true
+                    start()
+                  }
+                }
+              },
+              modifier = Modifier
+                .fillMaxWidth()
+                .height(380.dp)
+                .clip(RoundedCornerShape(24.dp))
+            )
           } else {
             Text(
               text = status.content,
@@ -469,6 +521,22 @@ fun UpdatesScreen(
             placeholder = "Status update text...",
             testTag = "status_input_text"
           )
+
+          Spacer(modifier = Modifier.height(10.dp))
+          Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GlassButton(
+              text = "Photo",
+              onClick = { imagePicker.launch("image/*") },
+              isPrimary = false,
+              modifier = Modifier.weight(1f)
+            )
+            GlassButton(
+              text = "Video • 30s",
+              onClick = { videoPicker.launch("video/*") },
+              isPrimary = false,
+              modifier = Modifier.weight(1f)
+            )
+          }
 
           Spacer(modifier = Modifier.height(12.dp))
 

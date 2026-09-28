@@ -1,5 +1,6 @@
 package com.example.ui.viewmodel
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.model.ActiveCallState
@@ -155,6 +156,9 @@ class LiquidChatViewModel(
     repository.markStatusViewed(statusId)
   }
 
+  fun uploadAndPostStatus(uri: Uri, type: StatusType, bgIndex: Int = 0, onResult: (Result<Unit>) -> Unit = {}) =
+    repository.uploadAndPostStatus(uri, type, bgIndex, onResult)
+
   // Calls
   fun startCall(otherUser: User, type: CallType) {
     repository.startCall(otherUser, type)
@@ -175,6 +179,11 @@ class LiquidChatViewModel(
   fun endCall() {
     repository.endCall()
   }
+
+  fun uploadProfilePhoto(uri: Uri, onResult: (Result<String>) -> Unit = {}) =
+    repository.uploadProfilePhoto(uri, onResult)
+
+  fun setPresence(isOnline: Boolean) = repository.setPresence(isOnline)
 
   fun isUserLoggedIn(): Boolean = repository.isUserLoggedIn()
 

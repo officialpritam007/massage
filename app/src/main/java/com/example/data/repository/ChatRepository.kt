@@ -1,5 +1,6 @@
 package com.example.data.repository
 
+import android.net.Uri
 import android.util.Log
 import com.example.data.model.ActiveCallState
 import com.example.data.model.AppearanceSettings
@@ -22,6 +23,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
+import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -53,10 +55,19 @@ class ChatRepository(
       null
     }
 
+  private val storage: FirebaseStorage?
+    get() = try {
+      FirebaseStorage.getInstance()
+    } catch (e: Throwable) {
+      Log.w("ChatRepository", "FirebaseStorage not initialized: ${e.message}")
+      null
+    }
+
   // Active snapshot listeners
   private var usersListener: ListenerRegistration? = null
   private var conversationsListener: ListenerRegistration? = null
   private var currentUserDocListener: ListenerRegistration? = null
+  private var statusesListener: ListenerRegistration? = null
   private val messageListeners = mutableMapOf<String, ListenerRegistration>()
 
   // Current Authenticated User
@@ -322,6 +333,17 @@ class ChatRepository(
       }
 
     // 3. Conversations listener where participantIds contains current user uid
+    statusesListener = db.collection("statuses")
+      .whereGreaterThan("expiresAt", System.currentTimeMillis())
+      .addSnapshotListener { snapshot, error ->
+        if (error != null) {
+          Log.e("ChatRepository", "Error listening to statuses", error)
+        } else if (snapshot != null) {
+          _statuses.value = snapshot.documents.mapNotNull { documentToStatus(it) }
+            .sortedByDescending { it.createdAt }
+        }
+      }
+
     conversationsListener = db.collection("conversations")
       .whereArrayContains("participantIds", uid)
       .addSnapshotListener { snapshot, error ->
@@ -1061,14 +1083,87 @@ class ChatRepository(
       viewerNames = emptyList(),
       isViewedByMe = true
     )
-
     _statuses.update { listOf(newStatus) + it }
+    persistStatus(newStatus)
+  }
+
+  fun uploadAndPostStatus(uri: Uri, type: StatusType, bgIndex: Int = 0, onResult: (Result<Unit>) -> Unit = {}) {
+    val uid = auth?.currentUser?.uid
+    if (uid.isNullOrBlank()) {
+      onResult(Result.failure(IllegalStateException("You must be signed in")))
+      return
+    }
+    scope.launch {
+      try {
+        val id = "st_" + UUID.randomUUID().toString().take(8)
+        val ref = storage?.reference?.child("statuses/$uid/$id")
+          ?: throw IllegalStateException("Firebase Storage unavailable")
+        ref.putFile(uri).await()
+        val url = ref.downloadUrl.await().toString()
+        val current = _currentUser.value
+        val status = UserStatus(
+          id = id, userId = uid, userName = current.displayName,
+          userPhotoUrl = current.photoUrl, type = type, content = url,
+          backgroundGradientIndex = bgIndex, createdAt = System.currentTimeMillis(),
+          viewerNames = emptyList(), isViewedByMe = true
+        )
+        _statuses.update { listOf(status) + it }
+        persistStatus(status)
+        onResult(Result.success(Unit))
+      } catch (e: Exception) {
+        Log.e("ChatRepository", "Status media upload failed", e)
+        onResult(Result.failure(e))
+      }
+    }
+  }
+
+  private fun persistStatus(status: UserStatus) {
+    scope.launch {
+      try {
+        firestore?.collection("statuses")?.document(status.id)?.set(
+          mapOf(
+            "id" to status.id, "userId" to status.userId, "userName" to status.userName,
+            "userPhotoUrl" to status.userPhotoUrl, "type" to status.type.name,
+            "content" to status.content, "backgroundGradientIndex" to status.backgroundGradientIndex,
+            "createdAt" to status.createdAt, "expiresAt" to status.expiresAt,
+            "viewerNames" to status.viewerNames, "viewedBy" to emptyList<String>()
+          )
+        )?.await()
+      } catch (e: Exception) {
+        Log.e("ChatRepository", "Status persistence failed", e)
+      }
+    }
+  }
+
+  private fun documentToStatus(doc: DocumentSnapshot): UserStatus? {
+    val type = runCatching { StatusType.valueOf(doc.getString("type") ?: "TEXT") }.getOrDefault(StatusType.TEXT)
+    val userId = doc.getString("userId") ?: return null
+    return UserStatus(
+      id = doc.id, userId = userId, userName = doc.getString("userName") ?: "User",
+      userPhotoUrl = doc.getString("userPhotoUrl") ?: "", type = type,
+      content = doc.getString("content") ?: "",
+      backgroundGradientIndex = (doc.getLong("backgroundGradientIndex") ?: 0L).toInt(),
+      createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis(),
+      expiresAt = doc.getLong("expiresAt") ?: (System.currentTimeMillis() + 24 * 60 * 60 * 1000),
+      viewerNames = (doc.get("viewerNames") as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
+      isViewedByMe = (doc.get("viewedBy") as? List<*>)?.contains(auth?.currentUser?.uid) == true
+    )
   }
 
   fun markStatusViewed(statusId: String) {
+    val uid = auth?.currentUser?.uid
     _statuses.update { list ->
-      list.map {
-        if (it.id == statusId) it.copy(isViewedByMe = true) else it
+      list.map { if (it.id == statusId) it.copy(isViewedByMe = true) else it }
+    }
+    if (!uid.isNullOrBlank()) {
+      scope.launch {
+        try {
+          firestore?.collection("statuses")?.document(statusId)?.update(
+            "viewedBy", com.google.firebase.firestore.FieldValue.arrayUnion(uid)
+          )?.await()
+        } catch (e: Exception) {
+          Log.w("ChatRepository", "Status view sync failed", e)
+        }
       }
     }
   }
@@ -1156,12 +1251,82 @@ class ChatRepository(
     }
   }
 
+  fun uploadProfilePhoto(uri: Uri, onResult: (Result<String>) -> Unit = {}) {
+    val uid = auth?.currentUser?.uid
+    if (uid.isNullOrBlank()) {
+      onResult(Result.failure(IllegalStateException("You must be signed in")))
+      return
+    }
+    scope.launch {
+      try {
+        val ref = storage?.reference?.child("users/$uid/profile.jpg")
+          ?: throw IllegalStateException("Firebase Storage unavailable")
+        ref.putFile(uri).await()
+        val downloadUrl = ref.downloadUrl.await().toString()
+        firestore?.collection("users")?.document(uid)?.update("photoUrl", downloadUrl)?.await()
+        _currentUser.update { it.copy(photoUrl = downloadUrl) }
+        onResult(Result.success(downloadUrl))
+      } catch (e: Exception) {
+        Log.e("ChatRepository", "Profile photo upload failed", e)
+        onResult(Result.failure(e))
+      }
+    }
+  }
+
+  fun setPresence(isOnline: Boolean) {
+    val uid = auth?.currentUser?.uid ?: return
+    val now = System.currentTimeMillis()
+    _currentUser.update { it.copy(isOnline = isOnline, lastSeen = now) }
+    scope.launch {
+      try {
+        firestore?.collection("users")?.document(uid)?.update(
+          mapOf("isOnline" to isOnline, "lastSeen" to now)
+        )?.await()
+      } catch (e: Exception) {
+        Log.w("ChatRepository", "Presence update failed", e)
+      }
+    }
+  }
+
   fun updateAppearance(newSettings: AppearanceSettings) {
     _appearance.value = newSettings
+    val uid = auth?.currentUser?.uid ?: return
+    scope.launch {
+      runCatching {
+        firestore?.collection("users")?.document(uid)?.set(
+          mapOf(
+            "appearance" to mapOf(
+              "isDarkMode" to newSettings.isDarkMode,
+              "glassIntensity" to newSettings.glassIntensity,
+              "blurAlpha" to newSettings.blurAlpha,
+              "accentColorHex" to newSettings.accentColorHex,
+              "isReducedMotion" to newSettings.isReducedMotion
+            )
+          ), SetOptions.merge()
+        )?.await()
+      }.onFailure { Log.w("ChatRepository", "Appearance sync failed", it) }
+    }
   }
 
   fun updatePrivacy(newSettings: PrivacySettings) {
     _privacy.value = newSettings
+    val uid = auth?.currentUser?.uid ?: return
+    scope.launch {
+      runCatching {
+        firestore?.collection("users")?.document(uid)?.set(
+          mapOf(
+            "privacy" to mapOf(
+              "lastSeenVisibility" to newSettings.lastSeenVisibility,
+              "onlineVisibility" to newSettings.onlineVisibility,
+              "profilePhotoVisibility" to newSettings.profilePhotoVisibility,
+              "readReceipts" to newSettings.readReceipts,
+              "statusVisibility" to newSettings.statusVisibility,
+              "whoCanAddToGroups" to newSettings.whoCanAddToGroups
+            )
+          ), SetOptions.merge()
+        )?.await()
+      }.onFailure { Log.w("ChatRepository", "Privacy sync failed", it) }
+    }
   }
 
   fun blockUser(userId: String) {
