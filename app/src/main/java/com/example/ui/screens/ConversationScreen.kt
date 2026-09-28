@@ -124,6 +124,7 @@ fun ConversationScreen(
   val allMessages by viewModel.messages.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
   val allUsers by viewModel.users.collectAsState()
+  val glassConfig = LocalLiquidGlass.current
 
   val conversation = conversations.find { it.id == conversationId }
   val messages = allMessages[conversationId].orEmpty()

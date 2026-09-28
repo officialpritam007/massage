@@ -337,6 +337,8 @@ fun ThemeModeOption(
   onClick: () -> Unit,
   modifier: Modifier = Modifier
 ) {
+  val glassConfig = LocalLiquidGlass.current
+
   Box(
     modifier = modifier
       .clip(RoundedCornerShape(16.dp))

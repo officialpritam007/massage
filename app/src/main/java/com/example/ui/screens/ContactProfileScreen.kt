@@ -392,6 +392,8 @@ fun ProfileActionButton(
   label: String,
   onClick: () -> Unit
 ) {
+  val glassConfig = LocalLiquidGlass.current
+
   Column(
     horizontalAlignment = Alignment.CenterHorizontally,
     modifier = Modifier.clickable(onClick = onClick)
