@@ -62,6 +62,7 @@ data class Conversation(
   val isMuted: Boolean = false,
   val isOnline: Boolean = false,
   val isTyping: Boolean = false,
+  val isArchived: Boolean = false,
   val disappearingSeconds: Long = 0L,
   val wallpaperIndex: Int = 0
 )

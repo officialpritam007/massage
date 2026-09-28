@@ -54,6 +54,7 @@ import com.example.ui.components.LiquidBackground
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.GlassBorderStroke
 import com.example.ui.theme.TextMuted
+import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
@@ -92,7 +93,7 @@ fun SearchScreen(
               onClick = onBackClick,
               modifier = Modifier.testTag("search_back_button")
             ) {
-              Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
+              Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary)
             }
 
             GlassTextField(
@@ -171,7 +172,7 @@ fun SearchScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                       Icon(Icons.Default.History, contentDescription = null, tint = TextMuted, modifier = Modifier.size(16.dp))
                       Spacer(modifier = Modifier.width(6.dp))
-                      Text(historyQuery, color = MaterialTheme.colorScheme.onBackground, fontSize = 13.sp)
+                      Text(historyQuery, color = TextPrimary, fontSize = 13.sp)
                     }
                   }
                 }
@@ -202,7 +203,7 @@ fun SearchScreen(
                   GlassAvatar(photoUrl = user.photoUrl, name = user.displayName, size = 44.dp)
                   Spacer(modifier = Modifier.width(12.dp))
                   Column(modifier = Modifier.weight(1f)) {
-                    Text(user.displayName, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text(user.displayName, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     Text("@${user.username} • ${user.bio}", color = TextSecondary, fontSize = 12.sp, maxLines = 1)
                   }
                   IconButton(
@@ -241,7 +242,7 @@ fun SearchScreen(
                   GlassAvatar(photoUrl = conv.otherUser.photoUrl, name = conv.otherUser.displayName, size = 44.dp)
                   Spacer(modifier = Modifier.width(12.dp))
                   Column(modifier = Modifier.weight(1f)) {
-                    Text(conv.otherUser.displayName, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text(conv.otherUser.displayName, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     Text(conv.lastMessageText, color = TextSecondary, fontSize = 12.sp, maxLines = 1)
                   }
                 }
@@ -271,7 +272,7 @@ fun SearchScreen(
                   GlassAvatar(photoUrl = group.photoUrl, name = group.name, size = 44.dp)
                   Spacer(modifier = Modifier.width(12.dp))
                   Column(modifier = Modifier.weight(1f)) {
-                    Text(group.name, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text(group.name, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     Text("${group.members.size} members • ${group.description}", color = TextSecondary, fontSize = 12.sp, maxLines = 1)
                   }
                 }
@@ -301,7 +302,7 @@ fun SearchScreen(
                   Icon(Icons.Default.Chat, contentDescription = null, tint = CyanAccent, modifier = Modifier.size(24.dp))
                   Spacer(modifier = Modifier.width(12.dp))
                   Column(modifier = Modifier.weight(1f)) {
-                    Text(msg.senderName, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text(msg.senderName, color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                     Text(msg.text, color = TextSecondary, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                   }
                 }

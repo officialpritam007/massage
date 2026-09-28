@@ -13,7 +13,6 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.example.data.model.MessageType
 import com.example.ui.navigation.Screen
@@ -67,7 +66,6 @@ fun LiquidChatApp(
     glassConfig = glassConfig
   ) {
     val navController = rememberNavController()
-    val currentBackStackEntry by navController.currentBackStackEntryAsState()
 
     val startDestination = if (chatViewModel.isUserLoggedIn()) Screen.Chats.route else Screen.Auth.route
     NavHost(
@@ -100,8 +98,8 @@ fun LiquidChatApp(
           onNavigateToSearch = {
             navController.navigate(Screen.Search.route)
           },
-          onNavigateToCamera = { convId ->
-            navController.navigate(Screen.Camera.createRoute(convId))
+          onNavigateToAppearance = {
+            navController.navigate(Screen.Appearance.route)
           },
           onNavigateToProfile = { userId ->
             navController.navigate(Screen.ContactProfile.createRoute(userId))
@@ -176,6 +174,7 @@ fun LiquidChatApp(
           onBackClick = { navController.popBackStack() }
         )
       }
+
 
 
       composable(Screen.Search.route) {

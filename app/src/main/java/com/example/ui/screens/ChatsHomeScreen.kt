@@ -22,14 +22,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.Unarchive
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.MoreHoriz
-import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PushPin
@@ -74,6 +74,7 @@ import com.example.ui.theme.CyanNeon
 import com.example.ui.theme.ElectricBlue
 import com.example.ui.theme.GlassBorderStroke
 import com.example.ui.theme.TextMuted
+import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
@@ -88,77 +89,101 @@ fun ChatsHomeScreen(
   onNavigateToGroups: () -> Unit,
   onNavigateToSettings: () -> Unit,
   onNavigateToSearch: () -> Unit,
-  onNavigateToCamera: (String) -> Unit,
+  onNavigateToAppearance: () -> Unit,
   onNavigateToProfile: (String) -> Unit,
   modifier: Modifier = Modifier
 ) {
   val conversations by viewModel.conversations.collectAsState()
   val glassConfig = LocalLiquidGlass.current
+  val currentUser by viewModel.currentUser.collectAsState()
 
-  val filteredConversations = conversations
+  var selectedFilter by remember { mutableStateOf("All") }
+  val filters = listOf("All", "Unread", "Favorites", "Archived", "Groups")
+
+  val filteredConversations = remember(conversations, selectedFilter) {
+    when (selectedFilter) {
+      "Unread" -> conversations.filter { it.unreadCount > 0 }
+      "Favorites" -> conversations.filter { it.isPinned && !it.isArchived }
+      "Archived" -> conversations.filter { it.isArchived }
+      else -> conversations.filter { !it.isArchived }
+    }
+  }
 
   LiquidBackground(modifier = modifier) {
     Scaffold(
       containerColor = Color.Transparent,
       topBar = {
-        Column(
-          modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 10.dp)
+        // Liquid Header
+        GlassCard(
+          modifier = Modifier.fillMaxWidth(),
+          shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
+          elevation = 8.dp
         ) {
           Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Text(
-              text = "Chats",
-              style = MaterialTheme.typography.headlineMedium.copy(
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onBackground,
-                fontSize = 30.sp
-              ),
-              modifier = Modifier.weight(1f)
-            )
-
-            IconButton(onClick = onNavigateToSettings) {
-              Icon(Icons.Default.MoreHoriz, contentDescription = "More", tint = MaterialTheme.colorScheme.onBackground)
-            }
-            IconButton(
-              onClick = {
-                if (conversations.isNotEmpty()) onNavigateToCamera(conversations.first().id) else onNavigateToSearch()
-              }
-            ) {
-              Icon(Icons.Default.CameraAlt, contentDescription = "Camera", tint = MaterialTheme.colorScheme.onBackground)
-            }
-            IconButton(
-              onClick = onNavigateToSearch,
-              modifier = Modifier
-                .clip(CircleShape)
-                .background(CyanAccent)
-            ) {
-              Icon(Icons.Default.Add, contentDescription = "New Chat", tint = Color.White)
-            }
-          }
-
-          Spacer(modifier = Modifier.height(4.dp))
-
-          GlassCard(
             modifier = Modifier
               .fillMaxWidth()
-              .height(44.dp)
-              .clickable(onClick = onNavigateToSearch),
-            shape = RoundedCornerShape(22.dp),
-            elevation = 2.dp
+              .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
           ) {
-            Row(
+            // Liquid Logo
+            Box(
               modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 14.dp),
-              verticalAlignment = Alignment.CenterVertically
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(
+                  Brush.linearGradient(listOf(CyanNeon, ElectricBlue))
+                )
+                .clickable { onNavigateToProfile(currentUser.uid) },
+              contentAlignment = Alignment.Center
             ) {
-              Icon(Icons.Default.Search, contentDescription = null, tint = TextMuted, modifier = Modifier.size(20.dp))
-              Spacer(modifier = Modifier.width(8.dp))
-              Text("Search messages or people", color = TextMuted, fontSize = 14.sp)
+              Icon(
+                imageVector = Icons.Default.WaterDrop,
+                contentDescription = "Liquid Chat",
+                tint = Color.Black,
+                modifier = Modifier.size(24.dp)
+              )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+              Text(
+                text = "Liquid Chat",
+                style = MaterialTheme.typography.titleLarge.copy(
+                  fontWeight = FontWeight.ExtraBold,
+                  color = TextPrimary,
+                  fontSize = 20.sp
+                )
+              )
+              Text(
+                text = "Real-time • Liquid Glass UI",
+                style = MaterialTheme.typography.bodySmall.copy(
+                  color = CyanAccent,
+                  fontSize = 11.sp
+                )
+              )
+            }
+
+            // Quick Actions: Search, Appearance, Settings
+            IconButton(
+              onClick = onNavigateToSearch,
+              modifier = Modifier.testTag("home_search_button")
+            ) {
+              Icon(Icons.Default.Search, contentDescription = "Search", tint = TextPrimary)
+            }
+
+            IconButton(
+              onClick = onNavigateToAppearance,
+              modifier = Modifier.testTag("home_appearance_button")
+            ) {
+              Icon(Icons.Default.Palette, contentDescription = "Appearance", tint = CyanAccent)
+            }
+
+            IconButton(
+              onClick = onNavigateToSettings,
+              modifier = Modifier.testTag("home_settings_button")
+            ) {
+              Icon(Icons.Default.Settings, contentDescription = "Settings", tint = TextPrimary)
             }
           }
         }
@@ -171,6 +196,26 @@ fun ChatsHomeScreen(
           onNavigateToGroups = onNavigateToGroups,
           onNavigateToSettings = onNavigateToSettings
         )
+      },
+      floatingActionButton = {
+        FloatingActionButton(
+          onClick = {
+            // Open conversation with first contact or search
+            if (conversations.isNotEmpty()) {
+              onNavigateToConversation(conversations.first().id)
+            } else {
+              onNavigateToSearch()
+            }
+          },
+          containerColor = if (glassConfig.isDark) Color.White.copy(alpha = 0.10f) else Color.White.copy(alpha = 0.82f),
+          contentColor = if (glassConfig.isDark) Color.White else ElectricBlue,
+          shape = RoundedCornerShape(20.dp),
+          modifier = Modifier
+            .padding(bottom = 72.dp)
+            .testTag("new_chat_fab")
+        ) {
+          Icon(Icons.Default.Chat, contentDescription = "New Chat")
+        }
       }
     ) { innerPadding ->
       LazyColumn(
@@ -179,7 +224,62 @@ fun ChatsHomeScreen(
           .padding(innerPadding),
         contentPadding = PaddingValues(bottom = 90.dp)
       ) {
-        item { Spacer(modifier = Modifier.height(8.dp)) }
+        // Filter Chips Row
+        item {
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
+            filters.forEach { filter ->
+              val isSelected = selectedFilter == filter
+              Box(
+                modifier = Modifier
+                  .clip(RoundedCornerShape(16.dp))
+                  .background(
+                    if (isSelected) CyanAccent.copy(alpha = 0.88f) else if (glassConfig.isDark) Color.White.copy(alpha = 0.07f) else Color.White.copy(alpha = 0.72f)
+                  )
+                  .border(
+                    width = 1.dp,
+                    color = if (isSelected) Color.Transparent else GlassBorderStroke,
+                    shape = RoundedCornerShape(16.dp)
+                  )
+                  .clickable {
+                    if (filter == "Groups") {
+                      onNavigateToGroups()
+                    } else {
+                      selectedFilter = filter
+                    }
+                  }
+                  .padding(horizontal = 14.dp, vertical = 7.dp)
+              ) {
+                Text(
+                  text = filter,
+                  style = MaterialTheme.typography.labelMedium.copy(
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                    color = if (isSelected) Color.White else TextSecondary,
+                    fontSize = 13.sp
+                  )
+                )
+              }
+            }
+          }
+        }
+
+        // Conversation List Header
+        item {
+          Text(
+            text = "CHATS",
+            style = MaterialTheme.typography.labelSmall.copy(
+              color = TextMuted,
+              fontWeight = FontWeight.Bold,
+              fontSize = 11.sp,
+              letterSpacing = 1.sp
+            ),
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+          )
+        }
 
         // Conversation Items
         items(filteredConversations, key = { it.id }) { conv ->
@@ -187,6 +287,7 @@ fun ChatsHomeScreen(
             conversation = conv,
             onClick = { onNavigateToConversation(conv.id) },
             onAvatarClick = { onNavigateToProfile(conv.otherUser.uid) },
+            onArchiveToggle = { viewModel.setConversationArchived(conv.id, !conv.isArchived) },
             onDelete = { viewModel.deleteChatForMe(conv.id) },
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
           )
@@ -218,6 +319,7 @@ fun ConversationRowItem(
   conversation: Conversation,
   onClick: () -> Unit,
   onAvatarClick: () -> Unit,
+  onArchiveToggle: () -> Unit,
   onDelete: () -> Unit,
   modifier: Modifier = Modifier
 ) {
@@ -257,7 +359,7 @@ fun ConversationRowItem(
             text = other.displayName,
             style = MaterialTheme.typography.titleMedium.copy(
               fontWeight = FontWeight.Bold,
-              color = MaterialTheme.colorScheme.onBackground,
+              color = TextPrimary,
               fontSize = 15.sp
             ),
             maxLines = 1,
@@ -314,7 +416,7 @@ fun ConversationRowItem(
           Text(
             text = if (conversation.isTyping) "Typing..." else conversation.lastMessageText,
             style = MaterialTheme.typography.bodyMedium.copy(
-              color = if (conversation.isTyping) CyanAccent else if (conversation.unreadCount > 0) MaterialTheme.colorScheme.onBackground else TextSecondary,
+              color = if (conversation.isTyping) CyanAccent else if (conversation.unreadCount > 0) TextPrimary else TextSecondary,
               fontWeight = if (conversation.unreadCount > 0) FontWeight.SemiBold else FontWeight.Normal,
               fontSize = 13.sp
             ),
@@ -348,10 +450,33 @@ fun ConversationRowItem(
         }
         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
           DropdownMenuItem(
+            text = { Text(if (conversation.isArchived) "Unarchive" else "Archive") },
+            leadingIcon = { Icon(if (conversation.isArchived) Icons.Default.Unarchive else Icons.Default.Archive, contentDescription = null) },
+            onClick = { menuExpanded = false; onArchiveToggle() }
+          )
+          DropdownMenuItem(
             text = { Text("Delete chat") },
             leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
             onClick = { menuExpanded = false; confirmDelete = true }
           )
+        }
+      }
+    }
+  }
+
+  if (confirmDelete) {
+    Dialog(onDismissRequest = { confirmDelete = false }) {
+      GlassCard(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(24.dp)) {
+        Column(modifier = Modifier.padding(20.dp)) {
+          Text("Delete chat?", color = TextPrimary, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+          Spacer(modifier = Modifier.height(8.dp))
+          Text("This removes the conversation from your chat list. The other person will keep their copy.", color = TextSecondary)
+          Spacer(modifier = Modifier.height(18.dp))
+          Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Text("Cancel", color = TextSecondary, modifier = Modifier.clickable { confirmDelete = false }.padding(10.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Delete", color = CyanAccent, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { confirmDelete = false; onDelete() }.padding(10.dp))
+          }
         }
       }
     }

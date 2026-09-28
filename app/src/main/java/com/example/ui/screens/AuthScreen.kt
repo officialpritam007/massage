@@ -61,6 +61,7 @@ import com.example.ui.theme.CyanNeon
 import com.example.ui.theme.ElectricBlue
 import com.example.ui.theme.GlassBorderStroke
 import com.example.ui.theme.TextMuted
+import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
@@ -211,7 +212,7 @@ fun AuthScreen(
         text = "Liquid Chat",
         style = MaterialTheme.typography.headlineLarge.copy(
           fontWeight = FontWeight.ExtraBold,
-          color = MaterialTheme.colorScheme.onBackground,
+          color = TextPrimary,
           fontSize = 32.sp
         )
       )

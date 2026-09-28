@@ -22,18 +22,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Report
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Verified
-import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -63,10 +60,10 @@ import com.example.ui.components.GlassButton
 import com.example.ui.components.GlassCard
 import com.example.ui.components.GlassIconButton
 import com.example.ui.components.LiquidBackground
-import com.example.ui.theme.CoralEndCall
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.EmeraldOnline
 import com.example.ui.theme.TextMuted
+import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
@@ -152,7 +149,7 @@ fun ContactProfileScreen(
                 text = user.displayName,
                 style = MaterialTheme.typography.headlineSmall.copy(
                   fontWeight = FontWeight.Bold,
-                  color = MaterialTheme.colorScheme.onBackground
+                  color = TextPrimary
                 )
               )
               if (user.isVerified) {
@@ -289,7 +286,7 @@ fun ContactProfileScreen(
                 Spacer(modifier = Modifier.width(14.dp))
                 Text(
                   text = "Mute Notifications",
-                  color = MaterialTheme.colorScheme.onBackground,
+                  color = TextPrimary,
                   style = MaterialTheme.typography.bodyMedium,
                   modifier = Modifier.weight(1f)
                 )
@@ -403,7 +400,7 @@ fun InfoRowItem(
     Spacer(modifier = Modifier.width(12.dp))
     Column {
       Text(label, color = TextMuted, fontSize = 11.sp)
-      Text(value, color = MaterialTheme.colorScheme.onBackground, fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
+      Text(value, color = TextPrimary, fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
     }
   }
 }

@@ -102,6 +102,9 @@ class LiquidChatViewModel(
   fun setDisappearingMessages(conversationId: String, seconds: Long) = repository.setDisappearingMessages(conversationId, seconds)
   fun setConversationWallpaper(conversationId: String, index: Int) = repository.setConversationWallpaper(conversationId, index)
 
+  fun setConversationArchived(conversationId: String, archived: Boolean) {
+    repository.setConversationArchived(conversationId, archived)
+  }
 
   fun deleteChatForMe(conversationId: String) = repository.deleteChatForMe(conversationId)
 

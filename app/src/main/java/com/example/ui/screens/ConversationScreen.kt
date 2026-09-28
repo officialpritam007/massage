@@ -44,7 +44,6 @@ import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Reply
 import androidx.compose.material.icons.filled.SentimentSatisfiedAlt
-import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -97,6 +96,7 @@ import com.example.ui.theme.GlassBorderStrokeLight
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.theme.TextPrimaryLight
 import com.example.ui.theme.TextMuted
+import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.viewmodel.LiquidChatViewModel
 import java.text.SimpleDateFormat
@@ -231,7 +231,7 @@ fun ConversationScreen(
             showChatSettings = false
           }) { Text(if (conversation?.isMuted == true) "Unmute notifications" else "Mute notifications") }
 
-          Text("Disappearing messages", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onBackground, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+          Text("Disappearing messages", style = MaterialTheme.typography.titleSmall, color = TextPrimary, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
           listOf(0L to "Off", 86400L to "24 hours", 604800L to "7 days", 2592000L to "30 days").forEach { (seconds, label) ->
             TextButton(onClick = {
               viewModel.setDisappearingMessages(conversationId, seconds)
@@ -241,7 +241,7 @@ fun ConversationScreen(
             }
           }
 
-          Text("Wallpaper", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onBackground, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+          Text("Wallpaper", style = MaterialTheme.typography.titleSmall, color = TextPrimary, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
           Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(0, 1, 2).forEach { index ->
               TextButton(onClick = {
@@ -279,7 +279,7 @@ fun ConversationScreen(
               Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Back",
-                tint = MaterialTheme.colorScheme.onBackground
+                tint = TextPrimary
               )
             }
 
@@ -304,7 +304,7 @@ fun ConversationScreen(
                   text = otherUser.displayName,
                   style = MaterialTheme.typography.titleMedium.copy(
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
+                    color = TextPrimary,
                     fontSize = 15.sp
                   ),
                   maxLines = 1,
@@ -320,6 +320,7 @@ fun ConversationScreen(
               }
             }
 
+            // Chat settings
 
             IconButton(
               onClick = { showChatSettings = true },
@@ -584,7 +585,7 @@ fun ConversationScreen(
         ) {
           Icon(Icons.Default.Reply, contentDescription = null, tint = CyanAccent)
           Spacer(modifier = Modifier.width(16.dp))
-          Text("Reply to message", color = MaterialTheme.colorScheme.onBackground, fontSize = 15.sp)
+          Text("Reply to message", color = TextPrimary, fontSize = 15.sp)
         }
 
         Row(
@@ -600,7 +601,7 @@ fun ConversationScreen(
         ) {
           Icon(Icons.Default.PushPin, contentDescription = null, tint = CyanAccent)
           Spacer(modifier = Modifier.width(16.dp))
-          Text(if (msg.isPinned) "Unpin message" else "Pin message", color = MaterialTheme.colorScheme.onBackground, fontSize = 15.sp)
+          Text(if (msg.isPinned) "Unpin message" else "Pin message", color = TextPrimary, fontSize = 15.sp)
         }
 
         Row(
@@ -639,7 +640,7 @@ fun ConversationScreen(
           text = "Share Content",
           style = MaterialTheme.typography.titleMedium.copy(
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground
+            color = TextPrimary
           ),
           modifier = Modifier.padding(bottom = 16.dp)
         )
@@ -907,7 +908,7 @@ fun MessageBubble(
           Text(
             text = "${reaction.emoji} ${reaction.userIds.size}",
             fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onBackground
+            color = TextPrimary
           )
           Spacer(modifier = Modifier.width(4.dp))
         }

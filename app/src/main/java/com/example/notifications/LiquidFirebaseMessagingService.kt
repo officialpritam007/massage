@@ -15,7 +15,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 
-/** Receives non-sensitive Liquid Chat message notifications. */
+/** Receives FCM message notifications. */
 class LiquidFirebaseMessagingService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
         val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return

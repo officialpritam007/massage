@@ -63,6 +63,7 @@ import com.example.ui.theme.BubbleOutgoingGradientStart
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.ElectricBlue
 import com.example.ui.theme.TextMuted
+import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.VioletAccent
 import com.example.ui.viewmodel.LiquidChatViewModel
@@ -115,7 +116,7 @@ fun GroupChatScreen(
               onClick = onBackClick,
               modifier = Modifier.testTag("group_back_button")
             ) {
-              Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
+              Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary)
             }
 
             GlassAvatar(
@@ -135,7 +136,7 @@ fun GroupChatScreen(
                 text = group?.name ?: "Group Chat",
                 style = MaterialTheme.typography.titleMedium.copy(
                   fontWeight = FontWeight.Bold,
-                  color = MaterialTheme.colorScheme.onBackground
+                  color = TextPrimary
                 ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -222,7 +223,7 @@ fun GroupChatScreen(
       ) {
         GlassAvatar(photoUrl = group.photoUrl, name = group.name, size = 72.dp)
         Spacer(modifier = Modifier.height(10.dp))
-        Text(text = group.name, style = MaterialTheme.typography.titleLarge.copy(color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold))
+        Text(text = group.name, style = MaterialTheme.typography.titleLarge.copy(color = TextPrimary, fontWeight = FontWeight.Bold))
         Text(text = group.description, style = MaterialTheme.typography.bodyMedium.copy(color = TextSecondary), modifier = Modifier.padding(top = 4.dp))
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -246,7 +247,7 @@ fun GroupChatScreen(
             GlassAvatar(photoUrl = member.photoUrl, name = member.displayName, size = 38.dp)
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-              Text(text = member.displayName, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+              Text(text = member.displayName, color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
               Text(text = "@${member.username}", color = TextSecondary, fontSize = 12.sp)
             }
             if (isAdmin) {
@@ -314,7 +315,7 @@ fun GroupMessageBubble(
         Text(
           text = message.text,
           style = MaterialTheme.typography.bodyMedium.copy(
-            color = if (isMe) Color.White else MaterialTheme.colorScheme.onBackground,
+            color = if (isMe) Color.White else TextPrimary,
             fontSize = 14.5.sp
           )
         )

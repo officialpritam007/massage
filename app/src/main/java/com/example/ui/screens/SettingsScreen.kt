@@ -61,6 +61,7 @@ import com.example.ui.components.LiquidBackground
 import com.example.ui.theme.CoralEndCall
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.TextMuted
+import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.viewmodel.LiquidChatViewModel
 
@@ -116,14 +117,14 @@ fun SettingsScreen(
               onClick = onBackClick,
               modifier = Modifier.testTag("settings_back_button")
             ) {
-              Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
+              Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary)
             }
 
             Text(
               text = "Settings",
               style = MaterialTheme.typography.titleLarge.copy(
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
+                color = TextPrimary,
                 fontSize = 18.sp
               )
             )
@@ -167,7 +168,7 @@ fun SettingsScreen(
                 text = currentUser.displayName,
                 style = MaterialTheme.typography.titleMedium.copy(
                   fontWeight = FontWeight.Bold,
-                  color = MaterialTheme.colorScheme.onBackground
+                  color = TextPrimary
                 )
               )
               Text(
@@ -299,7 +300,7 @@ fun SettingsScreen(
           modifier = Modifier.padding(20.dp),
           horizontalAlignment = Alignment.CenterHorizontally
         ) {
-          Text("Edit Liquid Profile", style = MaterialTheme.typography.titleLarge.copy(color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold))
+          Text("Edit Liquid Profile", style = MaterialTheme.typography.titleLarge.copy(color = TextPrimary, fontWeight = FontWeight.Bold))
 
           Spacer(modifier = Modifier.height(16.dp))
 
@@ -307,7 +308,7 @@ fun SettingsScreen(
           Spacer(modifier = Modifier.height(10.dp))
           GlassTextField(value = editUsername, onValueChange = { editUsername = it }, placeholder = "Username")
           Spacer(modifier = Modifier.height(10.dp))
-          GlassTextField(value = editBio, onValueChange = { editBio = it }, placeholder = "Status Bio")
+          GlassTextField(value = editBio, onValueChange = { editBio = it }, placeholder = "Bio")
           Spacer(modifier = Modifier.height(10.dp))
           GlassTextField(value = editPhone, onValueChange = { editPhone = it }, placeholder = "Phone Number")
 
@@ -334,7 +335,7 @@ fun SettingsScreen(
   if (showPrivacyDialog) {
     AlertDialog(
       onDismissRequest = { showPrivacyDialog = false },
-      title = { Text("Privacy & Security", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold) },
+      title = { Text("Privacy & Security", color = TextPrimary, fontWeight = FontWeight.Bold) },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
           PrivacySelectorRow("Last seen", privacy.lastSeenVisibility) { activePrivacyField = "lastSeen" }
@@ -343,7 +344,7 @@ fun SettingsScreen(
           PrivacySelectorRow("Group invites", privacy.whoCanAddToGroups) { activePrivacyField = "groups" }
           Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
             Column(modifier = Modifier.weight(1f)) {
-              Text("Read receipts", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.SemiBold)
+              Text("Read receipts", color = TextPrimary, fontWeight = FontWeight.SemiBold)
               Text("Show when messages are read", color = TextMuted, fontSize = 12.sp)
             }
             Switch(
@@ -377,7 +378,7 @@ fun SettingsScreen(
     }
     AlertDialog(
       onDismissRequest = { activePrivacyField = null },
-      title = { Text(title, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold) },
+      title = { Text(title, color = TextPrimary, fontWeight = FontWeight.Bold) },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
           options.forEach { option ->
@@ -403,7 +404,7 @@ fun SettingsScreen(
                 .padding(vertical = 11.dp),
               verticalAlignment = Alignment.CenterVertically
             ) {
-              Text(option, color = if (selected) CyanAccent else MaterialTheme.colorScheme.onBackground, fontSize = 14.sp, modifier = Modifier.weight(1f))
+              Text(option, color = if (selected) CyanAccent else TextPrimary, fontSize = 14.sp, modifier = Modifier.weight(1f))
               if (selected) Text("✓", color = CyanAccent, fontWeight = FontWeight.Bold)
             }
           }
@@ -417,7 +418,7 @@ fun SettingsScreen(
   if (showNotificationsDialog) {
     AlertDialog(
       onDismissRequest = { showNotificationsDialog = false },
-      title = { Text("Notifications", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold) },
+      title = { Text("Notifications", color = TextPrimary, fontWeight = FontWeight.Bold) },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
           NotificationToggle("Messages", notifications.messages) { viewModel.updateNotifications(notifications.copy(messages = it)) }
@@ -433,7 +434,7 @@ fun SettingsScreen(
   if (showStorageDialog) {
     AlertDialog(
       onDismissRequest = { showStorageDialog = false },
-      title = { Text("Data & Storage", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold) },
+      title = { Text("Data & Storage", color = TextPrimary, fontWeight = FontWeight.Bold) },
       text = { Text("Media is stored in Firebase Storage. You can control Android photo/media permissions and notification permissions from system settings.", color = TextSecondary) },
       confirmButton = { TextButton(onClick = { showStorageDialog = false }) { Text("Close", color = CyanAccent) } },
       containerColor = MaterialTheme.colorScheme.surface
@@ -444,10 +445,10 @@ fun SettingsScreen(
   if (showAboutDialog) {
     AlertDialog(
       onDismissRequest = { showAboutDialog = false },
-      title = { Text("About Liquid Chat", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold) },
+      title = { Text("About Liquid Chat", color = TextPrimary, fontWeight = FontWeight.Bold) },
       text = {
         Text(
-          text = "Liquid Chat v3.5.0\n\nBuilt with the Liquid Glass UI system for real-time messaging, media sharing, groups, privacy controls, and Liquid Glass UI. Firebase and device-level security features require the project configuration described in the setup guide.",
+          text = "Liquid Chat v3.5.0\n\nBuilt with the Liquid Glass UI system for real-time messaging, media sharing, groups, privacy controls. Firebase and device-level security features require the project configuration described in the setup guide.",
           color = TextSecondary,
           fontSize = 14.sp
         )
@@ -464,7 +465,7 @@ fun SettingsScreen(
   if (showBlockedDialog) {
     AlertDialog(
       onDismissRequest = { showBlockedDialog = false },
-      title = { Text("Blocked Users", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold) },
+      title = { Text("Blocked Users", color = TextPrimary, fontWeight = FontWeight.Bold) },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
           if (blockedUserIds.isEmpty()) {
@@ -473,7 +474,7 @@ fun SettingsScreen(
             blockedUserIds.forEach { blockedId ->
               val user = viewModel.users.collectAsState().value.firstOrNull { it.uid == blockedId }
               Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(user?.displayName ?: blockedId.take(8), color = MaterialTheme.colorScheme.onBackground, modifier = Modifier.weight(1f))
+                Text(user?.displayName ?: blockedId.take(8), color = TextPrimary, modifier = Modifier.weight(1f))
                 TextButton(onClick = { viewModel.unblockUser(blockedId) }) { Text("Unblock", color = CyanAccent) }
               }
             }
@@ -488,7 +489,7 @@ fun SettingsScreen(
   if (showDeleteConfirmDialog) {
     AlertDialog(
       onDismissRequest = { if (!deleteBusy) showDeleteConfirmDialog = false },
-      title = { Text("Delete Account?", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold) },
+      title = { Text("Delete Account?", color = TextPrimary, fontWeight = FontWeight.Bold) },
       text = { Text("This permanently removes your Liquid Chat profile and signs you out. This action cannot be undone.", color = TextSecondary) },
       confirmButton = {
         TextButton(enabled = !deleteBusy, onClick = {
@@ -508,7 +509,7 @@ fun SettingsScreen(
   if (showLogoutConfirmDialog) {
     AlertDialog(
       onDismissRequest = { showLogoutConfirmDialog = false },
-      title = { Text("Log Out?", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold) },
+      title = { Text("Log Out?", color = TextPrimary, fontWeight = FontWeight.Bold) },
       text = { Text("Are you sure you want to log out of Liquid Chat?", color = TextSecondary) },
       confirmButton = {
         TextButton(onClick = {
@@ -532,7 +533,7 @@ fun SettingsScreen(
 @Composable
 private fun NotificationToggle(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
   Row(modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-    Text(title, color = MaterialTheme.colorScheme.onBackground, modifier = Modifier.weight(1f), fontSize = 14.sp)
+    Text(title, color = TextPrimary, modifier = Modifier.weight(1f), fontSize = 14.sp)
     Switch(checked = checked, onCheckedChange = onCheckedChange)
   }
 }
@@ -547,7 +548,7 @@ private fun PrivacySelectorRow(title: String, value: String, onClick: () -> Unit
     verticalAlignment = Alignment.CenterVertically
   ) {
     Column(modifier = Modifier.weight(1f)) {
-      Text(title, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+      Text(title, color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
       Text(value, color = TextMuted, fontSize = 12.sp)
     }
     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = TextMuted, modifier = Modifier.size(18.dp))
@@ -573,7 +574,7 @@ fun SettingsNavigationRow(
     Icon(icon, contentDescription = null, tint = CyanAccent, modifier = Modifier.size(24.dp))
     Spacer(modifier = Modifier.width(16.dp))
     Column(modifier = Modifier.weight(1f)) {
-      Text(title, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+      Text(title, color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
       Text(subtitle, color = TextMuted, fontSize = 12.sp)
     }
     Icon(
