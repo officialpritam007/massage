@@ -122,7 +122,7 @@ fun ActiveCallScreen(
         Spacer(modifier = Modifier.height(6.dp))
 
         val statusText = if (!call.isConnected) {
-          if (call.isOutgoing) "Calling • Encrypted WebRTC" else "Incoming Call..."
+          if (call.isOutgoing) "Calling…" else "Incoming Call…"
         } else {
           val mins = call.durationSeconds / 60
           val secs = call.durationSeconds % 60

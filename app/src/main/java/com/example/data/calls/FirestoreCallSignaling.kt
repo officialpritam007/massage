@@ -45,4 +45,14 @@ class FirestoreCallSignaling(private val db: FirebaseFirestore = FirebaseFiresto
         calls.document(callId).addSnapshotListener { snapshot, error ->
             if (error == null && snapshot != null) onChanged(snapshot.data ?: emptyMap())
         }
+    suspend fun setState(callId: String, state: String, endedBy: String? = null) {
+        val values = mutableMapOf<String, Any>("state" to state)
+        if (!endedBy.isNullOrBlank()) values["endedBy"] = endedBy
+        calls.document(callId).set(values, SetOptions.merge()).await()
+    }
+
+    suspend fun accept(callId: String) = setState(callId, "accepted")
+    suspend fun reject(callId: String, userId: String) = setState(callId, "rejected", userId)
+    suspend fun markConnected(callId: String) = setState(callId, "connected")
+
 }

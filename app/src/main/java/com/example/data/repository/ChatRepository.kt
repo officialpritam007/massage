@@ -2,6 +2,7 @@ package com.example.data.repository
 
 import android.net.Uri
 import android.util.Log
+import com.example.data.calls.FirestoreCallSignaling
 import com.example.data.model.ActiveCallState
 import com.example.data.model.AppearanceSettings
 import com.example.data.model.CallRecord
@@ -1273,22 +1274,41 @@ class ChatRepository(
   // --- Calling ---
 
   fun startCall(otherUser: User, type: CallType) {
-    val callId = "call_" + UUID.randomUUID().toString().take(8)
-    _activeCall.value = ActiveCallState(
-      callId = callId,
-      user = otherUser,
-      type = type,
-      isOutgoing = true,
-      isConnected = false
-    )
+    val uid = auth?.currentUser?.uid ?: return
+    scope.launch {
+      try {
+        val callId = callSignaling.createCall(uid, otherUser.uid, type.name.lowercase())
+        _activeCall.value = ActiveCallState(
+          callId = callId,
+          user = otherUser,
+          type = type,
+          isOutgoing = true,
+          isConnected = false
+        )
+        callTimerJob?.cancel()
+        callSignaling.observe(callId) { data ->
+          when (data["state"]?.toString()) {
+            "connected" -> {
+              if (_activeCall.value?.isConnected != true) {
+                _activeCall.update { it?.copy(isConnected = true) }
+                startCallTimer()
+              }
+            }
+            "ended", "rejected", "cancelled" -> endCallLocalOnly()
+          }
+        }
+      } catch (e: Exception) {
+        Log.e("ChatRepository", "Call signaling failed", e)
+      }
+    }
+  }
 
+  private fun startCallTimer() {
     callTimerJob?.cancel()
     callTimerJob = scope.launch {
-      delay(2200)
-      _activeCall.update { it?.copy(isConnected = true) }
       while (_activeCall.value?.isConnected == true) {
         delay(1000)
-        _activeCall.update { it?.copy(durationSeconds = (it.durationSeconds) + 1) }
+        _activeCall.update { it?.copy(durationSeconds = it.durationSeconds + 1) }
       }
     }
   }
@@ -1306,19 +1326,29 @@ class ChatRepository(
   }
 
   fun endCall() {
-    callTimerJob?.cancel()
     val currentCall = _activeCall.value
     if (currentCall != null) {
-      val record = CallRecord(
-        id = currentCall.callId,
-        otherUser = currentCall.user,
-        type = currentCall.type,
-        status = if (currentCall.isOutgoing) CallStatus.OUTGOING else CallStatus.INCOMING,
-        timestamp = System.currentTimeMillis(),
-        durationSeconds = currentCall.durationSeconds
-      )
-      _callRecords.update { listOf(record) + it }
+      scope.launch {
+        runCatching {
+          callSignaling.setState(currentCall.callId, "ended", auth?.currentUser?.uid)
+        }
+      }
     }
+    endCallLocalOnly()
+  }
+
+  private fun endCallLocalOnly() {
+    callTimerJob?.cancel()
+    val currentCall = _activeCall.value ?: return
+    val record = CallRecord(
+      id = currentCall.callId,
+      otherUser = currentCall.user,
+      type = currentCall.type,
+      status = if (currentCall.isOutgoing) CallStatus.OUTGOING else CallStatus.INCOMING,
+      timestamp = System.currentTimeMillis(),
+      durationSeconds = currentCall.durationSeconds
+    )
+    _callRecords.update { listOf(record) + it }
     _activeCall.value = null
   }
 
