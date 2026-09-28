@@ -25,6 +25,7 @@ service firebase.storage {
     match /statuses/{userId}/{statusMediaId} {
       allow read: if signedIn();
       allow write: if owner(userId) && request.resource.size < 20 * 1024 * 1024;
+      allow delete: if owner(userId);
     }
 
     match /groups/{groupId}/photo.jpg {

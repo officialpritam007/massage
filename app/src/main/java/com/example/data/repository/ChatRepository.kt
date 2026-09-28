@@ -642,7 +642,8 @@ class ChatRepository(
       "participantIds" to participantIds,
       "lastMessageText" to displayText,
       "lastMessageTime" to now,
-      "lastMessageSenderId" to currentUid
+      "lastMessageSenderId" to currentUid,
+      "deletedFor" to FieldValue.arrayRemove(currentUid)
     )
     if (recipientUid != null) {
       conversationUpdate["unreadCounts.$recipientUid"] = FieldValue.increment(1)
@@ -947,6 +948,8 @@ class ChatRepository(
     val typingUserIds = (doc.get("typingUserIds") as? List<*>)?.filterIsInstance<String>().orEmpty()
     val isOtherUserTyping = otherUid in typingUserIds
     val archivedFor = (doc.get("archivedFor") as? List<*>)?.filterIsInstance<String>().orEmpty()
+    val deletedFor = (doc.get("deletedFor") as? List<*>)?.filterIsInstance<String>().orEmpty()
+    if (currentUid in deletedFor) return null
     val mutedFor = (doc.get("mutedFor") as? List<*>)?.filterIsInstance<String>().orEmpty()
     val isArchived = currentUid in archivedFor
     val isMuted = currentUid in mutedFor
@@ -1229,6 +1232,101 @@ class ChatRepository(
     _callRecords.value = listOf(call1)
   }
 
+  // --- Delete / Leave Actions ---
+
+  fun deleteChatForMe(conversationId: String) {
+    val uid = auth?.currentUser?.uid ?: _currentUser.value.uid
+    _conversations.update { list -> list.filterNot { it.id == conversationId } }
+    _messages.update { it - conversationId }
+    messageListeners.remove(conversationId)?.remove()
+    scope.launch {
+      try {
+        firestore?.collection("conversations")?.document(conversationId)?.update(
+          "deletedFor", FieldValue.arrayUnion(uid)
+        )?.await()
+      } catch (e: Exception) {
+        Log.e("ChatRepository", "Error deleting chat for me", e)
+      }
+    }
+  }
+
+  fun deleteStatus(statusId: String, onResult: (Result<Unit>) -> Unit = {}) {
+    val uid = auth?.currentUser?.uid ?: _currentUser.value.uid
+    val status = _statuses.value.firstOrNull { it.id == statusId && it.userId == uid }
+    if (status == null) {
+      onResult(Result.failure(IllegalArgumentException("Status not found or not owned by you")))
+      return
+    }
+    _statuses.update { it.filterNot { item -> item.id == statusId } }
+    scope.launch {
+      try {
+        firestore?.collection("statuses")?.document(statusId)?.delete()?.await()
+        if (status.type != StatusType.TEXT && status.content.startsWith("https://")) {
+          runCatching { storage?.getReferenceFromUrl(status.content)?.delete()?.await() }
+        }
+        onResult(Result.success(Unit))
+      } catch (e: Exception) {
+        Log.e("ChatRepository", "Error deleting status", e)
+        onResult(Result.failure(e))
+      }
+    }
+  }
+
+  fun deleteGroup(groupId: String, onResult: (Result<Unit>) -> Unit = {}) {
+    val uid = auth?.currentUser?.uid ?: _currentUser.value.uid
+    val group = _groups.value.firstOrNull { it.id == groupId }
+    if (group == null || uid !in group.adminIds) {
+      onResult(Result.failure(IllegalStateException("Only a group admin can delete this group")))
+      return
+    }
+    _groups.update { it.filterNot { item -> item.id == groupId } }
+    _messages.update { it - groupId }
+    scope.launch {
+      try {
+        firestore?.collection("groups")?.document(groupId)?.delete()?.await()
+        onResult(Result.success(Unit))
+      } catch (e: Exception) {
+        Log.e("ChatRepository", "Error deleting group", e)
+        onResult(Result.failure(e))
+      }
+    }
+  }
+
+  fun leaveGroup(groupId: String, onResult: (Result<Unit>) -> Unit = {}) {
+    val uid = auth?.currentUser?.uid ?: _currentUser.value.uid
+    val group = _groups.value.firstOrNull { it.id == groupId }
+    if (group == null) {
+      onResult(Result.failure(IllegalArgumentException("Group not found")))
+      return
+    }
+    if (uid in group.adminIds && group.adminIds.size == 1) {
+      onResult(Result.failure(IllegalStateException("Transfer admin rights or delete the group before leaving")))
+      return
+    }
+    _groups.update { list ->
+      list.mapNotNull { g ->
+        if (g.id != groupId) g
+        else {
+          val members = g.members.filterNot { it.uid == uid }
+          val admins = g.adminIds.filterNot { it == uid }
+          if (members.isEmpty()) null else g.copy(members = members, adminIds = admins)
+        }
+      }
+    }
+    scope.launch {
+      try {
+        firestore?.collection("groups")?.document(groupId)?.update(
+          "memberIds", FieldValue.arrayRemove(uid),
+          "adminIds", FieldValue.arrayRemove(uid)
+        )?.await()
+        onResult(Result.success(Unit))
+      } catch (e: Exception) {
+        Log.e("ChatRepository", "Error leaving group", e)
+        onResult(Result.failure(e))
+      }
+    }
+  }
+
   // --- Group Actions ---
 
   fun createGroup(name: String, description: String, selectedUserIds: List<String>) {
@@ -1247,6 +1345,29 @@ class ChatRepository(
     )
 
     _groups.update { listOf(newGroup) + it }
+    scope.launch {
+      try {
+        firestore?.collection("groups")?.document(newGroup.id)?.set(
+          mapOf(
+            "id" to newGroup.id,
+            "name" to newGroup.name,
+            "description" to newGroup.description,
+            "photoUrl" to newGroup.photoUrl,
+            "adminIds" to newGroup.adminIds,
+            "memberIds" to newGroup.members.map { it.uid },
+            "createdAt" to newGroup.createdAt,
+            "lastMessageText" to newGroup.lastMessageText,
+            "lastMessageTime" to newGroup.lastMessageTime,
+            "lastMessageSender" to newGroup.lastMessageSender,
+            "onlyAdminsCanPost" to newGroup.onlyAdminsCanPost,
+            "isMuted" to newGroup.isMuted,
+            "isPinned" to newGroup.isPinned
+          ), SetOptions.merge()
+        )?.await()
+      } catch (e: Exception) {
+        Log.e("ChatRepository", "Error persisting group", e)
+      }
+    }
   }
 
   fun sendGroupMessage(groupId: String, text: String) {

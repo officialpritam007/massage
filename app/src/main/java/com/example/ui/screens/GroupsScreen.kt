@@ -22,6 +22,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Checkbox
@@ -29,6 +32,8 @@ import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -79,6 +84,7 @@ fun GroupsScreen(
 ) {
   val groups by viewModel.groups.collectAsState()
   val users by viewModel.users.collectAsState()
+  val currentUser by viewModel.currentUser.collectAsState()
 
   var showCreateGroupDialog by remember { mutableStateOf(false) }
 
@@ -160,7 +166,10 @@ fun GroupsScreen(
         items(groups, key = { it.id }) { group ->
           GroupRowItem(
             group = group,
-            onClick = { onNavigateToGroupChat(group.id) }
+            onClick = { onNavigateToGroupChat(group.id) },
+            isAdmin = currentUser.uid in group.adminIds,
+            onDelete = { viewModel.deleteGroup(group.id) },
+            onLeave = { viewModel.leaveGroup(group.id) }
           )
         }
       }
@@ -293,8 +302,13 @@ fun GroupsScreen(
 @Composable
 fun GroupRowItem(
   group: Group,
-  onClick: () -> Unit
+  onClick: () -> Unit,
+  isAdmin: Boolean,
+  onDelete: () -> Unit,
+  onLeave: () -> Unit
 ) {
+  var menuExpanded by remember { mutableStateOf(false) }
+  var confirmAction by remember { mutableStateOf<String?>(null) }
   GlassCard(
     modifier = Modifier
       .fillMaxWidth()
@@ -379,8 +393,51 @@ fun GroupRowItem(
             fontSize = 11.sp
           )
         )
-
         GlassBadge(count = group.unreadCount)
+      }
+
+      Box {
+        IconButton(onClick = { menuExpanded = true }) {
+          Icon(Icons.Default.MoreVert, contentDescription = "Group actions", tint = TextMuted)
+        }
+        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+          DropdownMenuItem(
+            text = { Text("Leave group") },
+            leadingIcon = { Icon(Icons.Default.ExitToApp, contentDescription = null) },
+            onClick = { menuExpanded = false; confirmAction = "leave" }
+          )
+          if (isAdmin) {
+            DropdownMenuItem(
+              text = { Text("Delete group") },
+              leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
+              onClick = { menuExpanded = false; confirmAction = "delete" }
+            )
+          }
+        }
+      }
+    }
+  }
+
+  confirmAction?.let { action ->
+    Dialog(onDismissRequest = { confirmAction = null }) {
+      GlassCard(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(24.dp)) {
+        Column(modifier = Modifier.padding(20.dp)) {
+          Text(if (action == "delete") "Delete group?" else "Leave group?", color = TextPrimary, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+          Spacer(modifier = Modifier.height(8.dp))
+          Text(
+            if (action == "delete") "This removes the group for its members. This action cannot be undone." else "You will leave this group and it will disappear from your groups list.",
+            color = TextSecondary
+          )
+          Spacer(modifier = Modifier.height(18.dp))
+          Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Text("Cancel", color = TextSecondary, modifier = Modifier.clickable { confirmAction = null }.padding(10.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Confirm", color = CyanAccent, fontWeight = FontWeight.Bold, modifier = Modifier.clickable {
+              confirmAction = null
+              if (action == "delete") onDelete() else onLeave()
+            }.padding(10.dp))
+          }
+        }
       }
     }
   }

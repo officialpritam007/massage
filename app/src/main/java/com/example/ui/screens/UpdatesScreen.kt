@@ -32,9 +32,13 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.RemoveRedEye
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -45,6 +49,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -95,6 +100,7 @@ fun UpdatesScreen(
 
   var viewingStatus by remember { mutableStateOf<UserStatus?>(null) }
   var showPostStatusDialog by remember { mutableStateOf(false) }
+  var statusToDelete by remember { mutableStateOf<UserStatus?>(null) }
   val context = LocalContext.current
 
   val imagePicker = rememberLauncherForActivityResult(
@@ -338,7 +344,44 @@ fun UpdatesScreen(
                   )
                 }
               }
+
+              if (status.userId == currentUser.uid) {
+                var menuExpanded by remember(status.id) { mutableStateOf(false) }
+                Box {
+                  IconButton(onClick = { menuExpanded = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "Status actions", tint = TextMuted)
+                  }
+                  DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    DropdownMenuItem(
+                      text = { Text("Delete status") },
+                      leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
+                      onClick = { menuExpanded = false; statusToDelete = status }
+                    )
+                  }
+                }
+              }
             }
+          }
+        }
+      }
+    }
+  }
+
+  statusToDelete?.let { status ->
+    Dialog(onDismissRequest = { statusToDelete = null }) {
+      GlassCard(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(24.dp)) {
+        Column(modifier = Modifier.padding(20.dp)) {
+          Text("Delete status?", color = TextPrimary, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+          Spacer(modifier = Modifier.height(8.dp))
+          Text("Your status and its uploaded media will be removed.", color = TextSecondary)
+          Spacer(modifier = Modifier.height(18.dp))
+          Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Text("Cancel", color = TextSecondary, modifier = Modifier.clickable { statusToDelete = null }.padding(10.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Delete", color = CyanAccent, fontWeight = FontWeight.Bold, modifier = Modifier.clickable {
+              statusToDelete = null
+              viewModel.deleteStatus(status.id)
+            }.padding(10.dp))
           }
         }
       }

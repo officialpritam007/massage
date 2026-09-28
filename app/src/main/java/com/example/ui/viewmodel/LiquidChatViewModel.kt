@@ -106,6 +106,8 @@ class LiquidChatViewModel(
     repository.setConversationArchived(conversationId, archived)
   }
 
+  fun deleteChatForMe(conversationId: String) = repository.deleteChatForMe(conversationId)
+
   // Messaging
   fun uploadChatMedia(
     conversationId: String,
@@ -165,6 +167,10 @@ class LiquidChatViewModel(
     repository.sendGroupMessage(groupId, text)
   }
 
+  fun deleteGroup(groupId: String, onResult: (Result<Unit>) -> Unit = {}) = repository.deleteGroup(groupId, onResult)
+
+  fun leaveGroup(groupId: String, onResult: (Result<Unit>) -> Unit = {}) = repository.leaveGroup(groupId, onResult)
+
   // Statuses
   fun postStatus(type: StatusType, content: String, bgIndex: Int = 0) {
     repository.postStatus(type, content, bgIndex)
@@ -173,6 +179,8 @@ class LiquidChatViewModel(
   fun markStatusViewed(statusId: String) {
     repository.markStatusViewed(statusId)
   }
+
+  fun deleteStatus(statusId: String, onResult: (Result<Unit>) -> Unit = {}) = repository.deleteStatus(statusId, onResult)
 
   fun uploadAndPostStatus(uri: Uri, type: StatusType, bgIndex: Int = 0, onResult: (Result<Unit>) -> Unit = {}) =
     repository.uploadAndPostStatus(uri, type, bgIndex, onResult)

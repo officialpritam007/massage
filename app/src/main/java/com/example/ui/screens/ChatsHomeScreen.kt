@@ -30,6 +30,8 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PushPin
@@ -40,6 +42,8 @@ import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -49,6 +53,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -382,6 +387,7 @@ fun ChatsHomeScreen(
             onClick = { onNavigateToConversation(conv.id) },
             onAvatarClick = { onNavigateToProfile(conv.otherUser.uid) },
             onArchiveToggle = { viewModel.setConversationArchived(conv.id, !conv.isArchived) },
+            onDelete = { viewModel.deleteChatForMe(conv.id) },
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
           )
         }
@@ -413,9 +419,12 @@ fun ConversationRowItem(
   onClick: () -> Unit,
   onAvatarClick: () -> Unit,
   onArchiveToggle: () -> Unit,
+  onDelete: () -> Unit,
   modifier: Modifier = Modifier
 ) {
   val other = conversation.otherUser
+  var menuExpanded by remember { mutableStateOf(false) }
+  var confirmDelete by remember { mutableStateOf(false) }
 
   GlassCard(
     modifier = modifier
@@ -534,13 +543,40 @@ fun ConversationRowItem(
 
         GlassBadge(count = conversation.unreadCount)
       }
-      IconButton(onClick = onArchiveToggle) {
-        Icon(
-          imageVector = if (conversation.isArchived) Icons.Default.Unarchive else Icons.Default.Archive,
-          contentDescription = if (conversation.isArchived) "Unarchive" else "Archive",
-          tint = TextMuted,
-          modifier = Modifier.size(20.dp)
-        )
+      Box {
+        IconButton(onClick = { menuExpanded = true }) {
+          Icon(Icons.Default.MoreVert, contentDescription = "Chat actions", tint = TextMuted)
+        }
+        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+          DropdownMenuItem(
+            text = { Text(if (conversation.isArchived) "Unarchive" else "Archive") },
+            leadingIcon = { Icon(if (conversation.isArchived) Icons.Default.Unarchive else Icons.Default.Archive, contentDescription = null) },
+            onClick = { menuExpanded = false; onArchiveToggle() }
+          )
+          DropdownMenuItem(
+            text = { Text("Delete chat") },
+            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
+            onClick = { menuExpanded = false; confirmDelete = true }
+          )
+        }
+      }
+    }
+  }
+
+  if (confirmDelete) {
+    Dialog(onDismissRequest = { confirmDelete = false }) {
+      GlassCard(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(24.dp)) {
+        Column(modifier = Modifier.padding(20.dp)) {
+          Text("Delete chat?", color = TextPrimary, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+          Spacer(modifier = Modifier.height(8.dp))
+          Text("This removes the conversation from your chat list. The other person will keep their copy.", color = TextSecondary)
+          Spacer(modifier = Modifier.height(18.dp))
+          Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Text("Cancel", color = TextSecondary, modifier = Modifier.clickable { confirmDelete = false }.padding(10.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Delete", color = CyanAccent, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { confirmDelete = false; onDelete() }.padding(10.dp))
+          }
+        }
       }
     }
   }
