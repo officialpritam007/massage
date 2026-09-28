@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import android.widget.Toast
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -48,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -85,13 +89,14 @@ fun GroupsScreen(
   val currentUser by viewModel.currentUser.collectAsState()
 
   var showCreateGroupDialog by remember { mutableStateOf(false) }
+  val context = LocalContext.current
 
   LiquidBackground(modifier = modifier) {
     Scaffold(
       containerColor = Color.Transparent,
       topBar = {
         GlassCard(
-          modifier = Modifier.fillMaxWidth(),
+          modifier = Modifier.fillMaxWidth().statusBarsPadding(),
           shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
           elevation = 8.dp
         ) {
@@ -165,7 +170,10 @@ fun GroupsScreen(
             onClick = { onNavigateToGroupChat(group.id) },
             isAdmin = currentUser.uid in group.adminIds,
             onDelete = { viewModel.deleteGroup(group.id) },
-            onLeave = { viewModel.leaveGroup(group.id) }
+            onLeave = { viewModel.leaveGroup(group.id) { result ->
+              result.onSuccess { Toast.makeText(context, "Left group", Toast.LENGTH_SHORT).show() }
+                .onFailure { Toast.makeText(context, it.message ?: "Could not leave group", Toast.LENGTH_LONG).show() }
+            } }
           )
         }
       }
@@ -426,7 +434,7 @@ fun GroupRowItem(
           )
           Spacer(modifier = Modifier.height(18.dp))
           Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            Text("Cancel", color = TextSecondary, modifier = Modifier.clickable { confirmAction = null }.padding(10.dp))
+            Text("Cancel", color = TextPrimary, modifier = Modifier.clickable { confirmAction = null }.padding(10.dp))
             Spacer(modifier = Modifier.width(8.dp))
             Text("Confirm", color = CyanAccent, fontWeight = FontWeight.Bold, modifier = Modifier.clickable {
               confirmAction = null

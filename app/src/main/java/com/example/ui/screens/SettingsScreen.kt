@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,7 +27,6 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
@@ -103,7 +103,7 @@ fun SettingsScreen(
       containerColor = Color.Transparent,
       topBar = {
         GlassCard(
-          modifier = Modifier.fillMaxWidth(),
+          modifier = Modifier.fillMaxWidth().statusBarsPadding(),
           shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
           elevation = 8.dp
         ) {
@@ -209,7 +209,7 @@ fun SettingsScreen(
             SettingsNavigationRow(
               icon = Icons.Default.Lock,
               title = "Privacy & Security",
-              subtitle = "Last seen, read receipts, end-to-end encryption",
+              subtitle = "Last seen, read receipts, privacy controls",
               onClick = { showPrivacyDialog = true }
             )
 
@@ -237,7 +237,7 @@ fun SettingsScreen(
             SettingsNavigationRow(
               icon = Icons.Default.Info,
               title = "About Liquid Chat",
-              subtitle = "Version 3.5.0 • Liquid Glass Protocol",
+              subtitle = "Liquid Glass messaging • Groups • Privacy controls",
               onClick = { showAboutDialog = true },
               testTag = "settings_about_row"
             )
@@ -277,7 +277,14 @@ fun SettingsScreen(
           }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+          text = "Developed by: Pritam Pal\nContact info: officialpritam07@gmail.com",
+          color = TextMuted,
+          fontSize = 11.sp,
+          modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+        )
+        Spacer(modifier = Modifier.height(16.dp))
       }
     }
   }
@@ -448,7 +455,7 @@ fun SettingsScreen(
       title = { Text("About Liquid Chat", color = TextPrimary, fontWeight = FontWeight.Bold) },
       text = {
         Text(
-          text = "Liquid Chat v3.5.0\n\nBuilt with the Liquid Glass UI system for real-time messaging, media sharing, groups, privacy controls. Firebase and device-level security features require the project configuration described in the setup guide.",
+          text = "Liquid Chat\n\nReal-time messaging, media sharing, groups and privacy controls.\n\nDeveloped by: Pritam Pal\nContact info: officialpritam07@gmail.com",
           color = TextSecondary,
           fontSize = 14.sp
         )

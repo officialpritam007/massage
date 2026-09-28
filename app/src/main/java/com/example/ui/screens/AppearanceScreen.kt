@@ -23,7 +23,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.MotionPhotosOff
-import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -64,14 +63,6 @@ fun AppearanceScreen(
   val appearance by viewModel.appearance.collectAsState()
   val glassConfig = LocalLiquidGlass.current
 
-  val accentColors = listOf(
-    "#00D2FF" to "Neon Cyan",
-    "#4FACFE" to "Sky Azure",
-    "#10B981" to "Emerald",
-    "#FF3B5C" to "Coral",
-    "#8B5CF6" to "Violet",
-    "#FF7A00" to "Amber"
-  )
 
   LiquidBackground(modifier = modifier) {
     Scaffold(
@@ -263,38 +254,49 @@ fun AppearanceScreen(
           }
         }
 
-        // Accent Color Selection
+        // Boxy ↔ Rounded
         GlassCard(
           modifier = Modifier.fillMaxWidth(),
           shape = RoundedCornerShape(24.dp)
         ) {
           Column(modifier = Modifier.padding(18.dp)) {
-            Text(
-              text = "ACCENT COLOR PALETTE",
-              style = MaterialTheme.typography.labelSmall.copy(color = TextMuted, fontWeight = FontWeight.Bold)
-            )
-            Spacer(modifier = Modifier.height(14.dp))
             Row(
               modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceAround
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
             ) {
-              accentColors.forEach { (hex, name) ->
-                val color = Color(android.graphics.Color.parseColor(hex))
-                val isSelected = appearance.accentColorHex.equals(hex, ignoreCase = true)
-                Box(
-                  modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(color)
-                    .border(
-                      width = if (isSelected) 3.dp else 1.dp,
-                      color = if (isSelected) Color.White else Color.Transparent,
-                      shape = CircleShape
-                    )
-                    .clickable { viewModel.updateAppearance(appearance.copy(accentColorHex = hex)) }
-                )
-              }
+              Text("Boxy ↔ Rounded", color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+              Text("${appearance.cornerRadiusDp.toInt()} dp", color = CyanAccent, fontWeight = FontWeight.Bold, fontSize = 14.sp)
             }
+            Slider(
+              value = appearance.cornerRadiusDp,
+              onValueChange = { viewModel.updateAppearance(appearance.copy(cornerRadiusDp = it)) },
+              valueRange = 0f..32f,
+              colors = SliderDefaults.colors(thumbColor = CyanAccent, activeTrackColor = CyanAccent)
+            )
+          }
+        }
+
+        // Border Strength
+        GlassCard(
+          modifier = Modifier.fillMaxWidth(),
+          shape = RoundedCornerShape(24.dp)
+        ) {
+          Column(modifier = Modifier.padding(18.dp)) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Text("Glass Border Strength", color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+              Text("${(appearance.borderStrength * 100).toInt()}%", color = CyanAccent, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            }
+            Slider(
+              value = appearance.borderStrength,
+              onValueChange = { viewModel.updateAppearance(appearance.copy(borderStrength = it)) },
+              valueRange = 0.1f..1f,
+              colors = SliderDefaults.colors(thumbColor = CyanAccent, activeTrackColor = CyanAccent)
+            )
           }
         }
 
@@ -322,6 +324,13 @@ fun AppearanceScreen(
             )
           }
         }
+
+        GlassButton(
+          text = "Reset Glass Defaults",
+          onClick = { viewModel.updateAppearance(appearance.copy(glassIntensity = 0.85f, blurAlpha = 0.70f, cornerRadiusDp = 24f, borderStrength = 0.70f, isReducedMotion = false)) },
+          modifier = Modifier.fillMaxWidth(),
+          isPrimary = false
+        )
 
         Spacer(modifier = Modifier.height(20.dp))
       }

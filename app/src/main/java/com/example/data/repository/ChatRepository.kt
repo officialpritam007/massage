@@ -889,6 +889,8 @@ class ChatRepository(
         isDarkMode = appearanceMap["isDarkMode"] as? Boolean ?: false,
         glassIntensity = (appearanceMap["glassIntensity"] as? Number)?.toFloat() ?: 0.85f,
         blurAlpha = (appearanceMap["blurAlpha"] as? Number)?.toFloat() ?: 0.70f,
+        cornerRadiusDp = (appearanceMap["cornerRadiusDp"] as? Number)?.toFloat() ?: 24f,
+        borderStrength = (appearanceMap["borderStrength"] as? Number)?.toFloat() ?: 0.70f,
         accentColorHex = appearanceMap["accentColorHex"] as? String ?: "#176BFF",
         isReducedMotion = appearanceMap["isReducedMotion"] as? Boolean ?: false
       )
@@ -1303,22 +1305,25 @@ class ChatRepository(
       onResult(Result.failure(IllegalStateException("Transfer admin rights or delete the group before leaving")))
       return
     }
-    _groups.update { list ->
-      list.mapNotNull { g ->
-        if (g.id != groupId) g
-        else {
-          val members = g.members.filterNot { it.uid == uid }
-          val admins = g.adminIds.filterNot { it == uid }
-          if (members.isEmpty()) null else g.copy(members = members, adminIds = admins)
-        }
-      }
-    }
     scope.launch {
       try {
-        firestore?.collection("groups")?.document(groupId)?.update(
+        val ref = firestore?.collection("groups")?.document(groupId)
+          ?: throw IllegalStateException("Firebase is unavailable")
+        ref.update(
           "memberIds", FieldValue.arrayRemove(uid),
           "adminIds", FieldValue.arrayRemove(uid)
-        )?.await()
+        ).await()
+
+        _groups.update { list ->
+          list.mapNotNull { g ->
+            if (g.id != groupId) g
+            else {
+              val members = g.members.filterNot { it.uid == uid }
+              val admins = g.adminIds.filterNot { it == uid }
+              if (members.isEmpty()) null else g.copy(members = members, adminIds = admins)
+            }
+          }
+        }
         onResult(Result.success(Unit))
       } catch (e: Exception) {
         Log.e("ChatRepository", "Error leaving group", e)
@@ -1787,6 +1792,8 @@ class ChatRepository(
               "isDarkMode" to newSettings.isDarkMode,
               "glassIntensity" to newSettings.glassIntensity,
               "blurAlpha" to newSettings.blurAlpha,
+              "cornerRadiusDp" to newSettings.cornerRadiusDp,
+              "borderStrength" to newSettings.borderStrength,
               "accentColorHex" to newSettings.accentColorHex,
               "isReducedMotion" to newSettings.isReducedMotion
             )

@@ -1,16 +1,18 @@
-# Liquid Chat - Call/Status UI Removal
+# Liquid Chat Final Fix Pass
 
-## Changes
-- Removed Calls, Video Calls, incoming-call UI and call-history navigation from the app UI.
-- Removed Status/Updates screen, status story row and status bottom-navigation item.
-- Removed audio/video call buttons from conversation and contact profile screens.
-- Bottom navigation is now: Chats, Groups, Settings.
-- Removed microphone permission from the Android manifest; camera/media permissions remain for messaging attachments.
-- Removed call-specific FCM intent data and changed the notification channel description to message notifications.
-- Removed stale `CallsScreen.kt`, `UpdatesScreen.kt`, and `ActiveCallScreen.kt` source files.
+This source pass implements the confirmed messaging/UI fixes on top of v4.0.5.
 
-## Important
-The existing repository still contains legacy Firebase call/status model/repository code for compatibility with existing data. Those features are no longer reachable from the user-facing app UI.
+- Real voice-message recording using Android MediaRecorder, Firebase Storage upload, Firestore message metadata, and real playback with MediaPlayer.
+- Group Leave waits for Firebase success before removing the group locally and reports success/failure.
+- Offline chat headers show formatted Last seen time instead of only Offline.
+- Keyboard handling uses adjustResize + Compose IME padding so the composer follows the keyboard without moving the top bar.
+- Home floating new-chat button removed; Home filters are All / Unread / Favorites / Archived.
+- Home/Groups/Settings/Conversation top bars use status-bar-safe spacing.
+- Bottom navigation is icon-only and safe-area aware.
+- Calls, Status/Updates, and Business user-facing routes/screens remain removed.
+- Light-mode glass surfaces are more opaque/readable.
+- Glass appearance controls include refraction, frosted transparency, boxy-to-rounded corner radius, border strength, live preview, and reset-to-default.
+- Settings privacy wording no longer claims end-to-end encryption.
+- Settings includes developer/contact footer.
 
-## Build
-This source was checked for stale references to the removed navigation/screens. A GitHub Actions build should be run to verify the full Android toolchain compile; no local Android SDK build was claimed here.
+Build note: this environment does not contain the Android SDK/Gradle distribution, so an Android APK build was not locally verified. Use the included GitHub Actions workflow for the authoritative build result.

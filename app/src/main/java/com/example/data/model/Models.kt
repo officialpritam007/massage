@@ -135,6 +135,8 @@ data class AppearanceSettings(
   val isDarkMode: Boolean = false,
   val glassIntensity: Float = 0.85f,
   val blurAlpha: Float = 0.70f,
+  val cornerRadiusDp: Float = 24f,
+  val borderStrength: Float = 0.70f,
   val accentColorHex: String = "#176BFF",
   val isReducedMotion: Boolean = false
 )

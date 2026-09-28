@@ -90,19 +90,20 @@ fun GlassCard(
   val surface = if (config.isDark) {
     Color.White.copy(alpha = 0.075f + config.glassIntensity * 0.025f)
   } else {
-    Color.White.copy(alpha = 0.58f + config.glassIntensity * 0.12f)
+    Color.White.copy(alpha = 0.68f + config.glassIntensity * 0.10f)
   }
   val border = borderColor ?: if (config.isDark) GlassBorderStrokeDark else GlassBorderStrokeLight
+  val resolvedShape: Shape = RoundedCornerShape(config.cornerRadiusDp.coerceIn(0f, 40f).dp)
   val topHighlight = if (config.isDark) GlassHighlight.copy(alpha = 0.30f) else Color.White.copy(alpha = 0.95f)
   val shadow = if (config.isDark) Color.Black.copy(alpha = 0.42f) else Color.Black.copy(alpha = 0.10f)
 
   Box(
     modifier = modifier
       .then(Modifier.graphicsLayerCompat(scale))
-      .shadow(elevation, shape, ambientColor = shadow, spotColor = shadow)
-      .clip(shape)
+      .shadow(elevation, resolvedShape, ambientColor = shadow, spotColor = shadow)
+      .clip(resolvedShape)
       .background(backgroundColor ?: surface)
-      .border(BorderStroke(1.dp, Brush.verticalGradient(listOf(topHighlight, border.copy(alpha = border.alpha.coerceAtLeast(0.10f))))), shape)
+      .border(BorderStroke(1.dp, Brush.verticalGradient(listOf(topHighlight, border.copy(alpha = (border.alpha * config.borderStrength).coerceIn(0.06f, 1f))))), resolvedShape)
       .then(
         if (onClick != null) Modifier.clickable(
           interactionSource = interactionSource,
@@ -222,7 +223,7 @@ fun GlassTextField(
     modifier = modifier
       .defaultMinSize(minHeight = 52.dp)
       .clip(shape)
-      .background(if (config.isDark) Color.White.copy(alpha = 0.075f) else Color.White.copy(alpha = 0.68f))
+      .background(if (config.isDark) Color.White.copy(alpha = 0.075f) else Color.White.copy(alpha = 0.76f))
       .border(1.dp, if (config.isDark) GlassBorderStrokeDark else GlassBorderStrokeLight, shape)
       .padding(horizontal = 16.dp, vertical = 12.dp)
       .testTag(testTag),

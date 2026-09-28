@@ -1,6 +1,12 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.media.MediaRecorder
 import android.net.Uri
+import android.os.Build
+import java.io.File
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,6 +26,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -70,6 +78,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -101,6 +110,7 @@ import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.viewmodel.LiquidChatViewModel
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Job
@@ -145,6 +155,79 @@ fun ConversationScreen(
   val typingScope = rememberCoroutineScope()
   var typingJob by remember { mutableStateOf<Job?>(null) }
   var showChatSettings by remember { mutableStateOf(false) }
+  var isRecordingVoice by remember { mutableStateOf(false) }
+  var recordingStartedAt by remember { mutableStateOf(0L) }
+  var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
+  var recordingFile by remember { mutableStateOf<File?>(null) }
+  val context = LocalContext.current
+
+  fun finishVoiceRecording() {
+    val activeRecorder = recorder ?: return
+    val file = recordingFile
+    runCatching { activeRecorder.stop() }
+    runCatching { activeRecorder.release() }
+    recorder = null
+    recordingFile = null
+    isRecordingVoice = false
+    val duration = ((System.currentTimeMillis() - recordingStartedAt) / 1000L).toInt().coerceAtLeast(1)
+    if (file != null && file.exists() && file.length() > 0L) {
+      viewModel.uploadChatMedia(conversationId, Uri.fromFile(file), MessageType.VOICE) { result ->
+        result.onSuccess { url ->
+          viewModel.sendMessage(
+            conversationId = conversationId,
+            text = "",
+            type = MessageType.VOICE,
+            mediaUrl = url,
+            voiceDurationSeconds = duration,
+            replyToId = replyingTo?.id,
+            replyToText = replyingTo?.text,
+            replyToSender = replyingTo?.senderName
+          )
+          file.delete()
+          replyingTo = null
+        }.onFailure {
+          Toast.makeText(context, "Voice message upload failed", Toast.LENGTH_SHORT).show()
+          file.delete()
+        }
+      }
+    }
+  }
+
+  fun startVoiceRecording() {
+    if (isRecordingVoice) {
+      finishVoiceRecording()
+      return
+    }
+    val output = File.createTempFile("voice_", ".m4a", context.cacheDir)
+    val newRecorder = MediaRecorder().apply {
+      setAudioSource(MediaRecorder.AudioSource.MIC)
+      setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+      setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+      setAudioEncodingBitRate(128000)
+      setAudioSamplingRate(44100)
+      setOutputFile(output.absolutePath)
+      prepare()
+      start()
+    }
+    recordingFile = output
+    recordingStartedAt = System.currentTimeMillis()
+    recorder = newRecorder
+    isRecordingVoice = true
+  }
+
+  val microphonePermissionLauncher = rememberLauncherForActivityResult(
+    ActivityResultContracts.RequestPermission()
+  ) { granted ->
+    if (granted) startVoiceRecording()
+    else Toast.makeText(context, "Microphone permission is required for voice messages", Toast.LENGTH_SHORT).show()
+  }
+
+  DisposableEffect(Unit) {
+    onDispose {
+      recorder?.let { r -> runCatching { if (isRecordingVoice) r.stop() }; runCatching { r.release() } }
+      recordingFile?.delete()
+    }
+  }
 
   val imagePicker = rememberLauncherForActivityResult(
     ActivityResultContracts.GetContent()
@@ -263,7 +346,7 @@ fun ConversationScreen(
       topBar = {
         // Conversation Top Bar
         GlassCard(
-          modifier = Modifier.fillMaxWidth(),
+          modifier = Modifier.fillMaxWidth().statusBarsPadding(),
           shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
           elevation = 8.dp
         ) {
@@ -312,7 +395,11 @@ fun ConversationScreen(
                   overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                  text = if (conversation?.isTyping == true) "Typing..." else if (conversation?.isOnline == true) "Active now" else "Offline",
+                  text = when {
+                    conversation?.isTyping == true -> "Typing..."
+                    conversation?.isOnline == true -> "Online"
+                    else -> formatLastSeen(otherUser.lastSeen)
+                  },
                   style = MaterialTheme.typography.bodySmall.copy(
                     color = if (conversation?.isOnline == true) EmeraldOnline else TextMuted,
                     fontSize = 11.sp
@@ -344,6 +431,7 @@ fun ConversationScreen(
         Column(
           modifier = Modifier
             .fillMaxWidth()
+            .imePadding()
             .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
           // Reply Banner
@@ -459,18 +547,18 @@ fun ConversationScreen(
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // Send / Voice Button
+            // Send / Real Voice Button
             val isSend = inputText.isNotBlank()
             Box(
               modifier = Modifier
                 .size(46.dp)
                 .clip(CircleShape)
                 .background(
-                  Brush.linearGradient(
+                  if (isRecordingVoice) Brush.solidColor(Color(0xFFFF4B72)) else Brush.linearGradient(
                     if (isSend) listOf(CyanAccent, ElectricBlue) else listOf(Color(0xFF1E293B), Color(0xFF0F172A))
                   )
                 )
-                .border(1.dp, if (isSend) Color.White.copy(alpha = 0.4f) else GlassBorderStroke, CircleShape)
+                .border(1.dp, if (isSend || isRecordingVoice) Color.White.copy(alpha = 0.4f) else GlassBorderStroke, CircleShape)
                 .clickable {
                   if (isSend) {
                     viewModel.sendMessage(
@@ -484,23 +572,20 @@ fun ConversationScreen(
                     typingJob?.cancel()
                     viewModel.setTyping(conversationId, false)
                     replyingTo = null
+                  } else if (isRecordingVoice) {
+                    finishVoiceRecording()
                   } else {
-                    // Send a sample voice note (0:18)
-                    viewModel.sendMessage(
-                      conversationId = conversationId,
-                      text = "Voice message",
-                      type = MessageType.VOICE,
-                      voiceDurationSeconds = 18
-                    )
+                    val granted = androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                    if (granted) startVoiceRecording() else microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                   }
                 }
                 .testTag("send_or_mic_button"),
               contentAlignment = Alignment.Center
             ) {
               Icon(
-                imageVector = if (isSend) Icons.AutoMirrored.Filled.Send else Icons.Default.Mic,
-                contentDescription = if (isSend) "Send" else "Voice",
-                tint = if (isSend) Color.Black else CyanAccent,
+                imageVector = if (isSend) Icons.AutoMirrored.Filled.Send else if (isRecordingVoice) Icons.Default.Done else Icons.Default.Mic,
+                contentDescription = if (isSend) "Send" else if (isRecordingVoice) "Stop recording" else "Record voice message",
+                tint = if (isSend) Color.Black else Color.White,
                 modifier = Modifier.size(20.dp)
               )
             }
@@ -685,13 +770,9 @@ fun ConversationScreen(
             icon = Icons.Default.Mic,
             color = EmeraldOnline,
             onClick = {
-              viewModel.sendMessage(
-                conversationId = conversationId,
-                text = "Voice message",
-                type = MessageType.VOICE,
-                voiceDurationSeconds = 28
-              )
               showAttachmentSheet = false
+              val granted = androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+              if (granted) startVoiceRecording() else microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
             }
           )
         }
@@ -728,6 +809,19 @@ fun AttachmentOption(
     }
     Spacer(modifier = Modifier.height(8.dp))
     Text(title, style = MaterialTheme.typography.labelSmall.copy(color = TextSecondary))
+  }
+}
+
+private fun formatLastSeen(timestamp: Long): String {
+  if (timestamp <= 0L) return "Offline"
+  val now = Calendar.getInstance()
+  val then = Calendar.getInstance().apply { timeInMillis = timestamp }
+  val time = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(timestamp))
+  return when {
+    now.get(Calendar.YEAR) == then.get(Calendar.YEAR) && now.get(Calendar.DAY_OF_YEAR) == then.get(Calendar.DAY_OF_YEAR) -> "Last seen today at $time"
+    now.get(Calendar.YEAR) == then.get(Calendar.YEAR) && now.get(Calendar.DAY_OF_YEAR) - then.get(Calendar.DAY_OF_YEAR) == 1 -> "Last seen yesterday at $time"
+    now.get(Calendar.YEAR) == then.get(Calendar.YEAR) -> "Last seen ${SimpleDateFormat("d MMM", Locale.getDefault()).format(Date(timestamp))} at $time"
+    else -> "Last seen ${SimpleDateFormat("d MMM yyyy", Locale.getDefault()).format(Date(timestamp))} at $time"
   }
 }
 
@@ -851,7 +945,8 @@ fun MessageBubble(
         // Voice Message Waveform
         if (message.type == MessageType.VOICE) {
           VoiceWaveformPlayer(
-            durationSeconds = message.voiceDurationSeconds.coerceAtLeast(12),
+            durationSeconds = message.voiceDurationSeconds.coerceAtLeast(1),
+            mediaUrl = message.mediaUrl,
             isOutgoing = isMe
           )
         } else {

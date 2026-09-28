@@ -52,6 +52,8 @@ fun LiquidChatApp(
   val glassConfig = LiquidGlassConfig(
     glassIntensity = appearance.glassIntensity,
     blurAlpha = appearance.blurAlpha,
+    cornerRadiusDp = appearance.cornerRadiusDp,
+    borderStrength = appearance.borderStrength,
     accentColor = try {
       Color(android.graphics.Color.parseColor(appearance.accentColorHex))
     } catch (e: Exception) {

@@ -1,5 +1,7 @@
 package com.example.ui.components
 
+import android.media.MediaPlayer
+import android.net.Uri
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -13,7 +15,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -21,10 +22,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,22 +36,44 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.CyanAccent
-import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
-import kotlin.random.Random
 
 @Composable
 fun VoiceWaveformPlayer(
   durationSeconds: Int,
+  mediaUrl: String = "",
   modifier: Modifier = Modifier,
   isOutgoing: Boolean = false
 ) {
-  var isPlaying by remember { mutableStateOf(false) }
+  val context = LocalContext.current
+  var isPlaying by remember(mediaUrl) { mutableStateOf(false) }
+  val mediaPlayer = remember(mediaUrl) { if (mediaUrl.isBlank()) null else MediaPlayer() }
+
+  DisposableEffect(mediaPlayer, mediaUrl) {
+    if (mediaPlayer != null && mediaUrl.isNotBlank()) {
+      runCatching {
+        mediaPlayer.setDataSource(context, Uri.parse(mediaUrl))
+        mediaPlayer.setOnPreparedListener { if (isPlaying) it.start() }
+        mediaPlayer.setOnCompletionListener {
+          isPlaying = false
+          runCatching { it.seekTo(0) }
+        }
+        mediaPlayer.prepareAsync()
+      }.onFailure {
+        isPlaying = false
+        runCatching { mediaPlayer.release() }
+      }
+    }
+    onDispose {
+      runCatching { mediaPlayer?.stop() }
+      runCatching { mediaPlayer?.release() }
+      isPlaying = false
+    }
+  }
 
   val infiniteTransition = rememberInfiniteTransition(label = "waveform_anim")
   val pulse by infiniteTransition.animateFloat(
@@ -61,10 +86,7 @@ fun VoiceWaveformPlayer(
     label = "wave_pulse"
   )
 
-  // Seeded heights for realistic waveform bars
-  val barRatios = remember {
-    listOf(0.3f, 0.6f, 0.9f, 0.4f, 0.7f, 1f, 0.5f, 0.8f, 0.4f, 0.7f, 0.9f, 0.5f, 0.3f, 0.7f, 0.4f, 0.8f, 0.6f, 0.3f)
-  }
+  val barRatios = remember { listOf(0.3f, 0.6f, 0.9f, 0.4f, 0.7f, 1f, 0.5f, 0.8f, 0.4f, 0.7f, 0.9f, 0.5f, 0.3f, 0.7f, 0.4f, 0.8f, 0.6f, 0.3f) }
 
   Row(
     modifier = modifier
@@ -72,18 +94,27 @@ fun VoiceWaveformPlayer(
       .padding(vertical = 4.dp),
     verticalAlignment = Alignment.CenterVertically
   ) {
-    // Play/Pause button
     Box(
       modifier = Modifier
         .size(36.dp)
         .clip(CircleShape)
         .background(if (isOutgoing) Color.White.copy(alpha = 0.25f) else CyanAccent.copy(alpha = 0.25f))
-        .clickable { isPlaying = !isPlaying },
+        .clickable(enabled = mediaPlayer != null) {
+          if (mediaPlayer != null) {
+            if (isPlaying) {
+              runCatching { mediaPlayer.pause() }
+              isPlaying = false
+            } else {
+              runCatching { mediaPlayer.start() }
+              isPlaying = true
+            }
+          }
+        },
       contentAlignment = Alignment.Center
     ) {
       Icon(
-        imageVector = Icons.Default.PlayArrow,
-        contentDescription = if (isPlaying) "Pause" else "Play",
+        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+        contentDescription = if (isPlaying) "Pause voice message" else "Play voice message",
         tint = if (isOutgoing) Color.White else CyanAccent,
         modifier = Modifier.size(20.dp)
       )
@@ -91,7 +122,6 @@ fun VoiceWaveformPlayer(
 
     Spacer(modifier = Modifier.width(10.dp))
 
-    // Animated / Static Waveform bars
     Row(
       modifier = Modifier
         .weight(1f)
@@ -102,28 +132,18 @@ fun VoiceWaveformPlayer(
       barRatios.forEachIndexed { index, ratio ->
         val heightMultiplier = if (isPlaying) {
           ((ratio * pulse + (index % 3) * 0.2f)).coerceIn(0.2f, 1f)
-        } else {
-          ratio
-        }
-
+        } else ratio
         Box(
           modifier = Modifier
             .weight(1f)
             .fillMaxHeight(heightMultiplier)
             .clip(RoundedCornerShape(2.dp))
-            .background(
-              if (isOutgoing) {
-                Color.White.copy(alpha = if (index < barRatios.size / 2) 0.9f else 0.45f)
-              } else {
-                CyanAccent.copy(alpha = if (index < barRatios.size / 2) 0.9f else 0.4f)
-              }
-            )
+            .background(if (isOutgoing) Color.White.copy(alpha = if (index < barRatios.size / 2) 0.9f else 0.45f) else CyanAccent.copy(alpha = if (index < barRatios.size / 2) 0.9f else 0.4f))
         )
       }
     }
 
     Spacer(modifier = Modifier.width(8.dp))
-
     val minutes = durationSeconds / 60
     val seconds = durationSeconds % 60
     Text(

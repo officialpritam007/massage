@@ -13,6 +13,8 @@ import androidx.compose.ui.graphics.Color
 data class LiquidGlassConfig(
   val glassIntensity: Float = 0.82f,
   val blurAlpha: Float = 0.70f,
+  val cornerRadiusDp: Float = 24f,
+  val borderStrength: Float = 0.70f,
   val accentColor: Color = CyanAccent,
   val isGlassEnabled: Boolean = true,
   val isReducedMotion: Boolean = false,

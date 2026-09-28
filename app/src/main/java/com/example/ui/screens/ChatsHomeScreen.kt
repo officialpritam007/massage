@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -98,7 +100,7 @@ fun ChatsHomeScreen(
   val currentUser by viewModel.currentUser.collectAsState()
 
   var selectedFilter by remember { mutableStateOf("All") }
-  val filters = listOf("All", "Unread", "Favorites", "Archived", "Groups")
+  val filters = listOf("All", "Unread", "Favorites", "Archived")
 
   val filteredConversations = remember(conversations, selectedFilter) {
     when (selectedFilter) {
@@ -115,7 +117,7 @@ fun ChatsHomeScreen(
       topBar = {
         // Liquid Header
         GlassCard(
-          modifier = Modifier.fillMaxWidth(),
+          modifier = Modifier.fillMaxWidth().statusBarsPadding(),
           shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
           elevation = 8.dp
         ) {
@@ -172,19 +174,6 @@ fun ChatsHomeScreen(
               Icon(Icons.Default.Search, contentDescription = "Search", tint = TextPrimary)
             }
 
-            IconButton(
-              onClick = onNavigateToAppearance,
-              modifier = Modifier.testTag("home_appearance_button")
-            ) {
-              Icon(Icons.Default.Palette, contentDescription = "Appearance", tint = CyanAccent)
-            }
-
-            IconButton(
-              onClick = onNavigateToSettings,
-              modifier = Modifier.testTag("home_settings_button")
-            ) {
-              Icon(Icons.Default.Settings, contentDescription = "Settings", tint = TextPrimary)
-            }
           }
         }
       },
@@ -197,26 +186,6 @@ fun ChatsHomeScreen(
           onNavigateToSettings = onNavigateToSettings
         )
       },
-      floatingActionButton = {
-        FloatingActionButton(
-          onClick = {
-            // Open conversation with first contact or search
-            if (conversations.isNotEmpty()) {
-              onNavigateToConversation(conversations.first().id)
-            } else {
-              onNavigateToSearch()
-            }
-          },
-          containerColor = if (glassConfig.isDark) Color.White.copy(alpha = 0.10f) else Color.White.copy(alpha = 0.82f),
-          contentColor = if (glassConfig.isDark) Color.White else ElectricBlue,
-          shape = RoundedCornerShape(20.dp),
-          modifier = Modifier
-            .padding(bottom = 72.dp)
-            .testTag("new_chat_fab")
-        ) {
-          Icon(Icons.Default.Chat, contentDescription = "New Chat")
-        }
-      }
     ) { innerPadding ->
       LazyColumn(
         modifier = Modifier
@@ -494,7 +463,8 @@ fun GlassBottomBar(
   Box(
     modifier = modifier
       .fillMaxWidth()
-      .padding(horizontal = 16.dp, vertical = 12.dp),
+      .navigationBarsPadding()
+      .padding(horizontal = 16.dp, vertical = 10.dp),
     contentAlignment = Alignment.Center
   ) {
     GlassCard(
@@ -566,13 +536,5 @@ fun BottomNavItem(
       )
     }
 
-    Text(
-      text = label,
-      style = MaterialTheme.typography.labelSmall.copy(
-        fontSize = 10.sp,
-        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-        color = if (isSelected) CyanAccent else TextMuted
-      )
-    )
   }
 }
