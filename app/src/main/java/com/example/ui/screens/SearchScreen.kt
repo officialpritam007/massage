@@ -56,6 +56,7 @@ import com.example.ui.theme.GlassBorderStroke
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -71,6 +72,7 @@ fun SearchScreen(
   val searchQuery by viewModel.searchQuery.collectAsState()
   val searchResults by viewModel.searchResults.collectAsState()
   val searchHistory by viewModel.searchHistory.collectAsState()
+  val glassConfig = LocalLiquidGlass.current
 
   LiquidBackground(modifier = modifier) {
     Scaffold(
@@ -162,7 +164,7 @@ fun SearchScreen(
                   Box(
                     modifier = Modifier
                       .clip(RoundedCornerShape(16.dp))
-                      .background(Color(0xFF131D35))
+                      .background(if (glassConfig.isDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.70f))
                       .border(1.dp, GlassBorderStroke, RoundedCornerShape(16.dp))
                       .clickable { viewModel.onSearchQueryChanged(historyQuery) }
                       .padding(horizontal = 14.dp, vertical = 8.dp)

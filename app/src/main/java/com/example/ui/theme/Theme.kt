@@ -9,12 +9,14 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
 
+/** Shared design tokens for the Liquid Glass UI. */
 data class LiquidGlassConfig(
-  val glassIntensity: Float = 0.85f,
+  val glassIntensity: Float = 0.82f,
   val blurAlpha: Float = 0.70f,
   val accentColor: Color = CyanAccent,
   val isGlassEnabled: Boolean = true,
-  val isReducedMotion: Boolean = false
+  val isReducedMotion: Boolean = false,
+  val isDark: Boolean = true
 )
 
 val LocalLiquidGlass = compositionLocalOf { LiquidGlassConfig() }
@@ -27,41 +29,42 @@ private val DarkColorScheme = darkColorScheme(
   secondary = AzureBlue,
   onSecondary = Color.Black,
   tertiary = VioletAccent,
-  background = MidnightDark,
+  background = Color.Black,
   onBackground = TextPrimary,
-  surface = SurfaceGlassDark,
+  surface = Color(0xFF080808),
   onSurface = TextPrimary,
-  surfaceVariant = SurfaceGlassCard,
+  surfaceVariant = SurfaceGlassDark,
   onSurfaceVariant = TextSecondary,
-  outline = GlassBorderStroke
+  outline = GlassBorderStrokeDark
 )
 
 private val LightColorScheme = lightColorScheme(
   primary = ElectricBlue,
   onPrimary = Color.White,
-  primaryContainer = Color(0xFFDCEBFF),
+  primaryContainer = Color(0xFFEAF3FF),
   onPrimaryContainer = ElectricBlue,
   secondary = AzureBlue,
   onSecondary = Color.White,
   tertiary = VioletAccent,
-  background = Color(0xFFF8FAFC),
+  background = Color.White,
   onBackground = TextPrimaryLight,
-  surface = Color(0xFFFFFFFF),
+  surface = Color.White,
   onSurface = TextPrimaryLight,
-  surfaceVariant = Color(0xFFF1F5F9),
+  surfaceVariant = Color(0xFFF7F9FC),
   onSurfaceVariant = TextSecondaryLight,
-  outline = Color(0xFFE2E8F0)
+  outline = GlassBorderStrokeLight
 )
 
 @Composable
 fun LiquidChatTheme(
-  darkTheme: Boolean = true, // Default to Liquid Glass dark aesthetics
-  glassConfig: LiquidGlassConfig = LiquidGlassConfig(),
+  darkTheme: Boolean = true,
+  glassConfig: LiquidGlassConfig = LiquidGlassConfig(isDark = darkTheme),
   content: @Composable () -> Unit
 ) {
   val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+  val resolvedConfig = glassConfig.copy(isDark = darkTheme)
 
-  CompositionLocalProvider(LocalLiquidGlass provides glassConfig) {
+  CompositionLocalProvider(LocalLiquidGlass provides resolvedConfig) {
     MaterialTheme(
       colorScheme = colorScheme,
       typography = Typography,
@@ -70,7 +73,6 @@ fun LiquidChatTheme(
   }
 }
 
-// Retain alias for compatibility
 @Composable
 fun MyApplicationTheme(
   darkTheme: Boolean = isSystemInDarkTheme(),

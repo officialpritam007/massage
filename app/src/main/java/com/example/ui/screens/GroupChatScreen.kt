@@ -213,7 +213,7 @@ fun GroupChatScreen(
   if (showGroupInfoSheet && group != null) {
     ModalBottomSheet(
       onDismissRequest = { showGroupInfoSheet = false },
-      containerColor = Color(0xFF0F172A)
+      containerColor = MaterialTheme.colorScheme.surface
     ) {
       Column(
         modifier = Modifier

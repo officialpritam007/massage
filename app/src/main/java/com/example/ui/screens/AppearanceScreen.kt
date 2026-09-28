@@ -52,6 +52,7 @@ import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
 
 @Composable
@@ -61,6 +62,7 @@ fun AppearanceScreen(
   modifier: Modifier = Modifier
 ) {
   val appearance by viewModel.appearance.collectAsState()
+  val glassConfig = LocalLiquidGlass.current
 
   val accentColors = listOf(
     "#00D2FF" to "Neon Cyan",
@@ -338,7 +340,7 @@ fun ThemeModeOption(
   Box(
     modifier = modifier
       .clip(RoundedCornerShape(16.dp))
-      .background(if (isSelected) CyanAccent else Color(0xFF131D35))
+      .background(if (isSelected) CyanAccent else if (glassConfig.isDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.72f))
       .clickable(onClick = onClick)
       .padding(vertical = 12.dp, horizontal = 8.dp),
     contentAlignment = Alignment.Center

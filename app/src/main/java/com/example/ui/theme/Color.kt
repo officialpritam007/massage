@@ -48,3 +48,7 @@ val TextMuted = Color(0xFF64748B)
 val TextPrimaryLight = Color(0xFF0F172A)
 val TextSecondaryLight = Color(0xFF475569)
 val TextMutedLight = Color(0xFF94A3B8)
+
+// Theme-aware glass borders/highlights.
+val GlassBorderStrokeLight = Color(0x330F172A)
+val GlassBorderStrokeDark = Color(0x38FFFFFF)

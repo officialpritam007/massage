@@ -1,21 +1,24 @@
 package com.example.ui.components
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -25,7 +28,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,11 +43,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -56,13 +59,15 @@ import com.example.ui.theme.AzureBlue
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.ElectricBlue
 import com.example.ui.theme.EmeraldOnline
-import com.example.ui.theme.GlassBorderStroke
+import com.example.ui.theme.GlassBorderStrokeDark
+import com.example.ui.theme.GlassBorderStrokeLight
 import com.example.ui.theme.GlassHighlight
 import com.example.ui.theme.LocalLiquidGlass
-import com.example.ui.theme.MidnightDark
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
+import com.example.ui.theme.TextPrimaryLight
 import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.TextSecondaryLight
 
 @Composable
 fun GlassCard(
@@ -74,43 +79,52 @@ fun GlassCard(
   onClick: (() -> Unit)? = null,
   content: @Composable () -> Unit
 ) {
-  val glassConfig = LocalLiquidGlass.current
-  val defaultBg = backgroundColor ?: Color(0xFF13213A).copy(
-    alpha = (0.34f + (glassConfig.glassIntensity * 0.22f)).coerceIn(0.20f, 0.72f)
+  val config = LocalLiquidGlass.current
+  val interactionSource = remember { MutableInteractionSource() }
+  val pressed by interactionSource.collectIsPressedAsState()
+  val scale by animateFloatAsState(
+    targetValue = if (pressed && onClick != null) 0.985f else 1f,
+    animationSpec = tween(180, easing = FastOutSlowInEasing),
+    label = "glass_card_press"
   )
-  val borderBrush = Brush.linearGradient(
-    colors = listOf(
-      borderColor ?: GlassHighlight.copy(alpha = 0.35f * glassConfig.glassIntensity),
-      borderColor ?: GlassBorderStroke.copy(alpha = 0.15f * glassConfig.glassIntensity),
-      borderColor ?: Color(0x05FFFFFF)
-    )
-  )
+  val surface = if (config.isDark) {
+    Color.White.copy(alpha = 0.075f + config.glassIntensity * 0.025f)
+  } else {
+    Color.White.copy(alpha = 0.58f + config.glassIntensity * 0.12f)
+  }
+  val border = borderColor ?: if (config.isDark) GlassBorderStrokeDark else GlassBorderStrokeLight
+  val topHighlight = if (config.isDark) GlassHighlight.copy(alpha = 0.30f) else Color.White.copy(alpha = 0.95f)
+  val shadow = if (config.isDark) Color.Black.copy(alpha = 0.42f) else Color.Black.copy(alpha = 0.10f)
 
-  val cardModifier = modifier
-    .shadow(
-      elevation = elevation,
-      shape = shape,
-      ambientColor = Color.Black.copy(alpha = 0.24f),
-      spotColor = CyanAccent.copy(alpha = 0.08f)
+  Box(
+    modifier = modifier
+      .then(Modifier.graphicsLayerCompat(scale))
+      .shadow(elevation, shape, ambientColor = shadow, spotColor = shadow)
+      .clip(shape)
+      .background(backgroundColor ?: surface)
+      .border(BorderStroke(1.dp, Brush.verticalGradient(listOf(topHighlight, border.copy(alpha = border.alpha.coerceAtLeast(0.10f))))), shape)
+      .then(
+        if (onClick != null) Modifier.clickable(
+          interactionSource = interactionSource,
+          indication = null,
+          onClick = onClick
+        ) else Modifier
+      )
+  ) {
+    // Fine top sheen: gives the glass a physical edge without a heavy gradient.
+    Box(
+      Modifier
+        .fillMaxWidth()
+        .height(1.dp)
+        .background(topHighlight.copy(alpha = if (config.isDark) 0.38f else 0.70f))
     )
-    .clip(shape)
-    .background(defaultBg)
-    .border(
-      border = BorderStroke(1.dp, borderBrush),
-      shape = shape
-    )
-    .then(
-      if (onClick != null) {
-        Modifier.clickable(onClick = onClick)
-      } else {
-        Modifier
-      }
-    )
-
-  Box(modifier = cardModifier) {
     content()
   }
 }
+
+// Kept tiny and local so this project does not depend on experimental graphics APIs.
+private fun Modifier.graphicsLayerCompat(scale: Float): Modifier =
+  this.graphicsLayer { scaleX = scale; scaleY = scale }
 
 @Composable
 fun GlassButton(
@@ -124,60 +138,34 @@ fun GlassButton(
   shape: Shape = RoundedCornerShape(20.dp),
   testTag: String = "glass_button"
 ) {
-  val glassConfig = LocalLiquidGlass.current
-  val primaryGradient = Brush.horizontalGradient(
-    listOf(glassConfig.accentColor, ElectricBlue)
+  val config = LocalLiquidGlass.current
+  val pressedSource = remember { MutableInteractionSource() }
+  val pressed by pressedSource.collectIsPressedAsState()
+  val accent by animateColorAsState(
+    targetValue = if (isPrimary) config.accentColor else if (config.isDark) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.045f),
+    animationSpec = tween(180),
+    label = "glass_button_color"
   )
-  val secondaryGradient = Brush.horizontalGradient(
-    listOf(Color(0x33FFFFFF), Color(0x1AFFFFFF))
-  )
-
-  val backgroundBrush = if (isPrimary) primaryGradient else secondaryGradient
-  val contentColor = if (isPrimary) Color.Black else TextPrimary
+  val contentColor = if (isPrimary) Color.White else if (config.isDark) TextPrimary else TextPrimaryLight
 
   Box(
     modifier = modifier
       .defaultMinSize(minHeight = 50.dp)
       .clip(shape)
-      .border(
-        width = 1.dp,
-        brush = Brush.verticalGradient(
-          listOf(
-            if (isPrimary) Color.White.copy(alpha = 0.6f) else GlassHighlight,
-            Color.Transparent
-          )
-        ),
-        shape = shape
-      )
-      .background(if (enabled) backgroundBrush else SolidColor(Color.Gray.copy(alpha = 0.3f)))
-      .clickable(
-        enabled = enabled && !isLoading,
-        onClick = onClick
-      )
-      .padding(horizontal = 24.dp, vertical = 14.dp)
+      .background(accent.copy(alpha = if (isPrimary) 0.78f else 1f))
+      .border(1.dp, if (config.isDark) GlassHighlight.copy(alpha = 0.32f) else GlassBorderStrokeLight, shape)
+      .clickable(enabled = enabled && !isLoading, interactionSource = pressedSource, indication = null, onClick = onClick)
+      .padding(horizontal = 22.dp, vertical = 14.dp)
       .testTag(testTag),
     contentAlignment = Alignment.Center
   ) {
-    Row(
-      verticalAlignment = Alignment.CenterVertically
-    ) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
       if (icon != null) {
-        Icon(
-          imageVector = icon,
-          contentDescription = null,
-          tint = contentColor,
-          modifier = Modifier
-            .size(20.dp)
-            .padding(end = 8.dp)
-        )
+        Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(20.dp).padding(end = 8.dp))
       }
       Text(
         text = if (isLoading) "Processing..." else text,
-        style = MaterialTheme.typography.labelLarge.copy(
-          fontWeight = FontWeight.Bold,
-          fontSize = 15.sp,
-          color = contentColor
-        )
+        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold, color = contentColor, fontSize = 15.sp)
       )
     }
   }
@@ -190,26 +178,24 @@ fun GlassIconButton(
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
   tint: Color = TextPrimary,
-  backgroundColor: Color = Color(0x24FFFFFF),
+  backgroundColor: Color? = null,
   size: Dp = 48.dp,
   testTag: String = "glass_icon_button"
 ) {
+  val config = LocalLiquidGlass.current
+  val bg = backgroundColor ?: if (config.isDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.72f)
+  val iconTint = if (tint == TextPrimary && !config.isDark) TextPrimaryLight else tint
   Box(
     modifier = modifier
       .size(size)
       .clip(CircleShape)
-      .background(backgroundColor)
-      .border(1.dp, GlassBorderStroke, CircleShape)
+      .background(bg)
+      .border(1.dp, if (config.isDark) GlassBorderStrokeDark else GlassBorderStrokeLight, CircleShape)
       .clickable(onClick = onClick)
       .testTag(testTag),
     contentAlignment = Alignment.Center
   ) {
-    Icon(
-      imageVector = icon,
-      contentDescription = contentDescription,
-      tint = tint,
-      modifier = Modifier.size(22.dp)
-    )
+    Icon(icon, contentDescription = contentDescription, tint = iconTint, modifier = Modifier.size(22.dp))
   }
 }
 
@@ -229,67 +215,41 @@ fun GlassTextField(
   shape: Shape = RoundedCornerShape(20.dp),
   testTag: String = "glass_text_field"
 ) {
-  val glassConfig = LocalLiquidGlass.current
-
+  val config = LocalLiquidGlass.current
+  val primaryText = if (config.isDark) TextPrimary else TextPrimaryLight
+  val secondaryText = if (config.isDark) TextMuted else TextMuted.copy(alpha = 0.82f)
   Box(
     modifier = modifier
       .defaultMinSize(minHeight = 52.dp)
       .clip(shape)
-      .background(Color(0xFF0F172A).copy(alpha = 0.75f))
-      .border(
-        width = 1.dp,
-        brush = Brush.verticalGradient(
-          listOf(
-            GlassHighlight.copy(alpha = 0.35f * glassConfig.glassIntensity),
-            GlassBorderStroke.copy(alpha = 0.15f)
-          )
-        ),
-        shape = shape
-      )
+      .background(if (config.isDark) Color.White.copy(alpha = 0.075f) else Color.White.copy(alpha = 0.68f))
+      .border(1.dp, if (config.isDark) GlassBorderStrokeDark else GlassBorderStrokeLight, shape)
       .padding(horizontal = 16.dp, vertical = 12.dp)
       .testTag(testTag),
     contentAlignment = Alignment.CenterStart
   ) {
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      verticalAlignment = Alignment.CenterVertically
-    ) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
       if (leadingIcon != null) {
-        leadingIcon()
-        Box(modifier = Modifier.size(10.dp))
+        leadingIcon(); Box(modifier = Modifier.size(10.dp))
       }
-
       Box(modifier = Modifier.weight(1f)) {
         if (value.isEmpty() && placeholder.isNotEmpty()) {
-          Text(
-            text = placeholder,
-            style = MaterialTheme.typography.bodyMedium.copy(
-              color = TextMuted,
-              fontSize = 15.sp
-            )
-          )
+          Text(placeholder, style = MaterialTheme.typography.bodyMedium.copy(color = secondaryText, fontSize = 15.sp))
         }
         BasicTextField(
           value = value,
           onValueChange = onValueChange,
           modifier = Modifier.fillMaxWidth(),
-          textStyle = MaterialTheme.typography.bodyMedium.copy(
-            color = TextPrimary,
-            fontSize = 15.sp
-          ),
+          textStyle = MaterialTheme.typography.bodyMedium.copy(color = primaryText, fontSize = 15.sp),
           visualTransformation = visualTransformation,
           keyboardOptions = keyboardOptions,
           keyboardActions = keyboardActions,
           singleLine = singleLine,
           maxLines = maxLines,
-          cursorBrush = SolidColor(glassConfig.accentColor)
+          cursorBrush = SolidColor(config.accentColor)
         )
       }
-
-      if (trailingIcon != null) {
-        Box(modifier = Modifier.size(8.dp))
-        trailingIcon()
-      }
+      if (trailingIcon != null) { Box(modifier = Modifier.size(8.dp)); trailingIcon() }
     }
   }
 }
@@ -303,89 +263,41 @@ fun GlassAvatar(
   modifier: Modifier = Modifier,
   onClick: (() -> Unit)? = null
 ) {
-  val glassConfig = LocalLiquidGlass.current
-
-  val avatarModifier = modifier
-    .size(size)
-    .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-
-  Box(modifier = avatarModifier) {
+  val config = LocalLiquidGlass.current
+  val borderBrush = Brush.linearGradient(listOf(config.accentColor, AzureBlue))
+  Box(modifier = modifier.size(size).then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)) {
     Box(
-      modifier = Modifier
-        .fillMaxSize()
-        .clip(CircleShape)
-        .border(1.5.dp, Brush.linearGradient(listOf(glassConfig.accentColor, AzureBlue)), CircleShape)
-        .background(
-          Brush.linearGradient(
-            listOf(Color(0xFF1E293B), Color(0xFF0F172A))
-          )
-        ),
+      modifier = Modifier.fillMaxSize().clip(CircleShape).border(1.5.dp, borderBrush, CircleShape)
+        .background(if (config.isDark) Color.White.copy(alpha = 0.09f) else Color.White.copy(alpha = 0.75f)),
       contentAlignment = Alignment.Center
     ) {
       if (!photoUrl.isNullOrBlank()) {
-        AsyncImage(
-          model = photoUrl,
-          contentDescription = name,
-          contentScale = ContentScale.Crop,
-          modifier = Modifier.fillMaxSize()
-        )
+        AsyncImage(model = photoUrl, contentDescription = name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
       } else {
-        // Initials fallback
-        val initials = name.split(" ")
-          .take(2)
-          .mapNotNull { it.firstOrNull()?.uppercaseChar() }
-          .joinToString("")
-          .ifEmpty { "LC" }
-
-        Text(
-          text = initials,
-          style = MaterialTheme.typography.titleMedium.copy(
-            color = glassConfig.accentColor,
-            fontWeight = FontWeight.Bold,
-            fontSize = (size.value * 0.38f).sp
-          )
-        )
+        val initials = name.split(" ").take(2).mapNotNull { it.firstOrNull()?.uppercaseChar() }.joinToString("").ifEmpty { "LC" }
+        Text(initials, style = MaterialTheme.typography.titleMedium.copy(color = config.accentColor, fontWeight = FontWeight.Bold, fontSize = (size.value * 0.38f).sp))
       }
     }
-
     if (isOnline) {
       Box(
-        modifier = Modifier
-          .size(size * 0.28f)
-          .align(Alignment.BottomEnd)
-          .clip(CircleShape)
-          .border(2.dp, MidnightDark, CircleShape)
-          .background(EmeraldOnline)
+        modifier = Modifier.size(size * 0.28f).align(Alignment.BottomEnd).clip(CircleShape)
+          .border(2.dp, if (config.isDark) Color.Black else Color.White, CircleShape).background(EmeraldOnline)
       )
     }
   }
 }
 
 @Composable
-fun GlassBadge(
-  count: Int,
-  modifier: Modifier = Modifier,
-  color: Color = CyanAccent
-) {
+fun GlassBadge(count: Int, modifier: Modifier = Modifier, color: Color = CyanAccent) {
   if (count <= 0) return
-
+  val config = LocalLiquidGlass.current
   Box(
-    modifier = modifier
-      .defaultMinSize(minWidth = 20.dp, minHeight = 20.dp)
-      .clip(RoundedCornerShape(10.dp))
-      .background(color)
+    modifier = modifier.defaultMinSize(minWidth = 20.dp, minHeight = 20.dp).clip(RoundedCornerShape(10.dp))
+      .background(color.copy(alpha = 0.82f)).border(1.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
       .padding(horizontal = 6.dp, vertical = 2.dp),
     contentAlignment = Alignment.Center
   ) {
-    Text(
-      text = if (count > 99) "99+" else count.toString(),
-      style = TextStyle(
-        color = Color.Black,
-        fontWeight = FontWeight.Bold,
-        fontSize = 11.sp,
-        textAlign = TextAlign.Center
-      )
-    )
+    Text(if (count > 99) "99+" else count.toString(), style = TextStyle(color = if (config.isDark) Color.Black else Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center))
   }
 }
 
@@ -397,64 +309,25 @@ fun GlassHeader(
   actions: @Composable (RowScope.() -> Unit)? = null,
   modifier: Modifier = Modifier
 ) {
+  val config = LocalLiquidGlass.current
   GlassCard(
     modifier = modifier.fillMaxWidth(),
-    shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
-    elevation = 6.dp
+    shape = RoundedCornerShape(bottomStart = 26.dp, bottomEnd = 26.dp),
+    elevation = 7.dp
   ) {
-    Row(
-      modifier = Modifier
-        .fillMaxWidth()
-        .padding(horizontal = 16.dp, vertical = 12.dp),
-      verticalAlignment = Alignment.CenterVertically
-    ) {
+    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
       if (onBackClick != null) {
-        IconButton(
-          onClick = onBackClick,
-          modifier = Modifier.size(44.dp).testTag("header_back_button")
-        ) {
-          Icon(
-            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-            contentDescription = "Back",
-            tint = TextPrimary
-          )
+        IconButton(onClick = onBackClick, modifier = Modifier.size(44.dp).testTag("header_back_button")) {
+          Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = if (config.isDark) TextPrimary else TextPrimaryLight)
         }
       }
-
-      Box(
-        modifier = Modifier
-          .weight(1f)
-          .padding(horizontal = 8.dp)
-      ) {
+      Box(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
         androidx.compose.foundation.layout.Column {
-          Text(
-            text = title,
-            style = MaterialTheme.typography.titleLarge.copy(
-              fontWeight = FontWeight.Bold,
-              color = TextPrimary
-            ),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-          )
-          if (!subtitle.isNullOrBlank()) {
-            Text(
-              text = subtitle,
-              style = MaterialTheme.typography.bodySmall.copy(
-                color = TextSecondary,
-                fontSize = 12.sp
-              ),
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis
-            )
-          }
+          Text(title, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = if (config.isDark) TextPrimary else TextPrimaryLight), maxLines = 1, overflow = TextOverflow.Ellipsis)
+          if (!subtitle.isNullOrBlank()) Text(subtitle, style = MaterialTheme.typography.bodySmall.copy(color = if (config.isDark) TextSecondary else TextSecondaryLight, fontSize = 12.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
       }
-
-      if (actions != null) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-          actions()
-        }
-      }
+      if (actions != null) Row(verticalAlignment = Alignment.CenterVertically) { actions() }
     }
   }
 }

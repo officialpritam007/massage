@@ -73,6 +73,7 @@ import com.example.ui.theme.GlassBorderStroke
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -92,6 +93,7 @@ fun ChatsHomeScreen(
   modifier: Modifier = Modifier
 ) {
   val conversations by viewModel.conversations.collectAsState()
+  val glassConfig = LocalLiquidGlass.current
   val statuses by viewModel.statuses.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
 
@@ -207,9 +209,9 @@ fun ChatsHomeScreen(
               onNavigateToSearch()
             }
           },
-          containerColor = CyanAccent,
-          contentColor = Color.Black,
-          shape = RoundedCornerShape(18.dp),
+          containerColor = if (glassConfig.isDark) Color.White.copy(alpha = 0.10f) else Color.White.copy(alpha = 0.82f),
+          contentColor = if (glassConfig.isDark) Color.White else ElectricBlue,
+          shape = RoundedCornerShape(20.dp),
           modifier = Modifier
             .padding(bottom = 72.dp)
             .testTag("new_chat_fab")
@@ -253,7 +255,7 @@ fun ChatsHomeScreen(
                       .size(62.dp)
                       .clip(CircleShape)
                       .border(1.5.dp, GlassBorderStroke, CircleShape)
-                      .background(Color(0xFF131D35)),
+                      .background(if (glassConfig.isDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.70f)),
                     contentAlignment = Alignment.Center
                   ) {
                     Icon(
@@ -330,7 +332,7 @@ fun ChatsHomeScreen(
                 modifier = Modifier
                   .clip(RoundedCornerShape(16.dp))
                   .background(
-                    if (isSelected) CyanAccent else Color(0xFF131D35).copy(alpha = 0.6f)
+                    if (isSelected) CyanAccent.copy(alpha = 0.88f) else if (glassConfig.isDark) Color.White.copy(alpha = 0.07f) else Color.White.copy(alpha = 0.72f)
                   )
                   .border(
                     width = 1.dp,
@@ -350,7 +352,7 @@ fun ChatsHomeScreen(
                   text = filter,
                   style = MaterialTheme.typography.labelMedium.copy(
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                    color = if (isSelected) Color.Black else TextSecondary,
+                    color = if (isSelected) Color.White else TextSecondary,
                     fontSize = 13.sp
                   )
                 )

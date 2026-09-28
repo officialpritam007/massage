@@ -62,7 +62,8 @@ fun LiquidChatApp(
     } catch (e: Exception) {
       Color(0xFF00D2FF)
     },
-    isReducedMotion = appearance.isReducedMotion
+    isReducedMotion = appearance.isReducedMotion,
+    isDark = appearance.isDarkMode
   )
 
   LiquidChatTheme(

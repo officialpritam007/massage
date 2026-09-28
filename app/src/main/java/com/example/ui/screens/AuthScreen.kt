@@ -63,6 +63,7 @@ import com.example.ui.theme.GlassBorderStroke
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
 import kotlinx.coroutines.launch
 
@@ -74,6 +75,7 @@ fun AuthScreen(
 ) {
   val coroutineScope = rememberCoroutineScope()
 
+  val glassConfig = LocalLiquidGlass.current
   var isRegisterMode by remember { mutableStateOf(false) }
   var isPhoneOtpMode by remember { mutableStateOf(false) }
 
@@ -191,7 +193,7 @@ fun AuthScreen(
           )
           .background(
             Brush.radialGradient(
-              listOf(Color(0xFF00D2FF).copy(alpha = 0.25f), Color(0xFF080C17))
+              listOf(Color(0xFF00D2FF).copy(alpha = 0.22f), if (glassConfig.isDark) Color.Black else Color.White.copy(alpha = 0.82f))
             )
           ),
         contentAlignment = Alignment.Center
@@ -240,7 +242,7 @@ fun AuthScreen(
             modifier = Modifier
               .fillMaxWidth()
               .clip(RoundedCornerShape(16.dp))
-              .background(Color(0xFF090E1A))
+              .background(if (glassConfig.isDark) Color.White.copy(alpha = 0.07f) else Color.Black.copy(alpha = 0.035f))
               .padding(4.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
           ) {

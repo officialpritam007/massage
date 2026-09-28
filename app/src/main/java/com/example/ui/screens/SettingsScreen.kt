@@ -362,7 +362,7 @@ fun SettingsScreen(
         }
       },
       confirmButton = { TextButton(onClick = { showPrivacyDialog = false }) { Text("Done", color = CyanAccent) } },
-      containerColor = Color(0xFF0F172A)
+      containerColor = MaterialTheme.colorScheme.surface
     )
   }
 
@@ -416,7 +416,7 @@ fun SettingsScreen(
         }
       },
       confirmButton = { TextButton(onClick = { activePrivacyField = null }) { Text("Cancel", color = TextSecondary) } },
-      containerColor = Color(0xFF0F172A)
+      containerColor = MaterialTheme.colorScheme.surface
     )
   }
 
@@ -434,7 +434,7 @@ fun SettingsScreen(
         }
       },
       confirmButton = { TextButton(onClick = { showNotificationsDialog = false }) { Text("Done", color = CyanAccent) } },
-      containerColor = Color(0xFF0F172A)
+      containerColor = MaterialTheme.colorScheme.surface
     )
   }
 
@@ -444,7 +444,7 @@ fun SettingsScreen(
       title = { Text("Data & Storage", color = TextPrimary, fontWeight = FontWeight.Bold) },
       text = { Text("Media is stored in Firebase Storage. You can control Android photo/media permissions and notification permissions from system settings.", color = TextSecondary) },
       confirmButton = { TextButton(onClick = { showStorageDialog = false }) { Text("Close", color = CyanAccent) } },
-      containerColor = Color(0xFF0F172A)
+      containerColor = MaterialTheme.colorScheme.surface
     )
   }
 
@@ -465,7 +465,7 @@ fun SettingsScreen(
           Text("Close", color = CyanAccent)
         }
       },
-      containerColor = Color(0xFF0F172A)
+      containerColor = MaterialTheme.colorScheme.surface
     )
   }
 
@@ -489,7 +489,7 @@ fun SettingsScreen(
         }
       },
       confirmButton = { TextButton(onClick = { showBlockedDialog = false }) { Text("Done", color = CyanAccent) } },
-      containerColor = Color(0xFF0F172A)
+      containerColor = MaterialTheme.colorScheme.surface
     )
   }
 
@@ -508,7 +508,7 @@ fun SettingsScreen(
         }) { Text(if (deleteBusy) "Deleting…" else "Delete", color = Color(0xFFEF4444)) }
       },
       dismissButton = { TextButton(enabled = !deleteBusy, onClick = { showDeleteConfirmDialog = false }) { Text("Cancel", color = TextSecondary) } },
-      containerColor = Color(0xFF0F172A)
+      containerColor = MaterialTheme.colorScheme.surface
     )
   }
 
@@ -532,7 +532,7 @@ fun SettingsScreen(
           Text("Cancel", color = TextSecondary)
         }
       },
-      containerColor = Color(0xFF0F172A)
+      containerColor = MaterialTheme.colorScheme.surface
     )
   }
 }

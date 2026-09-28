@@ -95,6 +95,9 @@ import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.ElectricBlue
 import com.example.ui.theme.EmeraldOnline
 import com.example.ui.theme.GlassBorderStroke
+import com.example.ui.theme.GlassBorderStrokeLight
+import com.example.ui.theme.LocalLiquidGlass
+import com.example.ui.theme.TextPrimaryLight
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
@@ -425,7 +428,7 @@ fun ConversationScreen(
               modifier = Modifier
                 .size(44.dp)
                 .clip(CircleShape)
-                .background(Color(0xFF131D35))
+                .background(if (glassConfig.isDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.70f))
                 .border(1.dp, GlassBorderStroke, CircleShape)
                 .testTag("attachment_button")
             ) {
@@ -440,7 +443,7 @@ fun ConversationScreen(
               modifier = Modifier
                 .size(44.dp)
                 .clip(CircleShape)
-                .background(Color(0xFF131D35))
+                .background(if (glassConfig.isDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.70f))
                 .border(1.dp, GlassBorderStroke, CircleShape)
                 .testTag("camera_button")
             ) {
@@ -557,7 +560,7 @@ fun ConversationScreen(
     ModalBottomSheet(
       onDismissRequest = { selectedMessageForActions = null },
       sheetState = sheetState,
-      containerColor = Color(0xFF0F172A),
+      containerColor = MaterialTheme.colorScheme.surface,
       scrimColor = Color.Black.copy(alpha = 0.6f)
     ) {
       Column(
@@ -570,7 +573,7 @@ fun ConversationScreen(
           modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
-            .background(Color(0xFF1E293B))
+            .background(if (glassConfig.isDark) Color.White.copy(alpha = 0.10f) else Color.White.copy(alpha = 0.76f))
             .padding(horizontal = 14.dp, vertical = 8.dp),
           horizontalArrangement = Arrangement.SpaceAround
         ) {
@@ -648,7 +651,7 @@ fun ConversationScreen(
   if (showAttachmentSheet) {
     ModalBottomSheet(
       onDismissRequest = { showAttachmentSheet = false },
-      containerColor = Color(0xFF0F172A)
+      containerColor = MaterialTheme.colorScheme.surface
     ) {
       Column(
         modifier = Modifier
@@ -757,6 +760,7 @@ fun MessageBubble(
   onReactionClick: (String) -> Unit
 ) {
   val align = if (isMe) Alignment.End else Alignment.Start
+  val glassConfig = LocalLiquidGlass.current
   val bubbleShape = if (isMe) {
     RoundedCornerShape(topStart = 20.dp, topEnd = 6.dp, bottomStart = 20.dp, bottomEnd = 20.dp)
   } else {
@@ -764,9 +768,15 @@ fun MessageBubble(
   }
 
   val backgroundBrush = if (isMe) {
-    Brush.linearGradient(listOf(BubbleOutgoingGradientStart, BubbleOutgoingGradientEnd))
+    Brush.linearGradient(listOf(
+      glassConfig.accentColor.copy(alpha = 0.76f),
+      ElectricBlue.copy(alpha = 0.68f)
+    ))
   } else {
-    Brush.linearGradient(listOf(BubbleIncoming, Color(0xFF1A2640)))
+    Brush.linearGradient(listOf(
+      if (glassConfig.isDark) Color.White.copy(alpha = 0.075f) else Color.White.copy(alpha = 0.72f),
+      if (glassConfig.isDark) Color.White.copy(alpha = 0.045f) else Color.White.copy(alpha = 0.54f)
+    ))
   }
 
   val borderStroke = if (isMe) {
@@ -870,7 +880,7 @@ fun MessageBubble(
           Text(
             text = message.text,
             style = MaterialTheme.typography.bodyMedium.copy(
-              color = if (isMe) Color.White else TextPrimary,
+              color = if (isMe || glassConfig.isDark) Color.White else TextPrimaryLight,
               fontSize = 14.5.sp,
               lineHeight = 20.sp
             )
@@ -912,8 +922,8 @@ fun MessageBubble(
         modifier = Modifier
           .padding(top = 2.dp, start = if (!isMe) 6.dp else 0.dp, end = if (isMe) 6.dp else 0.dp)
           .clip(RoundedCornerShape(12.dp))
-          .background(Color(0xFF131D35))
-          .border(1.dp, GlassBorderStroke, RoundedCornerShape(12.dp))
+          .background(if (glassConfig.isDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.78f))
+          .border(1.dp, if (glassConfig.isDark) GlassBorderStroke else GlassBorderStrokeLight, RoundedCornerShape(12.dp))
           .padding(horizontal = 6.dp, vertical = 2.dp)
       ) {
         message.reactions.forEach { reaction ->

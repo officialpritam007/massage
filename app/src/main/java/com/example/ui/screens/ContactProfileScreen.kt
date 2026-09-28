@@ -70,6 +70,7 @@ import com.example.ui.theme.EmeraldOnline
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
 
 @Composable
@@ -84,6 +85,7 @@ fun ContactProfileScreen(
   val users by viewModel.users.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
   val blockedUserIds by viewModel.blockedUserIds.collectAsState()
+  val glassConfig = LocalLiquidGlass.current
 
   val user = if (userId == currentUser.uid) currentUser else users.find { it.uid == userId } ?: currentUser
   val isMe = user.uid == currentUser.uid
@@ -270,7 +272,7 @@ fun ContactProfileScreen(
                   modifier = Modifier
                     .size(90.dp)
                     .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xFF131D35))
+                    .background(if (glassConfig.isDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.70f))
                 ) {
                   AsyncImage(
                     model = url,
@@ -398,7 +400,7 @@ fun ProfileActionButton(
       modifier = Modifier
         .size(48.dp)
         .clip(CircleShape)
-        .background(Color(0xFF1E293B)),
+        .background(if (glassConfig.isDark) Color.White.copy(alpha = 0.10f) else Color.White.copy(alpha = 0.76f)),
       contentAlignment = Alignment.Center
     ) {
       Icon(icon, contentDescription = label, tint = CyanAccent, modifier = Modifier.size(22.dp))
