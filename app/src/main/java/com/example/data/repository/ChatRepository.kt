@@ -18,7 +18,9 @@ import com.example.data.model.StatusType
 import com.example.data.model.User
 import com.example.data.model.UserStatus
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
@@ -301,6 +303,19 @@ class ChatRepository(
     stopFirebaseSync()
     val db = firestore ?: return
 
+    // Register this device for push notifications. The Cloud Function uses this token
+    // to notify the recipient when a new message is created.
+    try {
+      FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+        if (token.isNotBlank()) {
+          db.collection("users").document(uid).update("fcmToken", token)
+            .addOnFailureListener { e -> Log.w("ChatRepository", "Could not save FCM token", e) }
+        }
+      }
+    } catch (e: Exception) {
+      Log.w("ChatRepository", "FCM token registration unavailable", e)
+    }
+
     // 1. Current user doc listener
     currentUserDocListener = db.collection("users").document(uid)
       .addSnapshotListener { snapshot, error ->
@@ -400,6 +415,13 @@ class ChatRepository(
           _messages.update { currentMap ->
             currentMap + (conversationId to msgList)
           }
+
+          // A message reaching this listener means it has been delivered to this device.
+          // Read is promoted separately by clearUnread() when the conversation is open.
+          val currentUid = auth?.currentUser?.uid ?: _currentUser.value.uid
+          msgList.asSequence()
+            .filter { it.senderId != currentUid && it.status == MessageDeliveryStatus.SENT }
+            .forEach { message -> updateMessageStatus(conversationId, message.id, MessageDeliveryStatus.DELIVERED) }
         }
       }
 
@@ -467,6 +489,31 @@ class ChatRepository(
   }
 
   // --- Real Message Actions (writes directly to Cloud Firestore) ---
+
+  fun uploadChatMedia(
+    conversationId: String,
+    uri: Uri,
+    type: MessageType,
+    onResult: (Result<String>) -> Unit = {}
+  ) {
+    val uid = auth?.currentUser?.uid ?: _currentUser.value.uid
+    val storageRef = storage?.reference?.child("chats/$conversationId/${UUID.randomUUID()}")
+      ?: run {
+        onResult(Result.failure(IllegalStateException("Firebase Storage unavailable")))
+        return
+      }
+
+    scope.launch {
+      try {
+        val upload = storageRef.putFile(uri).await()
+        val url = storageRef.downloadUrl.await().toString()
+        onResult(Result.success(url))
+      } catch (e: Exception) {
+        Log.e("ChatRepository", "Chat media upload failed", e)
+        onResult(Result.failure(e))
+      }
+    }
+  }
 
   fun sendMessage(
     conversationId: String,
@@ -550,12 +597,16 @@ class ChatRepository(
     val parts = conversationId.split("_")
     val participantIds = if (parts.size >= 2) listOf(parts[0], parts[1]) else listOf(currentUid)
 
+    val recipientUid = participantIds.firstOrNull { it != currentUid }
     val conversationUpdate = hashMapOf<String, Any?>(
       "participantIds" to participantIds,
       "lastMessageText" to displayText,
       "lastMessageTime" to now,
       "lastMessageSenderId" to currentUid
     )
+    if (recipientUid != null) {
+      conversationUpdate["unreadCounts.$recipientUid"] = FieldValue.increment(1)
+    }
 
     scope.launch {
       try {
@@ -708,8 +759,24 @@ class ChatRepository(
   }
 
   fun clearUnread(conversationId: String) {
+    val currentUid = auth?.currentUser?.uid ?: _currentUser.value.uid
     _conversations.update { list ->
       list.map { if (it.id == conversationId) it.copy(unreadCount = 0) else it }
+    }
+
+    val messages = _messages.value[conversationId].orEmpty()
+    messages.filter { it.senderId != currentUid && it.status != MessageDeliveryStatus.READ }
+      .forEach { updateMessageStatus(conversationId, it.id, MessageDeliveryStatus.READ) }
+
+    scope.launch {
+      try {
+        firestore?.collection("conversations")
+          ?.document(conversationId)
+          ?.update("unreadCounts.$currentUid", 0)
+          ?.await()
+      } catch (e: Exception) {
+        Log.e("ChatRepository", "Error clearing unread count", e)
+      }
     }
   }
 
@@ -772,6 +839,14 @@ class ChatRepository(
     val lastText = doc.getString("lastMessageText") ?: ""
     val lastTime = doc.getLong("lastMessageTime") ?: (doc.get("lastMessageTime") as? Number)?.toLong() ?: System.currentTimeMillis()
     val lastSenderId = doc.getString("lastMessageSenderId") ?: ""
+    val unreadCounts = (doc.get("unreadCounts") as? Map<*, *>)
+      ?.mapNotNull { (key, value) ->
+        val uid = key as? String ?: return@mapNotNull null
+        val count = (value as? Number)?.toInt() ?: return@mapNotNull null
+        uid to count
+      }?.toMap().orEmpty()
+    val typingUserIds = (doc.get("typingUserIds") as? List<*>)?.filterIsInstance<String>().orEmpty()
+    val isOtherUserTyping = otherUid in typingUserIds
 
     return Conversation(
       id = doc.id,
@@ -780,8 +855,9 @@ class ChatRepository(
       lastMessageText = lastText,
       lastMessageTime = lastTime,
       lastMessageSenderId = lastSenderId,
-      unreadCount = 0,
-      isOnline = matchedUser.isOnline
+      unreadCount = unreadCounts[currentUid] ?: 0,
+      isOnline = matchedUser.isOnline,
+      isTyping = isOtherUserTyping
     )
   }
 
@@ -1295,6 +1371,35 @@ class ChatRepository(
       } catch (e: Exception) {
         Log.e("ChatRepository", "Profile photo upload failed", e)
         onResult(Result.failure(e))
+      }
+    }
+  }
+
+  /** Updates the current user's typing state for a conversation.
+   *  The state is stored on the conversation document so every participant
+   *  receives it through the existing realtime conversation listener.
+   */
+  fun setTyping(conversationId: String, isTyping: Boolean) {
+    val uid = auth?.currentUser?.uid ?: _currentUser.value.uid
+    if (uid.isBlank()) return
+
+    // Optimistic local state keeps the UI responsive.
+    _conversations.update { list ->
+      list.map { conv ->
+        if (conv.id == conversationId) conv.copy(isTyping = isTyping) else conv
+      }
+    }
+
+    scope.launch {
+      try {
+        val ref = firestore?.collection("conversations")?.document(conversationId)
+          ?: return@launch
+        val current = ref.get().await().get("typingUserIds") as? List<*>
+        val ids = current?.filterIsInstance<String>()?.toMutableSet() ?: mutableSetOf()
+        if (isTyping) ids.add(uid) else ids.remove(uid)
+        ref.update("typingUserIds", ids.toList()).await()
+      } catch (e: Exception) {
+        Log.w("ChatRepository", "Typing state update failed", e)
       }
     }
   }

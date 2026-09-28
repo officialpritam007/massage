@@ -34,3 +34,17 @@ For production-level parity with a modern messaging app, the next implementation
 - Privacy controls now expose Last Seen, Online Status, Profile Photo, Status Updates, and Group Invites choices.
 - Privacy and Appearance values are loaded from the signed-in Firestore user document when the real-time profile listener starts.
 - Existing GitHub Actions build flow remains unchanged; no Android Studio is required.
+
+
+## v2.9.0
+- Real gallery photo/video chat uploads via Firebase Storage.
+- Chat media is stored under `chats/{conversationId}/{fileId}`.
+- Image and video messages use the uploaded Firebase download URL.
+- Storage path is aligned with the existing participant-based Storage rules.
+
+## v3.0.0 — delivery/read + push notifications
+- Conversation unread counts are persisted per recipient in `unreadCounts`.
+- Incoming messages transition from SENT to DELIVERED when the recipient's listener receives them.
+- Opening a conversation clears its unread count and marks incoming messages READ.
+- FCM device tokens are registered in `users/{uid}.fcmToken`.
+- Firebase Functions includes `notifyNewMessage` to send push notifications to recipients.

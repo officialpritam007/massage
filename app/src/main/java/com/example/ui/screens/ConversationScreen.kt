@@ -1,5 +1,10 @@
 package com.example.ui.screens
 
+import android.net.Uri
+
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -51,7 +56,9 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -92,6 +99,9 @@ import com.example.ui.viewmodel.LiquidChatViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -128,6 +138,69 @@ fun ConversationScreen(
   var replyingTo by remember { mutableStateOf<Message?>(null) }
   var selectedMessageForActions by remember { mutableStateOf<Message?>(null) }
   var showAttachmentSheet by remember { mutableStateOf(false) }
+  val typingScope = rememberCoroutineScope()
+  var typingJob by remember { mutableStateOf<Job?>(null) }
+
+  val imagePicker = rememberLauncherForActivityResult(
+    ActivityResultContracts.GetContent()
+  ) { uri ->
+    uri ?: return@rememberLauncherForActivityResult
+    viewModel.uploadChatMedia(conversationId, uri, MessageType.IMAGE) { result ->
+      result.onSuccess { url ->
+        viewModel.sendMessage(
+          conversationId = conversationId,
+          text = "",
+          type = MessageType.IMAGE,
+          mediaUrl = url,
+          replyToId = replyingTo?.id,
+          replyToText = replyingTo?.text,
+          replyToSender = replyingTo?.senderName
+        )
+      }.onFailure {
+        // Upload error is surfaced by the failed callback; no optimistic message is created.
+      }
+    }
+  }
+
+  val videoPicker = rememberLauncherForActivityResult(
+    ActivityResultContracts.GetContent()
+  ) { uri ->
+    uri ?: return@rememberLauncherForActivityResult
+    viewModel.uploadChatMedia(conversationId, uri, MessageType.VIDEO) { result ->
+      result.onSuccess { url ->
+        viewModel.sendMessage(
+          conversationId = conversationId,
+          text = "",
+          type = MessageType.VIDEO,
+          mediaUrl = url
+        )
+      }.onFailure {
+        // Upload error is surfaced by the failed callback; no optimistic message is created.
+      }
+    }
+  }
+
+  // Debounced realtime typing indicator. It stops automatically after a short
+  // idle period and is cleared whenever the conversation screen is left.
+  fun updateTypingState(text: String) {
+    typingJob?.cancel()
+    if (text.isBlank()) {
+      viewModel.setTyping(conversationId, false)
+      return
+    }
+    viewModel.setTyping(conversationId, true)
+    typingJob = typingScope.launch {
+      delay(1200)
+      viewModel.setTyping(conversationId, false)
+    }
+  }
+
+  DisposableEffect(conversationId) {
+    onDispose {
+      typingJob?.cancel()
+      viewModel.setTyping(conversationId, false)
+    }
+  }
 
   val listState = rememberLazyListState()
 
@@ -332,7 +405,10 @@ fun ConversationScreen(
             // Text Input Box
             GlassTextField(
               value = inputText,
-              onValueChange = { inputText = it },
+              onValueChange = {
+                inputText = it
+                updateTypingState(it)
+              },
               placeholder = "Liquid message...",
               singleLine = false,
               maxLines = 4,
@@ -376,6 +452,8 @@ fun ConversationScreen(
                       replyToSender = replyingTo?.senderName
                     )
                     inputText = ""
+                    typingJob?.cancel()
+                    viewModel.setTyping(conversationId, false)
                     replyingTo = null
                   } else {
                     // Send a sample voice note (0:18)
@@ -558,13 +636,18 @@ fun ConversationScreen(
             icon = Icons.Default.AttachFile,
             color = ElectricBlue,
             onClick = {
-              viewModel.sendMessage(
-                conversationId = conversationId,
-                text = "Spatial Glass Architecture Render",
-                type = MessageType.IMAGE,
-                mediaUrl = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80"
-              )
               showAttachmentSheet = false
+              imagePicker.launch("image/*")
+            }
+          )
+
+          AttachmentOption(
+            title = "Video Gallery",
+            icon = Icons.Default.Videocam,
+            color = EmeraldOnline,
+            onClick = {
+              showAttachmentSheet = false
+              videoPicker.launch("video/*")
             }
           )
 
@@ -697,6 +780,32 @@ fun MessageBubble(
               model = message.mediaUrl,
               contentDescription = "Chat Media",
               contentScale = ContentScale.Crop,
+              modifier = Modifier.fillMaxSize()
+            )
+          }
+          Spacer(modifier = Modifier.height(6.dp))
+        }
+
+        // Video message preview
+        if (message.type == MessageType.VIDEO && message.mediaUrl.isNotBlank()) {
+          androidx.compose.foundation.layout.Box(
+            modifier = Modifier
+              .width(240.dp)
+              .height(180.dp)
+              .clip(RoundedCornerShape(14.dp))
+              .background(Color.Black.copy(alpha = 0.3f)),
+            contentAlignment = Alignment.Center
+          ) {
+            androidx.compose.ui.viewinterop.AndroidView(
+              factory = { context ->
+                android.widget.VideoView(context).apply {
+                  setVideoURI(Uri.parse(message.mediaUrl))
+                  setOnPreparedListener { player ->
+                    player.isLooping = true
+                    seekTo(1)
+                  }
+                }
+              },
               modifier = Modifier.fillMaxSize()
             )
           }

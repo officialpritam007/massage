@@ -96,6 +96,13 @@ class LiquidChatViewModel(
   }
 
   // Messaging
+  fun uploadChatMedia(
+    conversationId: String,
+    uri: Uri,
+    type: MessageType,
+    onResult: (Result<String>) -> Unit = {}
+  ) = repository.uploadChatMedia(conversationId, uri, type, onResult)
+
   fun sendMessage(
     conversationId: String,
     text: String,
@@ -184,6 +191,9 @@ class LiquidChatViewModel(
     repository.uploadProfilePhoto(uri, onResult)
 
   fun setPresence(isOnline: Boolean) = repository.setPresence(isOnline)
+
+  fun setTyping(conversationId: String, isTyping: Boolean) =
+    repository.setTyping(conversationId, isTyping)
 
   fun isUserLoggedIn(): Boolean = repository.isUserLoggedIn()
 
