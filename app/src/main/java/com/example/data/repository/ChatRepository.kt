@@ -794,6 +794,24 @@ class ChatRepository(
     }
   }
 
+  fun setConversationArchived(conversationId: String, archived: Boolean) {
+    val currentUid = auth?.currentUser?.uid ?: _currentUser.value.uid
+    _conversations.update { list ->
+      list.map { if (it.id == conversationId) it.copy(isArchived = archived) else it }
+    }
+    scope.launch {
+      try {
+        val ref = firestore?.collection("conversations")?.document(conversationId) ?: return@launch
+        ref.update(
+          "archivedFor",
+          if (archived) FieldValue.arrayUnion(currentUid) else FieldValue.arrayRemove(currentUid)
+        ).await()
+      } catch (e: Exception) {
+        Log.e("ChatRepository", "Error updating archived state", e)
+      }
+    }
+  }
+
   fun clearUnread(conversationId: String) {
     val currentUid = auth?.currentUser?.uid ?: _currentUser.value.uid
     _conversations.update { list ->
@@ -896,6 +914,8 @@ class ChatRepository(
       }?.toMap().orEmpty()
     val typingUserIds = (doc.get("typingUserIds") as? List<*>)?.filterIsInstance<String>().orEmpty()
     val isOtherUserTyping = otherUid in typingUserIds
+    val archivedFor = (doc.get("archivedFor") as? List<*>)?.filterIsInstance<String>().orEmpty()
+    val isArchived = currentUid in archivedFor
 
     return Conversation(
       id = doc.id,
@@ -906,7 +926,8 @@ class ChatRepository(
       lastMessageSenderId = lastSenderId,
       unreadCount = unreadCounts[currentUid] ?: 0,
       isOnline = matchedUser.isOnline,
-      isTyping = isOtherUserTyping
+      isTyping = isOtherUserTyping,
+      isArchived = isArchived
     )
   }
 

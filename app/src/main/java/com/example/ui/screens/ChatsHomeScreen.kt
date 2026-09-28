@@ -22,6 +22,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.Unarchive
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Check
@@ -94,13 +96,14 @@ fun ChatsHomeScreen(
   val currentUser by viewModel.currentUser.collectAsState()
 
   var selectedFilter by remember { mutableStateOf("All") }
-  val filters = listOf("All", "Unread", "Favorites", "Groups")
+  val filters = listOf("All", "Unread", "Favorites", "Archived", "Groups")
 
   val filteredConversations = remember(conversations, selectedFilter) {
     when (selectedFilter) {
       "Unread" -> conversations.filter { it.unreadCount > 0 }
-      "Favorites" -> conversations.filter { it.isPinned }
-      else -> conversations
+      "Favorites" -> conversations.filter { it.isPinned && !it.isArchived }
+      "Archived" -> conversations.filter { it.isArchived }
+      else -> conversations.filter { !it.isArchived }
     }
   }
 
@@ -376,6 +379,7 @@ fun ChatsHomeScreen(
             conversation = conv,
             onClick = { onNavigateToConversation(conv.id) },
             onAvatarClick = { onNavigateToProfile(conv.otherUser.uid) },
+            onArchiveToggle = { viewModel.setConversationArchived(conv.id, !conv.isArchived) },
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
           )
         }
@@ -406,6 +410,7 @@ fun ConversationRowItem(
   conversation: Conversation,
   onClick: () -> Unit,
   onAvatarClick: () -> Unit,
+  onArchiveToggle: () -> Unit,
   modifier: Modifier = Modifier
 ) {
   val other = conversation.otherUser
@@ -526,6 +531,14 @@ fun ConversationRowItem(
         )
 
         GlassBadge(count = conversation.unreadCount)
+      }
+      IconButton(onClick = onArchiveToggle) {
+        Icon(
+          imageVector = if (conversation.isArchived) Icons.Default.Unarchive else Icons.Default.Archive,
+          contentDescription = if (conversation.isArchived) "Unarchive" else "Archive",
+          tint = TextMuted,
+          modifier = Modifier.size(20.dp)
+        )
       }
     }
   }

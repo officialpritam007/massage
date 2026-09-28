@@ -97,6 +97,10 @@ class LiquidChatViewModel(
     repository.clearSearchHistory()
   }
 
+  fun setConversationArchived(conversationId: String, archived: Boolean) {
+    repository.setConversationArchived(conversationId, archived)
+  }
+
   // Messaging
   fun uploadChatMedia(
     conversationId: String,

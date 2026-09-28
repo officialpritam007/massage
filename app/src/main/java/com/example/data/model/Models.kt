@@ -60,7 +60,8 @@ data class Conversation(
   val isPinned: Boolean = false,
   val isMuted: Boolean = false,
   val isOnline: Boolean = false,
-  val isTyping: Boolean = false
+  val isTyping: Boolean = false,
+  val isArchived: Boolean = false
 )
 
 data class Group(
