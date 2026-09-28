@@ -64,7 +64,7 @@ import com.example.ui.theme.GlassBorderStrokeLight
 import com.example.ui.theme.GlassHighlight
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.theme.TextMuted
-import com.example.ui.theme.TextPrimary
+import com.example.ui.theme.MaterialTheme.colorScheme.onBackground
 import com.example.ui.theme.TextPrimaryLight
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.TextSecondaryLight
@@ -146,7 +146,7 @@ fun GlassButton(
     animationSpec = tween(180),
     label = "glass_button_color"
   )
-  val contentColor = if (isPrimary) Color.White else if (config.isDark) TextPrimary else TextPrimaryLight
+  val contentColor = if (isPrimary) Color.White else if (config.isDark) MaterialTheme.colorScheme.onBackground else TextPrimaryLight
 
   Box(
     modifier = modifier
@@ -177,14 +177,14 @@ fun GlassIconButton(
   contentDescription: String?,
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
-  tint: Color = TextPrimary,
+  tint: Color = MaterialTheme.colorScheme.onBackground,
   backgroundColor: Color? = null,
   size: Dp = 48.dp,
   testTag: String = "glass_icon_button"
 ) {
   val config = LocalLiquidGlass.current
   val bg = backgroundColor ?: if (config.isDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.72f)
-  val iconTint = if (tint == TextPrimary && !config.isDark) TextPrimaryLight else tint
+  val iconTint = if (tint == MaterialTheme.colorScheme.onBackground && !config.isDark) TextPrimaryLight else tint
   Box(
     modifier = modifier
       .size(size)
@@ -216,7 +216,7 @@ fun GlassTextField(
   testTag: String = "glass_text_field"
 ) {
   val config = LocalLiquidGlass.current
-  val primaryText = if (config.isDark) TextPrimary else TextPrimaryLight
+  val primaryText = if (config.isDark) MaterialTheme.colorScheme.onBackground else TextPrimaryLight
   val secondaryText = if (config.isDark) TextMuted else TextMuted.copy(alpha = 0.82f)
   Box(
     modifier = modifier
@@ -318,12 +318,12 @@ fun GlassHeader(
     Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
       if (onBackClick != null) {
         IconButton(onClick = onBackClick, modifier = Modifier.size(44.dp).testTag("header_back_button")) {
-          Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = if (config.isDark) TextPrimary else TextPrimaryLight)
+          Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = if (config.isDark) MaterialTheme.colorScheme.onBackground else TextPrimaryLight)
         }
       }
       Box(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
         androidx.compose.foundation.layout.Column {
-          Text(title, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = if (config.isDark) TextPrimary else TextPrimaryLight), maxLines = 1, overflow = TextOverflow.Ellipsis)
+          Text(title, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = if (config.isDark) MaterialTheme.colorScheme.onBackground else TextPrimaryLight), maxLines = 1, overflow = TextOverflow.Ellipsis)
           if (!subtitle.isNullOrBlank()) Text(subtitle, style = MaterialTheme.typography.bodySmall.copy(color = if (config.isDark) TextSecondary else TextSecondaryLight, fontSize = 12.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
       }

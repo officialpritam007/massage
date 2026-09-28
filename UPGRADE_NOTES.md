@@ -23,3 +23,14 @@ Build from GitHub Actions; Android Studio is not required.
 - Message expiration timestamps are filtered from realtime chat lists.
 - Per-chat wallpaper preference persisted for future visual themes.
 - Chat settings are accessible from the conversation header.
+
+## v4.0.0 UI cleanup / navigation
+- Light Liquid Glass background changed to a soft ice-blue tone.
+- Home screen redesigned toward the supplied reference: Chats header, more/settings action, camera, new-chat button, glass search field, floating glass navigation.
+- Bottom navigation is now Chats | Groups | Settings.
+- Removed Updates/Status navigation and UI.
+- Removed Audio Call, Video Call, Calls screen, Active Call screen, and call buttons from conversation/contact profile UI.
+- Removed Archive UI and archived conversation state from the active chat model/repository flow.
+- Chat deletion remains available from the chat overflow menu.
+- Media sharing remains available; chat media continues to use Firebase Storage architecture.
+- The call/status backend source and legacy Firestore structures are retained for this iteration but are no longer reachable from the app UI.

@@ -17,6 +17,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import com.example.ui.theme.LocalLiquidGlass
+import com.example.ui.theme.IceBlueBackground
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -45,7 +46,7 @@ fun LiquidBackground(
     androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
   }
 
-  val base = if (config.isDark) Color.Black else Color.White
+  val base = if (config.isDark) Color.Black else IceBlueBackground
   val accent = config.accentColor
   val glowAlpha = if (config.isDark) 0.075f else 0.045f
 

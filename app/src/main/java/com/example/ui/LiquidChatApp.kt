@@ -17,10 +17,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.example.data.model.MessageType
 import com.example.ui.navigation.Screen
-import com.example.ui.screens.ActiveCallScreen
 import com.example.ui.screens.AppearanceScreen
 import com.example.ui.screens.AuthScreen
-import com.example.ui.screens.CallsScreen
 import com.example.ui.screens.CameraScreen
 import com.example.ui.screens.ChatsHomeScreen
 import com.example.ui.screens.ContactProfileScreen
@@ -29,7 +27,6 @@ import com.example.ui.screens.GroupChatScreen
 import com.example.ui.screens.GroupsScreen
 import com.example.ui.screens.SearchScreen
 import com.example.ui.screens.SettingsScreen
-import com.example.ui.screens.UpdatesScreen
 import com.example.ui.theme.LiquidChatTheme
 import com.example.ui.theme.LiquidGlassConfig
 import com.example.ui.viewmodel.LiquidChatViewModel
@@ -39,7 +36,6 @@ fun LiquidChatApp(
   chatViewModel: LiquidChatViewModel = viewModel()
 ) {
   val appearance by chatViewModel.appearance.collectAsState()
-  val activeCall by chatViewModel.activeCall.collectAsState()
   val lifecycleOwner = LocalLifecycleOwner.current
 
   DisposableEffect(lifecycleOwner) {
@@ -73,12 +69,6 @@ fun LiquidChatApp(
     val navController = rememberNavController()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
 
-    androidx.compose.runtime.LaunchedEffect(activeCall?.callId) {
-      if (activeCall != null && currentBackStackEntry?.destination?.route != Screen.ActiveCall.route) {
-        navController.navigate(Screen.ActiveCall.route)
-      }
-    }
-
     val startDestination = if (chatViewModel.isUserLoggedIn()) Screen.Chats.route else Screen.Auth.route
     NavHost(
       navController = navController,
@@ -104,23 +94,14 @@ fun LiquidChatApp(
           onNavigateToGroups = {
             navController.navigate(Screen.Groups.route)
           },
-          onNavigateToUpdates = {
-            navController.navigate(Screen.Updates.route)
-          },
-          onNavigateToCalls = {
-            navController.navigate(Screen.Calls.route)
-          },
           onNavigateToSettings = {
             navController.navigate(Screen.Settings.route)
           },
           onNavigateToSearch = {
             navController.navigate(Screen.Search.route)
           },
-          onNavigateToAppearance = {
-            navController.navigate(Screen.Appearance.route)
-          },
-          onNavigateToProfile = { userId ->
-            navController.navigate(Screen.ContactProfile.createRoute(userId))
+          onNavigateToCamera = { convId ->
+            navController.navigate(Screen.Camera.createRoute(convId))
           }
         )
       }
@@ -136,9 +117,6 @@ fun LiquidChatApp(
           onBackClick = { navController.popBackStack() },
           onNavigateToProfile = { userId ->
             navController.navigate(Screen.ContactProfile.createRoute(userId))
-          },
-          onNavigateToActiveCall = {
-            navController.navigate(Screen.ActiveCall.route)
           },
           onNavigateToCamera = {
             navController.navigate(Screen.Camera.createRoute(convId))
@@ -175,12 +153,6 @@ fun LiquidChatApp(
           onNavigateToChats = {
             navController.navigate(Screen.Chats.route)
           },
-          onNavigateToUpdates = {
-            navController.navigate(Screen.Updates.route)
-          },
-          onNavigateToCalls = {
-            navController.navigate(Screen.Calls.route)
-          },
           onNavigateToSettings = {
             navController.navigate(Screen.Settings.route)
           },
@@ -202,51 +174,6 @@ fun LiquidChatApp(
         )
       }
 
-      composable(Screen.Updates.route) {
-        UpdatesScreen(
-          viewModel = chatViewModel,
-          onNavigateToChats = {
-            navController.navigate(Screen.Chats.route)
-          },
-          onNavigateToGroups = {
-            navController.navigate(Screen.Groups.route)
-          },
-          onNavigateToCalls = {
-            navController.navigate(Screen.Calls.route)
-          },
-          onNavigateToSettings = {
-            navController.navigate(Screen.Settings.route)
-          }
-        )
-      }
-
-      composable(Screen.Calls.route) {
-        CallsScreen(
-          viewModel = chatViewModel,
-          onNavigateToActiveCall = {
-            navController.navigate(Screen.ActiveCall.route)
-          },
-          onNavigateToChats = {
-            navController.navigate(Screen.Chats.route)
-          },
-          onNavigateToGroups = {
-            navController.navigate(Screen.Groups.route)
-          },
-          onNavigateToUpdates = {
-            navController.navigate(Screen.Updates.route)
-          },
-          onNavigateToSettings = {
-            navController.navigate(Screen.Settings.route)
-          }
-        )
-      }
-
-      composable(Screen.ActiveCall.route) {
-        ActiveCallScreen(
-          viewModel = chatViewModel,
-          onCallEnded = { navController.popBackStack() }
-        )
-      }
 
       composable(Screen.Search.route) {
         SearchScreen(
@@ -276,9 +203,6 @@ fun LiquidChatApp(
           onNavigateToConversation = { convId ->
             navController.navigate(Screen.Conversation.createRoute(convId))
           },
-          onNavigateToActiveCall = {
-            navController.navigate(Screen.ActiveCall.route)
-          }
         )
       }
 

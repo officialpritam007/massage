@@ -50,7 +50,7 @@ import com.example.ui.components.GlassCard
 import com.example.ui.components.LiquidBackground
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.TextMuted
-import com.example.ui.theme.TextPrimary
+import com.example.ui.theme.MaterialTheme.colorScheme.onBackground
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
@@ -92,14 +92,14 @@ fun AppearanceScreen(
               onClick = onBackClick,
               modifier = Modifier.testTag("appearance_back_button")
             ) {
-              Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary)
+              Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
             }
 
             Text(
               text = "Liquid Glass Appearance",
               style = MaterialTheme.typography.titleLarge.copy(
                 fontWeight = FontWeight.Bold,
-                color = TextPrimary,
+                color = MaterialTheme.colorScheme.onBackground,
                 fontSize = 18.sp
               )
             )
@@ -144,7 +144,7 @@ fun AppearanceScreen(
               Column {
                 Text(
                   text = "Liquid Glass Surface",
-                  style = MaterialTheme.typography.titleMedium.copy(color = TextPrimary, fontWeight = FontWeight.Bold)
+                  style = MaterialTheme.typography.titleMedium.copy(color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold)
                 )
                 Text(
                   text = "Refraction: ${(appearance.glassIntensity * 100).toInt()}% • Opacity: ${(appearance.blurAlpha * 100).toInt()}%",
@@ -202,7 +202,7 @@ fun AppearanceScreen(
             ) {
               Text(
                 text = "Glass Refraction Intensity",
-                color = TextPrimary,
+                color = MaterialTheme.colorScheme.onBackground,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 14.sp
               )
@@ -239,7 +239,7 @@ fun AppearanceScreen(
             ) {
               Text(
                 text = "Backdrop Frosted Transparency",
-                color = TextPrimary,
+                color = MaterialTheme.colorScheme.onBackground,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 14.sp
               )
@@ -312,7 +312,7 @@ fun AppearanceScreen(
             Icon(Icons.Default.MotionPhotosOff, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(24.dp))
             Spacer(modifier = Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
-              Text("Reduced Motion", color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+              Text("Reduced Motion", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
               Text("Disables mesh orb floating loops", color = TextMuted, fontSize = 12.sp)
             }
             Switch(
@@ -352,7 +352,7 @@ fun ThemeModeOption(
       Spacer(modifier = Modifier.width(8.dp))
       Text(
         text = title,
-        color = if (isSelected) Color.Black else TextPrimary,
+        color = if (isSelected) Color.Black else MaterialTheme.colorScheme.onBackground,
         fontWeight = FontWeight.Bold,
         fontSize = 13.sp
       )

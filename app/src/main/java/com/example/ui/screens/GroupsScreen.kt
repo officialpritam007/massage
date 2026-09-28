@@ -64,7 +64,7 @@ import com.example.ui.components.LiquidBackground
 import com.example.ui.theme.AmberPinned
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.TextMuted
-import com.example.ui.theme.TextPrimary
+import com.example.ui.theme.MaterialTheme.colorScheme.onBackground
 import com.example.ui.theme.TextSecondary
 import com.example.ui.viewmodel.LiquidChatViewModel
 import java.text.SimpleDateFormat
@@ -76,8 +76,6 @@ fun GroupsScreen(
   viewModel: LiquidChatViewModel,
   onNavigateToGroupChat: (String) -> Unit,
   onNavigateToChats: () -> Unit,
-  onNavigateToUpdates: () -> Unit,
-  onNavigateToCalls: () -> Unit,
   onNavigateToSettings: () -> Unit,
   onNavigateToSearch: () -> Unit,
   modifier: Modifier = Modifier
@@ -107,14 +105,14 @@ fun GroupsScreen(
               text = "Liquid Groups",
               style = MaterialTheme.typography.titleLarge.copy(
                 fontWeight = FontWeight.ExtraBold,
-                color = TextPrimary,
+                color = MaterialTheme.colorScheme.onBackground,
                 fontSize = 20.sp
               ),
               modifier = Modifier.weight(1f)
             )
 
             IconButton(onClick = onNavigateToSearch) {
-              Icon(Icons.Default.Search, contentDescription = "Search", tint = TextPrimary)
+              Icon(Icons.Default.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.onBackground)
             }
           }
         }
@@ -124,8 +122,6 @@ fun GroupsScreen(
           selectedRoute = "groups",
           onNavigateToChats = onNavigateToChats,
           onNavigateToGroups = {},
-          onNavigateToUpdates = onNavigateToUpdates,
-          onNavigateToCalls = onNavigateToCalls,
           onNavigateToSettings = onNavigateToSettings
         )
       },
@@ -197,7 +193,7 @@ fun GroupsScreen(
             text = "New Liquid Group",
             style = MaterialTheme.typography.titleLarge.copy(
               fontWeight = FontWeight.Bold,
-              color = TextPrimary
+              color = MaterialTheme.colorScheme.onBackground
             )
           )
 
@@ -252,7 +248,7 @@ fun GroupsScreen(
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
                   text = user.displayName,
-                  color = TextPrimary,
+                  color = MaterialTheme.colorScheme.onBackground,
                   style = MaterialTheme.typography.bodyMedium,
                   modifier = Modifier.weight(1f)
                 )
@@ -337,7 +333,7 @@ fun GroupRowItem(
             text = group.name,
             style = MaterialTheme.typography.titleMedium.copy(
               fontWeight = FontWeight.Bold,
-              color = TextPrimary,
+              color = MaterialTheme.colorScheme.onBackground,
               fontSize = 15.sp
             ),
             maxLines = 1,
@@ -371,7 +367,7 @@ fun GroupRowItem(
         Text(
           text = "${group.members.size} members • ${group.lastMessageText}",
           style = MaterialTheme.typography.bodyMedium.copy(
-            color = if (group.unreadCount > 0) TextPrimary else TextSecondary,
+            color = if (group.unreadCount > 0) MaterialTheme.colorScheme.onBackground else TextSecondary,
             fontSize = 12.5.sp
           ),
           maxLines = 1,
@@ -422,7 +418,7 @@ fun GroupRowItem(
     Dialog(onDismissRequest = { confirmAction = null }) {
       GlassCard(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(24.dp)) {
         Column(modifier = Modifier.padding(20.dp)) {
-          Text(if (action == "delete") "Delete group?" else "Leave group?", color = TextPrimary, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+          Text(if (action == "delete") "Delete group?" else "Leave group?", color = MaterialTheme.colorScheme.onBackground, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
           Spacer(modifier = Modifier.height(8.dp))
           Text(
             if (action == "delete") "This removes the group for its members. This action cannot be undone." else "You will leave this group and it will disappear from your groups list.",

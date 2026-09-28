@@ -33,7 +33,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Done
@@ -78,7 +77,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.example.data.model.CallType
 import com.example.data.model.Message
 import com.example.data.model.MessageDeliveryStatus
 import com.example.data.model.MessageType
@@ -99,7 +97,7 @@ import com.example.ui.theme.GlassBorderStrokeLight
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.theme.TextPrimaryLight
 import com.example.ui.theme.TextMuted
-import com.example.ui.theme.TextPrimary
+import com.example.ui.theme.MaterialTheme.colorScheme.onBackground
 import com.example.ui.theme.TextSecondary
 import com.example.ui.viewmodel.LiquidChatViewModel
 import java.text.SimpleDateFormat
@@ -116,7 +114,6 @@ fun ConversationScreen(
   viewModel: LiquidChatViewModel,
   onBackClick: () -> Unit,
   onNavigateToProfile: (String) -> Unit,
-  onNavigateToActiveCall: () -> Unit,
   onNavigateToCamera: () -> Unit = {},
   modifier: Modifier = Modifier
 ) {
@@ -235,7 +232,7 @@ fun ConversationScreen(
             showChatSettings = false
           }) { Text(if (conversation?.isMuted == true) "Unmute notifications" else "Mute notifications") }
 
-          Text("Disappearing messages", style = MaterialTheme.typography.titleSmall, color = TextPrimary, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+          Text("Disappearing messages", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onBackground, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
           listOf(0L to "Off", 86400L to "24 hours", 604800L to "7 days", 2592000L to "30 days").forEach { (seconds, label) ->
             TextButton(onClick = {
               viewModel.setDisappearingMessages(conversationId, seconds)
@@ -245,7 +242,7 @@ fun ConversationScreen(
             }
           }
 
-          Text("Wallpaper", style = MaterialTheme.typography.titleSmall, color = TextPrimary, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+          Text("Wallpaper", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onBackground, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
           Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(0, 1, 2).forEach { index ->
               TextButton(onClick = {
@@ -283,7 +280,7 @@ fun ConversationScreen(
               Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Back",
-                tint = TextPrimary
+                tint = MaterialTheme.colorScheme.onBackground
               )
             }
 
@@ -308,7 +305,7 @@ fun ConversationScreen(
                   text = otherUser.displayName,
                   style = MaterialTheme.typography.titleMedium.copy(
                     fontWeight = FontWeight.Bold,
-                    color = TextPrimary,
+                    color = MaterialTheme.colorScheme.onBackground,
                     fontSize = 15.sp
                   ),
                   maxLines = 1,
@@ -324,26 +321,6 @@ fun ConversationScreen(
               }
             }
 
-            // Call & Info Actions
-            IconButton(
-              onClick = {
-                viewModel.startCall(otherUser, CallType.AUDIO)
-                onNavigateToActiveCall()
-              },
-              modifier = Modifier.testTag("audio_call_button")
-            ) {
-              Icon(Icons.Default.Call, contentDescription = "Audio Call", tint = CyanAccent)
-            }
-
-            IconButton(
-              onClick = {
-                viewModel.startCall(otherUser, CallType.VIDEO)
-                onNavigateToActiveCall()
-              },
-              modifier = Modifier.testTag("video_call_button")
-            ) {
-              Icon(Icons.Default.Videocam, contentDescription = "Video Call", tint = CyanAccent)
-            }
 
             IconButton(
               onClick = { showChatSettings = true },
@@ -608,7 +585,7 @@ fun ConversationScreen(
         ) {
           Icon(Icons.Default.Reply, contentDescription = null, tint = CyanAccent)
           Spacer(modifier = Modifier.width(16.dp))
-          Text("Reply to message", color = TextPrimary, fontSize = 15.sp)
+          Text("Reply to message", color = MaterialTheme.colorScheme.onBackground, fontSize = 15.sp)
         }
 
         Row(
@@ -624,7 +601,7 @@ fun ConversationScreen(
         ) {
           Icon(Icons.Default.PushPin, contentDescription = null, tint = CyanAccent)
           Spacer(modifier = Modifier.width(16.dp))
-          Text(if (msg.isPinned) "Unpin message" else "Pin message", color = TextPrimary, fontSize = 15.sp)
+          Text(if (msg.isPinned) "Unpin message" else "Pin message", color = MaterialTheme.colorScheme.onBackground, fontSize = 15.sp)
         }
 
         Row(
@@ -663,7 +640,7 @@ fun ConversationScreen(
           text = "Share Content",
           style = MaterialTheme.typography.titleMedium.copy(
             fontWeight = FontWeight.Bold,
-            color = TextPrimary
+            color = MaterialTheme.colorScheme.onBackground
           ),
           modifier = Modifier.padding(bottom = 16.dp)
         )
@@ -931,7 +908,7 @@ fun MessageBubble(
           Text(
             text = "${reaction.emoji} ${reaction.userIds.size}",
             fontSize = 11.sp,
-            color = TextPrimary
+            color = MaterialTheme.colorScheme.onBackground
           )
           Spacer(modifier = Modifier.width(4.dp))
         }

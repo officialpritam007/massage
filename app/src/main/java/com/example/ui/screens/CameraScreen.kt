@@ -79,7 +79,7 @@ import com.example.ui.theme.DeepMidnight
 import com.example.ui.theme.ElectricBlue
 import com.example.ui.theme.GlassBorderStroke
 import com.example.ui.theme.TextMuted
-import com.example.ui.theme.TextPrimary
+import com.example.ui.theme.MaterialTheme.colorScheme.onBackground
 import com.example.ui.theme.TextSecondary
 import java.io.File
 import java.util.concurrent.Executor
@@ -169,7 +169,7 @@ fun CameraScreen(
               text = "Camera Access Required",
               style = MaterialTheme.typography.titleMedium.copy(
                 fontWeight = FontWeight.Bold,
-                color = TextPrimary
+                color = MaterialTheme.colorScheme.onBackground
               )
             )
 

@@ -22,7 +22,8 @@ val DeepMidnight = Color(0xFF0A0F1D)
 val SlateDark = Color(0xFF0F172A)
 val SurfaceGlassDark = Color(0xFF131D35)
 val SurfaceGlassCard = Color(0xFF18233C)
-val SurfaceGlassLight = Color(0xFFF1F5F9)
+val SurfaceGlassLight = Color(0xFFEFF8FF)
+val IceBlueBackground = Color(0xFFEFF8FF)
 
 // Translucent Glass Tints
 val GlassWhite5 = Color(0x0DFFFFFF)

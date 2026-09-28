@@ -827,23 +827,6 @@ class ChatRepository(
     }
   }
 
-  fun setConversationArchived(conversationId: String, archived: Boolean) {
-    val currentUid = auth?.currentUser?.uid ?: _currentUser.value.uid
-    _conversations.update { list ->
-      list.map { if (it.id == conversationId) it.copy(isArchived = archived) else it }
-    }
-    scope.launch {
-      try {
-        val ref = firestore?.collection("conversations")?.document(conversationId) ?: return@launch
-        ref.update(
-          "archivedFor",
-          if (archived) FieldValue.arrayUnion(currentUid) else FieldValue.arrayRemove(currentUid)
-        ).await()
-      } catch (e: Exception) {
-        Log.e("ChatRepository", "Error updating archived state", e)
-      }
-    }
-  }
 
   fun clearUnread(conversationId: String) {
     val currentUid = auth?.currentUser?.uid ?: _currentUser.value.uid
@@ -947,11 +930,9 @@ class ChatRepository(
       }?.toMap().orEmpty()
     val typingUserIds = (doc.get("typingUserIds") as? List<*>)?.filterIsInstance<String>().orEmpty()
     val isOtherUserTyping = otherUid in typingUserIds
-    val archivedFor = (doc.get("archivedFor") as? List<*>)?.filterIsInstance<String>().orEmpty()
     val deletedFor = (doc.get("deletedFor") as? List<*>)?.filterIsInstance<String>().orEmpty()
     if (currentUid in deletedFor) return null
     val mutedFor = (doc.get("mutedFor") as? List<*>)?.filterIsInstance<String>().orEmpty()
-    val isArchived = currentUid in archivedFor
     val isMuted = currentUid in mutedFor
     val disappearingSeconds = (doc.get("disappearingSeconds") as? Number)?.toLong() ?: 0L
     val wallpaperIndex = (doc.get("wallpaperIndex") as? Number)?.toInt() ?: 0
@@ -966,7 +947,6 @@ class ChatRepository(
       unreadCount = unreadCounts[currentUid] ?: 0,
       isOnline = matchedUser.isOnline,
       isTyping = isOtherUserTyping,
-      isArchived = isArchived,
       isMuted = isMuted,
       disappearingSeconds = disappearingSeconds,
       wallpaperIndex = wallpaperIndex

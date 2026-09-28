@@ -58,7 +58,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.example.data.model.CallType
 import com.example.ui.components.GlassAvatar
 import com.example.ui.components.GlassButton
 import com.example.ui.components.GlassCard
@@ -68,7 +67,7 @@ import com.example.ui.theme.CoralEndCall
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.EmeraldOnline
 import com.example.ui.theme.TextMuted
-import com.example.ui.theme.TextPrimary
+import com.example.ui.theme.MaterialTheme.colorScheme.onBackground
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
@@ -79,7 +78,6 @@ fun ContactProfileScreen(
   viewModel: LiquidChatViewModel,
   onBackClick: () -> Unit,
   onNavigateToConversation: (String) -> Unit,
-  onNavigateToActiveCall: () -> Unit,
   modifier: Modifier = Modifier
 ) {
   val users by viewModel.users.collectAsState()
@@ -155,7 +153,7 @@ fun ContactProfileScreen(
                 text = user.displayName,
                 style = MaterialTheme.typography.headlineSmall.copy(
                   fontWeight = FontWeight.Bold,
-                  color = TextPrimary
+                  color = MaterialTheme.colorScheme.onBackground
                 )
               )
               if (user.isVerified) {
@@ -202,23 +200,6 @@ fun ContactProfileScreen(
                   }
                 )
 
-                ProfileActionButton(
-                  icon = Icons.Default.Call,
-                  label = "Audio",
-                  onClick = {
-                    viewModel.startCall(user, CallType.AUDIO)
-                    onNavigateToActiveCall()
-                  }
-                )
-
-                ProfileActionButton(
-                  icon = Icons.Default.Videocam,
-                  label = "Video",
-                  onClick = {
-                    viewModel.startCall(user, CallType.VIDEO)
-                    onNavigateToActiveCall()
-                  }
-                )
 
                 ProfileActionButton(
                   icon = Icons.Default.Share,
@@ -309,7 +290,7 @@ fun ContactProfileScreen(
                 Spacer(modifier = Modifier.width(14.dp))
                 Text(
                   text = "Mute Notifications",
-                  color = TextPrimary,
+                  color = MaterialTheme.colorScheme.onBackground,
                   style = MaterialTheme.typography.bodyMedium,
                   modifier = Modifier.weight(1f)
                 )
@@ -423,7 +404,7 @@ fun InfoRowItem(
     Spacer(modifier = Modifier.width(12.dp))
     Column {
       Text(label, color = TextMuted, fontSize = 11.sp)
-      Text(value, color = TextPrimary, fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
+      Text(value, color = MaterialTheme.colorScheme.onBackground, fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
     }
   }
 }

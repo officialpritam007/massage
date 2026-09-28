@@ -15,7 +15,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 
-/** Receives FCM message/call notifications. The server sends only non-sensitive preview data. */
+/** Receives non-sensitive Liquid Chat message notifications. */
 class LiquidFirebaseMessagingService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
         val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
@@ -32,7 +32,6 @@ class LiquidFirebaseMessagingService : FirebaseMessagingService() {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("notification_type", message.data["type"])
             putExtra("conversation_id", message.data["conversationId"])
-            putExtra("call_id", message.data["callId"])
         }
         val pending = PendingIntent.getActivity(
             this, System.currentTimeMillis().toInt(), intent,
@@ -54,7 +53,7 @@ class LiquidFirebaseMessagingService : FirebaseMessagingService() {
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(
                 NotificationChannel(CHANNEL_ID, "Liquid Chat", NotificationManager.IMPORTANCE_HIGH).apply {
-                    description = "Messages and call alerts"
+                    description = "Message notifications"
                 }
             )
         }
