@@ -46,7 +46,8 @@ data class Message(
   val reactions: List<MessageReaction> = emptyList(),
   val isEdited: Boolean = false,
   val isDeleted: Boolean = false,
-  val isPinned: Boolean = false
+  val isPinned: Boolean = false,
+  val expiresAt: Long? = null
 )
 
 data class Conversation(
@@ -61,7 +62,9 @@ data class Conversation(
   val isMuted: Boolean = false,
   val isOnline: Boolean = false,
   val isTyping: Boolean = false,
-  val isArchived: Boolean = false
+  val isArchived: Boolean = false,
+  val disappearingSeconds: Long = 0L,
+  val wallpaperIndex: Int = 0
 )
 
 data class Group(

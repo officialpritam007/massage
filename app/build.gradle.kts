@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.liquidchat.vwnxkp"
     minSdk = 24
     targetSdk = 36
-    versionCode = 380
-    versionName = "3.8.0"
+    versionCode = 390
+    versionName = "3.9.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

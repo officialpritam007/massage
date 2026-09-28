@@ -445,8 +445,9 @@ class ChatRepository(
           return@addSnapshotListener
         }
         if (snapshot != null) {
+          val now = System.currentTimeMillis()
           val msgList = snapshot.documents.mapNotNull { doc ->
-            documentToMessage(conversationId, doc)
+            documentToMessage(conversationId, doc)?.takeIf { it.expiresAt == null || it.expiresAt > now }
           }
           _messages.update { currentMap ->
             currentMap + (conversationId to msgList)
@@ -567,6 +568,8 @@ class ChatRepository(
     val currentName = _currentUser.value.displayName
     val msgId = "msg_" + UUID.randomUUID().toString().take(12)
     val now = System.currentTimeMillis()
+    val disappearingSeconds = _conversations.value.firstOrNull { it.id == conversationId }?.disappearingSeconds ?: 0L
+    val expiresAt = if (disappearingSeconds > 0) now + disappearingSeconds * 1000L else null
 
     val displayText = text.ifBlank {
       when (type) {
@@ -627,7 +630,8 @@ class ChatRepository(
       "reactions" to emptyList<Map<String, Any>>(),
       "isEdited" to false,
       "isDeleted" to false,
-      "isPinned" to false
+      "isPinned" to false,
+      "expiresAt" to expiresAt
     )
 
     val parts = conversationId.split("_")
@@ -794,6 +798,34 @@ class ChatRepository(
     }
   }
 
+  fun setConversationMuted(conversationId: String, muted: Boolean) {
+    val uid = auth?.currentUser?.uid ?: _currentUser.value.uid
+    _conversations.update { list -> list.map { if (it.id == conversationId) it.copy(isMuted = muted) else it } }
+    scope.launch {
+      try {
+        firestore?.collection("conversations")?.document(conversationId)?.update(
+          "mutedFor", if (muted) FieldValue.arrayUnion(uid) else FieldValue.arrayRemove(uid)
+        )?.await()
+      } catch (e: Exception) { Log.e("ChatRepository", "Error updating mute state", e) }
+    }
+  }
+
+  fun setDisappearingMessages(conversationId: String, seconds: Long) {
+    _conversations.update { list -> list.map { if (it.id == conversationId) it.copy(disappearingSeconds = seconds) else it } }
+    scope.launch {
+      try { firestore?.collection("conversations")?.document(conversationId)?.update("disappearingSeconds", seconds)?.await() }
+      catch (e: Exception) { Log.e("ChatRepository", "Error updating disappearing setting", e) }
+    }
+  }
+
+  fun setConversationWallpaper(conversationId: String, index: Int) {
+    _conversations.update { list -> list.map { if (it.id == conversationId) it.copy(wallpaperIndex = index) else it } }
+    scope.launch {
+      try { firestore?.collection("conversations")?.document(conversationId)?.update("wallpaperIndex", index)?.await() }
+      catch (e: Exception) { Log.e("ChatRepository", "Error updating wallpaper", e) }
+    }
+  }
+
   fun setConversationArchived(conversationId: String, archived: Boolean) {
     val currentUid = auth?.currentUser?.uid ?: _currentUser.value.uid
     _conversations.update { list ->
@@ -915,7 +947,11 @@ class ChatRepository(
     val typingUserIds = (doc.get("typingUserIds") as? List<*>)?.filterIsInstance<String>().orEmpty()
     val isOtherUserTyping = otherUid in typingUserIds
     val archivedFor = (doc.get("archivedFor") as? List<*>)?.filterIsInstance<String>().orEmpty()
+    val mutedFor = (doc.get("mutedFor") as? List<*>)?.filterIsInstance<String>().orEmpty()
     val isArchived = currentUid in archivedFor
+    val isMuted = currentUid in mutedFor
+    val disappearingSeconds = (doc.get("disappearingSeconds") as? Number)?.toLong() ?: 0L
+    val wallpaperIndex = (doc.get("wallpaperIndex") as? Number)?.toInt() ?: 0
 
     return Conversation(
       id = doc.id,
@@ -927,7 +963,10 @@ class ChatRepository(
       unreadCount = unreadCounts[currentUid] ?: 0,
       isOnline = matchedUser.isOnline,
       isTyping = isOtherUserTyping,
-      isArchived = isArchived
+      isArchived = isArchived,
+      isMuted = isMuted,
+      disappearingSeconds = disappearingSeconds,
+      wallpaperIndex = wallpaperIndex
     )
   }
 
@@ -982,7 +1021,8 @@ class ChatRepository(
       reactions = reactions,
       isEdited = isEdited,
       isDeleted = isDeleted,
-      isPinned = isPinned
+      isPinned = isPinned,
+      expiresAt = doc.getLong("expiresAt") ?: (doc.get("expiresAt") as? Number)?.toLong()
     )
   }
 

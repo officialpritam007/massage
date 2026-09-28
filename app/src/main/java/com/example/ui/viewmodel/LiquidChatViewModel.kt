@@ -97,6 +97,10 @@ class LiquidChatViewModel(
     repository.clearSearchHistory()
   }
 
+  fun setConversationMuted(conversationId: String, muted: Boolean) = repository.setConversationMuted(conversationId, muted)
+  fun setDisappearingMessages(conversationId: String, seconds: Long) = repository.setDisappearingMessages(conversationId, seconds)
+  fun setConversationWallpaper(conversationId: String, index: Int) = repository.setConversationWallpaper(conversationId, index)
+
   fun setConversationArchived(conversationId: String, archived: Boolean) {
     repository.setConversationArchived(conversationId, archived)
   }

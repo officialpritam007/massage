@@ -40,14 +40,17 @@ import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Reply
 import androidx.compose.material.icons.filled.SentimentSatisfiedAlt
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
@@ -140,6 +143,7 @@ fun ConversationScreen(
   var showAttachmentSheet by remember { mutableStateOf(false) }
   val typingScope = rememberCoroutineScope()
   var typingJob by remember { mutableStateOf<Job?>(null) }
+  var showChatSettings by remember { mutableStateOf(false) }
 
   val imagePicker = rememberLauncherForActivityResult(
     ActivityResultContracts.GetContent()
@@ -214,6 +218,42 @@ fun ConversationScreen(
   LaunchedEffect(conversationId) {
     viewModel.observeConversation(conversationId)
     viewModel.clearUnread(conversationId)
+  }
+
+  if (showChatSettings) {
+    AlertDialog(
+      onDismissRequest = { showChatSettings = false },
+      title = { Text("Chat settings") },
+      text = {
+        Column {
+          TextButton(onClick = {
+            viewModel.setConversationMuted(conversationId, !(conversation?.isMuted ?: false))
+            showChatSettings = false
+          }) { Text(if (conversation?.isMuted == true) "Unmute notifications" else "Mute notifications") }
+
+          Text("Disappearing messages", style = MaterialTheme.typography.titleSmall, color = TextPrimary, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+          listOf(0L to "Off", 86400L to "24 hours", 604800L to "7 days", 2592000L to "30 days").forEach { (seconds, label) ->
+            TextButton(onClick = {
+              viewModel.setDisappearingMessages(conversationId, seconds)
+              showChatSettings = false
+            }) {
+              Text(if ((conversation?.disappearingSeconds ?: 0L) == seconds) "✓ $label" else label)
+            }
+          }
+
+          Text("Wallpaper", style = MaterialTheme.typography.titleSmall, color = TextPrimary, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(0, 1, 2).forEach { index ->
+              TextButton(onClick = {
+                viewModel.setConversationWallpaper(conversationId, index)
+                showChatSettings = false
+              }) { Text(if ((conversation?.wallpaperIndex ?: 0) == index) "✓ ${index + 1}" else "${index + 1}") }
+            }
+          }
+        }
+      },
+      confirmButton = { TextButton(onClick = { showChatSettings = false }) { Text("Done") } }
+    )
   }
 
   LiquidBackground(modifier = modifier) {
@@ -299,6 +339,13 @@ fun ConversationScreen(
               modifier = Modifier.testTag("video_call_button")
             ) {
               Icon(Icons.Default.Videocam, contentDescription = "Video Call", tint = CyanAccent)
+            }
+
+            IconButton(
+              onClick = { showChatSettings = true },
+              modifier = Modifier.testTag("conversation_settings_button")
+            ) {
+              Icon(Icons.Default.MoreVert, contentDescription = "Chat settings", tint = TextSecondary)
             }
 
             IconButton(
