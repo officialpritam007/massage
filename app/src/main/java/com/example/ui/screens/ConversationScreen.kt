@@ -7,7 +7,7 @@ import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
 import java.io.File
-
+import androidx.compose.ui.graphics.SolidColor
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.widget.Toast
@@ -553,11 +553,12 @@ fun ConversationScreen(
               modifier = Modifier
                 .size(46.dp)
                 .clip(CircleShape)
-                .background(
-                  if (isRecordingVoice) Brush.solidColor(Color(0xFFFF4B72)) else Brush.linearGradient(
-                    if (isSend) listOf(CyanAccent, ElectricBlue) else listOf(Color(0xFF1E293B), Color(0xFF0F172A))
-                  )
-                )
+               .background(
+    if (isRecordingVoice) SolidColor(Color(0xFFFF4B72)) else Brush.linearGradient(
+        if (isSend) listOf(CyanAccent, ElectricBlue)
+        else listOf(Color(0xFF1E293B), Color(0xFF0F172A))
+    )
+)
                 .border(1.dp, if (isSend || isRecordingVoice) Color.White.copy(alpha = 0.4f) else GlassBorderStroke, CircleShape)
                 .clickable {
                   if (isSend) {
