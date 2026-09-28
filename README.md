@@ -719,3 +719,7 @@ For commercial use, redistribution, licensing, or other permission requests, con
 - Message expiration timestamps are filtered from realtime chat lists.
 - Per-chat wallpaper preference persisted for future visual themes.
 - Chat settings are accessible from the conversation header.
+
+
+## Build fix (v3.9.1)
+The WebRTC dependency was changed from the unavailable `org.webrtc:google-webrtc:1.0.32006` artifact to the Maven Central `com.infobip:google-webrtc:1.0.48246t` artifact. Gradle configuration cache is disabled because the Android navigation task in this project is not configuration-cache compatible.
