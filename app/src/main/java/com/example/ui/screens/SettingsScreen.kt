@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
@@ -199,7 +200,7 @@ fun SettingsScreen(
         ) {
           Column(modifier = Modifier.padding(vertical = 8.dp)) {
             SettingsNavigationRow(
-              icon = Icons.Default.Palette,
+              icon = Icons.Default.Settings,
               title = "Appearance & Liquid Glass",
               subtitle = "Themes, blur intensity, refraction, accents",
               onClick = onNavigateToAppearance,

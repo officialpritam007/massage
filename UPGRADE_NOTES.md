@@ -1,3 +1,7 @@
+## v4.1.1 Build Fix
+- Fixed `ConversationScreen.kt` `solidColor` compilation error by using `SolidColor`.
+- Fixed `SettingsScreen.kt` missing `Palette` icon reference by using the existing Settings icon.
+
 # Liquid Chat Final Fix Pass
 
 This source pass implements the confirmed messaging/UI fixes on top of v4.0.5.
