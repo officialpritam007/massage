@@ -39,7 +39,6 @@ import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.CyanAccent
-import com.example.ui.theme.MaterialTheme.colorScheme.onBackground
 import com.example.ui.theme.TextSecondary
 import kotlin.random.Random
 

@@ -50,7 +50,6 @@ import com.example.ui.components.GlassCard
 import com.example.ui.components.LiquidBackground
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.TextMuted
-import com.example.ui.theme.MaterialTheme.colorScheme.onBackground
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel

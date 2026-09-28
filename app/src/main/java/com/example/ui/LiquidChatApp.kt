@@ -102,6 +102,9 @@ fun LiquidChatApp(
           },
           onNavigateToCamera = { convId ->
             navController.navigate(Screen.Camera.createRoute(convId))
+          },
+          onNavigateToProfile = { userId ->
+            navController.navigate(Screen.ContactProfile.createRoute(userId))
           }
         )
       }

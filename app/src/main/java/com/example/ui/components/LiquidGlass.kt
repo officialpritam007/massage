@@ -64,7 +64,6 @@ import com.example.ui.theme.GlassBorderStrokeLight
 import com.example.ui.theme.GlassHighlight
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.theme.TextMuted
-import com.example.ui.theme.MaterialTheme.colorScheme.onBackground
 import com.example.ui.theme.TextPrimaryLight
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.TextSecondaryLight

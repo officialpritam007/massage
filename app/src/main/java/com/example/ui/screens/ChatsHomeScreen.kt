@@ -74,7 +74,6 @@ import com.example.ui.theme.CyanNeon
 import com.example.ui.theme.ElectricBlue
 import com.example.ui.theme.GlassBorderStroke
 import com.example.ui.theme.TextMuted
-import com.example.ui.theme.MaterialTheme.colorScheme.onBackground
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
@@ -90,6 +89,7 @@ fun ChatsHomeScreen(
   onNavigateToSettings: () -> Unit,
   onNavigateToSearch: () -> Unit,
   onNavigateToCamera: (String) -> Unit,
+  onNavigateToProfile: (String) -> Unit,
   modifier: Modifier = Modifier
 ) {
   val conversations by viewModel.conversations.collectAsState()

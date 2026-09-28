@@ -61,7 +61,6 @@ import com.example.ui.components.LiquidBackground
 import com.example.ui.theme.CoralEndCall
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.TextMuted
-import com.example.ui.theme.MaterialTheme.colorScheme.onBackground
 import com.example.ui.theme.TextSecondary
 import com.example.ui.viewmodel.LiquidChatViewModel
 

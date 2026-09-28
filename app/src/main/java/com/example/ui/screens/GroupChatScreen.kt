@@ -63,7 +63,6 @@ import com.example.ui.theme.BubbleOutgoingGradientStart
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.ElectricBlue
 import com.example.ui.theme.TextMuted
-import com.example.ui.theme.MaterialTheme.colorScheme.onBackground
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.VioletAccent
 import com.example.ui.viewmodel.LiquidChatViewModel

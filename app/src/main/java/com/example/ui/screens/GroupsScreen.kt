@@ -64,7 +64,6 @@ import com.example.ui.components.LiquidBackground
 import com.example.ui.theme.AmberPinned
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.TextMuted
-import com.example.ui.theme.MaterialTheme.colorScheme.onBackground
 import com.example.ui.theme.TextSecondary
 import com.example.ui.viewmodel.LiquidChatViewModel
 import java.text.SimpleDateFormat

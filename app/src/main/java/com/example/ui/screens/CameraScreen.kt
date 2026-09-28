@@ -79,7 +79,6 @@ import com.example.ui.theme.DeepMidnight
 import com.example.ui.theme.ElectricBlue
 import com.example.ui.theme.GlassBorderStroke
 import com.example.ui.theme.TextMuted
-import com.example.ui.theme.MaterialTheme.colorScheme.onBackground
 import com.example.ui.theme.TextSecondary
 import java.io.File
 import java.util.concurrent.Executor
