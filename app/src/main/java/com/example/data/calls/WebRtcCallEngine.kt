@@ -168,6 +168,7 @@ class WebRtcCallEngine(private val context: Context) {
 
     private fun observer() = object : PeerConnection.Observer {
         override fun onIceCandidate(candidate: IceCandidate) { onLocalIceCandidate?.invoke(candidate) }
+        override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>) = Unit
         override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
             when (newState) {
                 PeerConnection.PeerConnectionState.CONNECTED -> onConnected?.invoke()

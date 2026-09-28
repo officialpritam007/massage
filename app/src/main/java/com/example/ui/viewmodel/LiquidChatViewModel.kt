@@ -17,6 +17,7 @@ import com.example.data.model.StatusType
 import com.example.data.model.User
 import com.example.data.model.UserStatus
 import com.example.data.repository.ChatRepository
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -238,9 +239,6 @@ class LiquidChatViewModel(
   fun updateNotifications(settings: NotificationSettings) {
     repository.updateNotifications(settings)
   }
-
-  fun blockUser(userId: String) { repository.blockUser(userId) }
-  fun unblockUser(userId: String) { repository.unblockUser(userId) }
 
   fun deleteAccount(onResult: (Boolean, String?) -> Unit) {
     viewModelScope.launch {
