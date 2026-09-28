@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Report
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Verified
@@ -61,6 +62,7 @@ import com.example.ui.components.GlassCard
 import com.example.ui.components.GlassIconButton
 import com.example.ui.components.LiquidBackground
 import com.example.ui.theme.CyanAccent
+import com.example.ui.theme.CoralEndCall
 import com.example.ui.theme.EmeraldOnline
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
