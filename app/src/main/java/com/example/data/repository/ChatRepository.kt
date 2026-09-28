@@ -75,6 +75,7 @@ class ChatRepository(
   private var conversationsListener: ListenerRegistration? = null
   private var currentUserDocListener: ListenerRegistration? = null
   private var statusesListener: ListenerRegistration? = null
+  private var incomingCallsListener: ListenerRegistration? = null
   private val messageListeners = mutableMapOf<String, ListenerRegistration>()
 
   // Current Authenticated User
@@ -120,6 +121,7 @@ class ChatRepository(
   val activeCall: StateFlow<ActiveCallState?> = _activeCall.asStateFlow()
   private var callTimerJob: Job? = null
   private var webRtcEngine: WebRtcCallEngine? = null
+  private val callSignaling = FirestoreCallSignaling()
 
   // Appearance & Privacy Settings
   private val _appearance = MutableStateFlow(AppearanceSettings())
@@ -366,6 +368,27 @@ class ChatRepository(
         }
       }
 
+    incomingCallsListener = db.collection("calls")
+      .whereEqualTo("receiverId", uid)
+      .whereEqualTo("state", "ringing")
+      .addSnapshotListener { snapshot, error ->
+        if (error != null || snapshot == null) return@addSnapshotListener
+        if (_activeCall.value != null) return@addSnapshotListener
+        val doc = snapshot.documents.firstOrNull() ?: return@addSnapshotListener
+        val callerId = doc.getString("callerId") ?: return@addSnapshotListener
+        val caller = _users.value.firstOrNull { it.uid == callerId }
+        if (caller != null) {
+          val type = if (doc.getString("type") == "video") CallType.VIDEO else CallType.AUDIO
+          _activeCall.value = ActiveCallState(
+            callId = doc.id,
+            user = caller,
+            type = type,
+            isOutgoing = false,
+            isConnected = false
+          )
+        }
+      }
+
     conversationsListener = db.collection("conversations")
       .whereArrayContains("participantIds", uid)
       .addSnapshotListener { snapshot, error ->
@@ -396,6 +419,9 @@ class ChatRepository(
 
     conversationsListener?.remove()
     conversationsListener = null
+
+    incomingCallsListener?.remove()
+    incomingCallsListener = null
 
     messageListeners.values.forEach { it.remove() }
     messageListeners.clear()
@@ -1354,6 +1380,45 @@ class ChatRepository(
         }
       }
     )
+
+    val ownSide = if (call.isOutgoing) "caller" else "receiver"
+    callSignaling.observe(call.callId) { data ->
+      val answer = data["answer"] as? Map<*, *>
+      if (call.isOutgoing && answer != null) {
+        val type = answer["type"]?.toString() ?: return@observe
+        val sdp = answer["sdp"]?.toString() ?: return@observe
+        engine.setRemoteAnswer(SessionDescription(SessionDescription.Type.fromCanonicalForm(type), sdp))
+      }
+      if (!call.isOutgoing && data["state"]?.toString() == "accepted") {
+        val offer = data["offer"] as? Map<*, *> ?: return@observe
+        val type = offer["type"]?.toString() ?: return@observe
+        val sdp = offer["sdp"]?.toString() ?: return@observe
+        engine.acceptOffer(SessionDescription(SessionDescription.Type.fromCanonicalForm(type), sdp)) { }
+      }
+    }
+    callSignaling.observeIceCandidates(call.callId) { side, candidate ->
+      if (side == ownSide) return@observeIceCandidates
+      val sdpMid = candidate["sdpMid"]?.toString()
+      val sdpMLineIndex = (candidate["sdpMLineIndex"] as? Number)?.toInt() ?: return@observeIceCandidates
+      val sdp = candidate["candidate"]?.toString() ?: return@observeIceCandidates
+      engine.addIceCandidate(IceCandidate(sdpMid, sdpMLineIndex, sdp))
+    }
+  }
+
+  fun acceptIncomingCall(context: Context) {
+    val call = _activeCall.value ?: return
+    if (call.isOutgoing) return
+    scope.launch {
+      runCatching { callSignaling.accept(call.callId) }
+      initializeWebRtc(context)
+    }
+  }
+
+  fun rejectIncomingCall() {
+    val call = _activeCall.value ?: return
+    if (call.isOutgoing) return
+    scope.launch { runCatching { callSignaling.reject(call.callId, auth?.currentUser?.uid ?: "") } }
+    endCallLocalOnly()
   }
 
   fun setWebRtcMicrophoneEnabled(enabled: Boolean) { webRtcEngine?.setMicrophoneEnabled(enabled) }
@@ -1365,11 +1430,17 @@ class ChatRepository(
   fun addWebRtcRemoteIceCandidate(candidate: IceCandidate) { webRtcEngine?.addIceCandidate(candidate) }
 
   fun toggleMuteCall() {
-    _activeCall.update { it?.copy(isMuted = !(it.isMuted)) }
+    _activeCall.update {
+      val next = !(it?.isMuted ?: false)
+      it?.let { current -> setWebRtcMicrophoneEnabled(!next); current.copy(isMuted = next) }
+    }
   }
 
   fun toggleCameraCall() {
-    _activeCall.update { it?.copy(isCameraOn = !(it.isCameraOn)) }
+    _activeCall.update {
+      val next = !(it?.isCameraOn ?: true)
+      it?.let { current -> setWebRtcCameraEnabled(next); current.copy(isCameraOn = next) }
+    }
   }
 
   fun toggleSpeakerCall() {

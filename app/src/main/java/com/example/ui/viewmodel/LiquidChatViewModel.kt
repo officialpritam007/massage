@@ -171,6 +171,16 @@ class LiquidChatViewModel(
     repository.startCall(otherUser, type)
   }
 
+  fun acceptIncomingCall(context: android.content.Context) = repository.acceptIncomingCall(context)
+
+  fun rejectIncomingCall() = repository.rejectIncomingCall()
+
+  fun initializeWebRtc(context: android.content.Context) = repository.initializeWebRtc(context)
+
+  fun setWebRtcMicrophoneEnabled(enabled: Boolean) = repository.setWebRtcMicrophoneEnabled(enabled)
+
+  fun setWebRtcCameraEnabled(enabled: Boolean) = repository.setWebRtcCameraEnabled(enabled)
+
   fun toggleMuteCall() {
     repository.toggleMuteCall()
   }

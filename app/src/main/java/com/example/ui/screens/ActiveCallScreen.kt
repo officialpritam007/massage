@@ -33,6 +33,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.remember
+import androidx.core.content.ContextCompat
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
@@ -77,11 +83,26 @@ fun ActiveCallScreen(
   val call = activeCall!!
   val isVideo = call.type == CallType.VIDEO
   val context = LocalContext.current
+  val requiredPermissions = remember(isVideo) {
+    if (isVideo) arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA)
+    else arrayOf(Manifest.permission.RECORD_AUDIO)
+  }
+  val permissionLauncher = rememberLauncherForActivityResult(
+    ActivityResultContracts.RequestMultiplePermissions()
+  ) { result ->
+    if (result.values.all { it }) {
+      if (!call.isOutgoing && !call.isConnected) viewModel.acceptIncomingCall(context)
+      else viewModel.initializeWebRtc(context)
+    }
+  }
 
-  LaunchedEffect(call.callId) {
-    // WebRTC starts only after Android CAMERA/RECORD_AUDIO permissions have been granted.
-    // Permission prompting remains at the Activity layer so the engine never silently
-    // attempts microphone/camera access.
+  LaunchedEffect(call.callId, call.isOutgoing, call.isConnected) {
+    if (call.isOutgoing || call.isConnected) {
+      val granted = requiredPermissions.all {
+        ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+      }
+      if (granted) viewModel.initializeWebRtc(context) else permissionLauncher.launch(requiredPermissions)
+    }
   }
 
   val infiniteTransition = rememberInfiniteTransition(label = "pulse_avatar")
@@ -186,7 +207,30 @@ fun ActiveCallScreen(
         shape = RoundedCornerShape(32.dp),
         elevation = 16.dp
       ) {
-        Row(
+        if (!call.isOutgoing && !call.isConnected) {
+          Row(
+            modifier = Modifier.fillMaxWidth().padding(20.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+          ) {
+            Box(
+              modifier = Modifier.size(64.dp).clip(CircleShape).background(Color(0xFF2ECC71))
+                .clickable {
+                  val granted = requiredPermissions.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }
+                  if (granted) viewModel.acceptIncomingCall(context) else permissionLauncher.launch(requiredPermissions)
+                },
+              contentAlignment = Alignment.Center
+            ) {
+              Icon(Icons.Default.CallEnd, contentDescription = "Accept", tint = Color.White, modifier = Modifier.size(28.dp))
+            }
+            Box(
+              modifier = Modifier.size(64.dp).clip(CircleShape).background(CoralEndCall)
+                .clickable { viewModel.rejectIncomingCall(); onCallEnded() },
+              contentAlignment = Alignment.Center
+            ) {
+              Icon(Icons.Default.CallEnd, contentDescription = "Reject", tint = Color.White, modifier = Modifier.size(28.dp))
+            }
+          }
+        } else Row(
           modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 20.dp),

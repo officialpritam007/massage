@@ -1,13 +1,12 @@
-# Liquid Chat v3.2.0
+# Liquid Chat v3.3.0
 
-## WebRTC media engine
-- Added `org.webrtc:google-webrtc`.
-- Added `WebRtcCallEngine` for microphone/camera capture, PeerConnection, SDP and ICE handling.
-- Added Firestore ICE candidate observation support.
-- Added Google STUN server configuration as a baseline.
+- Added incoming-call detection from Firestore.
+- Added Accept/Reject flow.
+- Added runtime microphone/camera permission flow for calls.
+- Connected WebRTC offer/answer/ICE observation to the call signaling document.
+- Fixed missing FirestoreCallSignaling repository instance.
+- Auto-opens the active-call screen for incoming calls.
 
-## Important
-The media engine is intentionally separated from the existing Firestore signaling layer. It requires runtime CAMERA and RECORD_AUDIO permission before starting capture and a TURN server for reliable connections across restrictive/mobile networks. The current call UI/signaling flow remains compatible; production deployment should configure TURN credentials and complete accept/reject UI wiring before claiming carrier-grade calling.
+Note: TURN credentials are not bundled. A production deployment should configure a TURN service for networks where direct/STUN connectivity fails.
 
-## GitHub build
-Push the project to GitHub and run `.github/workflows/build-apk.yml`. Android Studio is not required.
+Build through GitHub Actions; Android Studio is not required.

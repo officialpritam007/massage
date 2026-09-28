@@ -13,6 +13,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.example.data.model.MessageType
 import com.example.ui.navigation.Screen
@@ -69,6 +70,13 @@ fun LiquidChatApp(
     glassConfig = glassConfig
   ) {
     val navController = rememberNavController()
+    val currentBackStackEntry by navController.currentBackStackEntryAsState()
+
+    androidx.compose.runtime.LaunchedEffect(activeCall?.callId) {
+      if (activeCall != null && currentBackStackEntry?.destination?.route != Screen.ActiveCall.route) {
+        navController.navigate(Screen.ActiveCall.route)
+      }
+    }
 
     val startDestination = if (chatViewModel.isUserLoggedIn()) Screen.Chats.route else Screen.Auth.route
     NavHost(
