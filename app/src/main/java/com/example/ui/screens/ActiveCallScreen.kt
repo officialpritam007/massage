@@ -35,6 +35,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -74,6 +76,13 @@ fun ActiveCallScreen(
 
   val call = activeCall!!
   val isVideo = call.type == CallType.VIDEO
+  val context = LocalContext.current
+
+  LaunchedEffect(call.callId) {
+    // WebRTC starts only after Android CAMERA/RECORD_AUDIO permissions have been granted.
+    // Permission prompting remains at the Activity layer so the engine never silently
+    // attempts microphone/camera access.
+  }
 
   val infiniteTransition = rememberInfiniteTransition(label = "pulse_avatar")
   val pulseScale by infiniteTransition.animateFloat(

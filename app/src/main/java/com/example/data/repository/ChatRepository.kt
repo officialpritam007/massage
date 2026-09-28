@@ -3,6 +3,10 @@ package com.example.data.repository
 import android.net.Uri
 import android.util.Log
 import com.example.data.calls.FirestoreCallSignaling
+import com.example.data.calls.WebRtcCallEngine
+import android.content.Context
+import org.webrtc.IceCandidate
+import org.webrtc.SessionDescription
 import com.example.data.model.ActiveCallState
 import com.example.data.model.AppearanceSettings
 import com.example.data.model.CallRecord
@@ -115,6 +119,7 @@ class ChatRepository(
   private val _activeCall = MutableStateFlow<ActiveCallState?>(null)
   val activeCall: StateFlow<ActiveCallState?> = _activeCall.asStateFlow()
   private var callTimerJob: Job? = null
+  private var webRtcEngine: WebRtcCallEngine? = null
 
   // Appearance & Privacy Settings
   private val _appearance = MutableStateFlow(AppearanceSettings())
@@ -1313,6 +1318,52 @@ class ChatRepository(
     }
   }
 
+  fun initializeWebRtc(context: Context, onOfferReady: ((SessionDescription) -> Unit)? = null) {
+    val call = _activeCall.value ?: return
+    if (webRtcEngine != null) return
+    val engine = runCatching { WebRtcCallEngine(context.applicationContext) }.getOrElse {
+      Log.e("ChatRepository", "WebRTC initialization failed", it)
+      return
+    }
+    webRtcEngine = engine
+    engine.onLocalIceCandidate = { candidate ->
+      scope.launch {
+        runCatching { callSignaling.addIceCandidate(call.callId, if (call.isOutgoing) "caller" else "receiver", mapOf(
+          "sdpMid" to candidate.sdpMid,
+          "sdpMLineIndex" to candidate.sdpMLineIndex,
+          "candidate" to candidate.sdp
+        )) }
+      }
+    }
+    engine.onConnected = {
+      scope.launch { runCatching { callSignaling.markConnected(call.callId) } }
+    }
+    engine.onDisconnected = { }
+    engine.start(
+      callType = if (call.type == CallType.VIDEO) "video" else "audio",
+      isInitiator = call.isOutgoing,
+      onOffer = { desc ->
+        scope.launch {
+          runCatching { callSignaling.writeOffer(call.callId, mapOf("type" to desc.type.canonicalForm(), "sdp" to desc.description)) }
+        }
+        onOfferReady?.invoke(desc)
+      },
+      onAnswer = { desc ->
+        scope.launch {
+          runCatching { callSignaling.writeAnswer(call.callId, mapOf("type" to desc.type.canonicalForm(), "sdp" to desc.description)) }
+        }
+      }
+    )
+  }
+
+  fun setWebRtcMicrophoneEnabled(enabled: Boolean) { webRtcEngine?.setMicrophoneEnabled(enabled) }
+  fun setWebRtcCameraEnabled(enabled: Boolean) { webRtcEngine?.setCameraEnabled(enabled) }
+  fun setWebRtcSpeakerEnabled(enabled: Boolean) { webRtcEngine?.setSpeakerEnabled(enabled) }
+  fun webRtcLocalRenderer() = webRtcEngine?.localRenderer
+  fun webRtcRemoteRenderer() = webRtcEngine?.remoteRenderer
+
+  fun addWebRtcRemoteIceCandidate(candidate: IceCandidate) { webRtcEngine?.addIceCandidate(candidate) }
+
   fun toggleMuteCall() {
     _activeCall.update { it?.copy(isMuted = !(it.isMuted)) }
   }
@@ -1337,8 +1388,14 @@ class ChatRepository(
     endCallLocalOnly()
   }
 
+  private fun releaseWebRtc() {
+    runCatching { webRtcEngine?.release() }
+    webRtcEngine = null
+  }
+
   private fun endCallLocalOnly() {
     callTimerJob?.cancel()
+    releaseWebRtc()
     val currentCall = _activeCall.value ?: return
     val record = CallRecord(
       id = currentCall.callId,

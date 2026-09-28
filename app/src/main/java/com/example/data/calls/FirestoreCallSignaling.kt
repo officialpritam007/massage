@@ -45,6 +45,21 @@ class FirestoreCallSignaling(private val db: FirebaseFirestore = FirebaseFiresto
         calls.document(callId).addSnapshotListener { snapshot, error ->
             if (error == null && snapshot != null) onChanged(snapshot.data ?: emptyMap())
         }
+
+    fun observeIceCandidates(callId: String, onCandidate: (String, Map<String, Any?>) -> Unit): ListenerRegistration =
+        calls.document(callId).collection("iceCandidates")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null || snapshot == null) return@addSnapshotListener
+                snapshot.documentChanges.forEach { change ->
+                    if (change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
+                        val side = change.document.getString("side") ?: return@forEach
+                        @Suppress("UNCHECKED_CAST")
+                        val candidate = (change.document.get("candidate") as? Map<String, Any?>) ?: return@forEach
+                        onCandidate(side, candidate)
+                    }
+                }
+            }
+
     suspend fun setState(callId: String, state: String, endedBy: String? = null) {
         val values = mutableMapOf<String, Any>("state" to state)
         if (!endedBy.isNullOrBlank()) values["endedBy"] = endedBy

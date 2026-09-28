@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.liquidchat.vwnxkp"
     minSdk = 24
     targetSdk = 36
-    versionCode = 310
-    versionName = "3.1.0"
+    versionCode = 320
+    versionName = "3.2.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -106,6 +106,7 @@ dependencies {
   implementation(libs.firebase.messaging)
   implementation(libs.firebase.storage)
   implementation(libs.androidx.biometric)
+  implementation(libs.webrtc)
   implementation(libs.firebase.appcheck.recaptcha)
   implementation(libs.firebase.appcheck.debug)
   implementation(libs.kotlinx.coroutines.android)
