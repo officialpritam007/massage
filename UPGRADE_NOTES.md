@@ -28,3 +28,9 @@ No Android Studio is required for the included debug build workflow.
 
 ## Important next phase
 For production-level parity with a modern messaging app, the next implementation phase should add real WebRTC media transport for voice/video calls, media compression/trimming, richer privacy controls, persistent appearance settings loading, and end-to-end encryption architecture.
+
+
+## v2.7.0 settings persistence upgrade
+- Privacy controls now expose Last Seen, Online Status, Profile Photo, Status Updates, and Group Invites choices.
+- Privacy and Appearance values are loaded from the signed-in Firestore user document when the real-time profile listener starts.
+- Existing GitHub Actions build flow remains unchanged; no Android Studio is required.

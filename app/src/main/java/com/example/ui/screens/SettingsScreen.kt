@@ -83,6 +83,7 @@ fun SettingsScreen(
   var showPrivacyDialog by remember { mutableStateOf(false) }
   var showNotificationsDialog by remember { mutableStateOf(false) }
   var showStorageDialog by remember { mutableStateOf(false) }
+  var activePrivacyField by remember { mutableStateOf<String?>(null) }
   var photoUploading by remember { mutableStateOf(false) }
 
   val profilePhotoPicker = rememberLauncherForActivityResult(
@@ -232,7 +233,7 @@ fun SettingsScreen(
             SettingsNavigationRow(
               icon = Icons.Default.Info,
               title = "About Liquid Chat",
-              subtitle = "Version 2.6.0 • Liquid Glass Protocol",
+              subtitle = "Version 2.7.0 • Liquid Glass Protocol",
               onClick = { showAboutDialog = true },
               testTag = "settings_about_row"
             )
@@ -330,13 +331,15 @@ fun SettingsScreen(
   if (showPrivacyDialog) {
     AlertDialog(
       onDismissRequest = { showPrivacyDialog = false },
-      title = { Text("Privacy", color = TextPrimary, fontWeight = FontWeight.Bold) },
+      title = { Text("Privacy & Security", color = TextPrimary, fontWeight = FontWeight.Bold) },
       text = {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          Text("Last seen: ${privacy.lastSeenVisibility}", color = TextSecondary)
-          Text("Online: ${privacy.onlineVisibility}", color = TextSecondary)
-          Text("Profile photo: ${privacy.profilePhotoVisibility}", color = TextSecondary)
-          Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+          PrivacySelectorRow("Last seen", privacy.lastSeenVisibility) { activePrivacyField = "lastSeen" }
+          PrivacySelectorRow("Online status", privacy.onlineVisibility) { activePrivacyField = "online" }
+          PrivacySelectorRow("Profile photo", privacy.profilePhotoVisibility) { activePrivacyField = "photo" }
+          PrivacySelectorRow("Status updates", privacy.statusVisibility) { activePrivacyField = "status" }
+          PrivacySelectorRow("Group invites", privacy.whoCanAddToGroups) { activePrivacyField = "groups" }
+          Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
             Column(modifier = Modifier.weight(1f)) {
               Text("Read receipts", color = TextPrimary, fontWeight = FontWeight.SemiBold)
               Text("Show when messages are read", color = TextMuted, fontSize = 12.sp)
@@ -346,9 +349,69 @@ fun SettingsScreen(
               onCheckedChange = { viewModel.updatePrivacy(privacy.copy(readReceipts = it)) }
             )
           }
+          Text(
+            "Changes sync to your Liquid Chat profile.",
+            color = TextMuted,
+            fontSize = 11.sp,
+            modifier = Modifier.padding(top = 8.dp)
+          )
         }
       },
       confirmButton = { TextButton(onClick = { showPrivacyDialog = false }) { Text("Done", color = CyanAccent) } },
+      containerColor = Color(0xFF0F172A)
+    )
+  }
+
+  activePrivacyField?.let { field ->
+    val options = when (field) {
+      "status" -> listOf("Everyone", "Contacts Only", "Nobody")
+      "groups" -> listOf("Everyone", "Contacts Only")
+      else -> listOf("Everyone", "Contacts Only", "Nobody")
+    }
+    val title = when (field) {
+      "lastSeen" -> "Last seen"
+      "online" -> "Online status"
+      "photo" -> "Profile photo"
+      "status" -> "Status updates"
+      else -> "Group invites"
+    }
+    AlertDialog(
+      onDismissRequest = { activePrivacyField = null },
+      title = { Text(title, color = TextPrimary, fontWeight = FontWeight.Bold) },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+          options.forEach { option ->
+            val selected = when (field) {
+              "lastSeen" -> privacy.lastSeenVisibility == option
+              "online" -> privacy.onlineVisibility == option
+              "photo" -> privacy.profilePhotoVisibility == option
+              "status" -> privacy.statusVisibility == option
+              else -> privacy.whoCanAddToGroups == option
+            }
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                  val updated = when (field) {
+                    "lastSeen" -> privacy.copy(lastSeenVisibility = option)
+                    "online" -> privacy.copy(onlineVisibility = option)
+                    "photo" -> privacy.copy(profilePhotoVisibility = option)
+                    "status" -> privacy.copy(statusVisibility = option)
+                    else -> privacy.copy(whoCanAddToGroups = option)
+                  }
+                  viewModel.updatePrivacy(updated)
+                  activePrivacyField = null
+                }
+                .padding(vertical = 11.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Text(option, color = if (selected) CyanAccent else TextPrimary, fontSize = 14.sp, modifier = Modifier.weight(1f))
+              if (selected) Text("✓", color = CyanAccent, fontWeight = FontWeight.Bold)
+            }
+          }
+        }
+      },
+      confirmButton = { TextButton(onClick = { activePrivacyField = null }) { Text("Cancel", color = TextSecondary) } },
       containerColor = Color(0xFF0F172A)
     )
   }
@@ -380,7 +443,7 @@ fun SettingsScreen(
       title = { Text("About Liquid Chat", color = TextPrimary, fontWeight = FontWeight.Bold) },
       text = {
         Text(
-          text = "Liquid Chat v2.6.0\n\nBuilt with the Liquid Glass UI system for real-time messaging, media sharing, groups, status, privacy controls, and call experiences. Firebase and device-level security features require the project configuration described in the setup guide.",
+          text = "Liquid Chat v2.7.0\n\nBuilt with the Liquid Glass UI system for real-time messaging, media sharing, groups, status, privacy controls, and call experiences. Firebase and device-level security features require the project configuration described in the setup guide.",
           color = TextSecondary,
           fontSize = 14.sp
         )
@@ -416,6 +479,23 @@ fun SettingsScreen(
       },
       containerColor = Color(0xFF0F172A)
     )
+  }
+}
+
+@Composable
+private fun PrivacySelectorRow(title: String, value: String, onClick: () -> Unit) {
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .clickable(onClick = onClick)
+      .padding(vertical = 9.dp),
+    verticalAlignment = Alignment.CenterVertically
+  ) {
+    Column(modifier = Modifier.weight(1f)) {
+      Text(title, color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+      Text(value, color = TextMuted, fontSize = 12.sp)
+    }
+    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = TextMuted, modifier = Modifier.size(18.dp))
   }
 }
 

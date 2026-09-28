@@ -310,6 +310,7 @@ class ChatRepository(
         }
         if (snapshot != null && snapshot.exists()) {
           _currentUser.value = documentToUser(snapshot)
+          loadPersistedSettings(snapshot)
         }
       }
 
@@ -713,6 +714,31 @@ class ChatRepository(
   }
 
   // --- Document Mappers ---
+
+  private fun loadPersistedSettings(doc: DocumentSnapshot) {
+    val appearanceMap = doc.get("appearance") as? Map<*, *>
+    if (appearanceMap != null) {
+      _appearance.value = AppearanceSettings(
+        isDarkMode = appearanceMap["isDarkMode"] as? Boolean ?: false,
+        glassIntensity = (appearanceMap["glassIntensity"] as? Number)?.toFloat() ?: 0.85f,
+        blurAlpha = (appearanceMap["blurAlpha"] as? Number)?.toFloat() ?: 0.70f,
+        accentColorHex = appearanceMap["accentColorHex"] as? String ?: "#176BFF",
+        isReducedMotion = appearanceMap["isReducedMotion"] as? Boolean ?: false
+      )
+    }
+
+    val privacyMap = doc.get("privacy") as? Map<*, *>
+    if (privacyMap != null) {
+      _privacy.value = PrivacySettings(
+        lastSeenVisibility = privacyMap["lastSeenVisibility"] as? String ?: "Everyone",
+        onlineVisibility = privacyMap["onlineVisibility"] as? String ?: "Everyone",
+        profilePhotoVisibility = privacyMap["profilePhotoVisibility"] as? String ?: "Everyone",
+        readReceipts = privacyMap["readReceipts"] as? Boolean ?: true,
+        statusVisibility = privacyMap["statusVisibility"] as? String ?: "Contacts Only",
+        whoCanAddToGroups = privacyMap["whoCanAddToGroups"] as? String ?: "Everyone"
+      )
+    }
+  }
 
   private fun documentToUser(doc: DocumentSnapshot): User {
     return User(
