@@ -43,7 +43,14 @@ service cloud.firestore {
 
     // Conversations Collection
     match /conversations/{conversationId} {
-      allow read: if isParticipant(resource.data);
+      // Existing conversations are readable only by participants. A signed-in user may
+      // also probe a non-existing deterministic conversation ID so the client can
+      // safely decide whether it needs to create the conversation document.
+      allow get: if isAuthenticated() && (
+        !exists(/databases/$(database)/documents/conversations/$(conversationId)) ||
+        isParticipant(resource.data)
+      );
+      allow list: if isParticipant(resource.data);
       allow create: if isAuthenticated() && (
         ('participantIds' in request.resource.data && request.auth.uid in request.resource.data.participantIds) ||
         ('participants' in request.resource.data && request.auth.uid in request.resource.data.participants)
