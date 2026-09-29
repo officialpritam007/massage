@@ -37,8 +37,7 @@ object AppwriteStorageService {
 
     // Appwrite Console -> Functions -> firebase-appwrite-bridge -> Domains
     // Replace this single value after the function is deployed.
-    private const val AUTH_FUNCTION_URL = "REPLACE_WITH_APPWRITE_FUNCTION_URL"
-
+    private const val AUTH_FUNCTION_URL = "https://liquichat.sgp.appwrite.run"
     @Volatile
     private var jwt: String = ""
 
