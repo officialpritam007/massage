@@ -42,6 +42,7 @@ credentials = "1.5.0"
 googleid = "1.1.1"
 biometric = "1.1.0"
 webrtc = "1.0.48246t"
+appwriteAndroid = "8.1.0"
 
 
 [libraries]
@@ -94,9 +95,9 @@ firebase-appcheck-debug = { group = "com.google.firebase", name = "firebase-appc
 firebase-firestore = { group = "com.google.firebase", name = "firebase-firestore" }
 firebase-auth = { group = "com.google.firebase", name = "firebase-auth" }
 firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging" }
-firebase-storage = { group = "com.google.firebase", name = "firebase-storage" }
 androidx-biometric = { group = "androidx.biometric", name = "biometric", version.ref = "biometric" }
 webrtc = { group = "com.infobip", name = "google-webrtc", version.ref = "webrtc" }
+appwrite-android = { group = "io.appwrite", name = "sdk-for-android", version.ref = "appwriteAndroid" }
 androidx-credentials = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }
 androidx-credentials-play-services = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "credentials" }
 googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }

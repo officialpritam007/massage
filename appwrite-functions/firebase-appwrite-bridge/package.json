@@ -1,7 +1,6 @@
 {
   "name": "liquid-chat-firebase-appwrite-bridge",
   "private": true,
-  "dependencies": {
-    "node-appwrite": "22.1.3"
-  }
+  "type": "module",
+  "engines": { "node": ">=22" }
 }

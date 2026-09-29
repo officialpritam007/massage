@@ -31,7 +31,6 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
-import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -60,14 +59,6 @@ class ChatRepository(
       FirebaseFirestore.getInstance()
     } catch (e: Throwable) {
       Log.w("ChatRepository", "FirebaseFirestore not initialized: ${e.message}")
-      null
-    }
-
-  private val storage: FirebaseStorage?
-    get() = try {
-      FirebaseStorage.getInstance()
-    } catch (e: Throwable) {
-      Log.w("ChatRepository", "FirebaseStorage not initialized: ${e.message}")
       null
     }
 
@@ -146,6 +137,10 @@ class ChatRepository(
     seedLocalBaseData()
     if (isUserLoggedIn()) {
       startFirebaseSync(auth?.currentUser?.uid ?: "")
+      scope.launch {
+        runCatching { AppwriteStorageService.ensureSession() }
+          .onFailure { Log.w("ChatRepository", "Appwrite session not ready: ${it.message}") }
+      }
     }
   }
 
@@ -208,6 +203,8 @@ class ChatRepository(
 
       _currentUser.value = newUser
       startFirebaseSync(uid)
+      runCatching { AppwriteStorageService.ensureSession(forceRefresh = true) }
+        .onFailure { Log.w("ChatRepository", "Appwrite user mirror pending: ${it.message}") }
       Result.success(newUser)
     } catch (e: Exception) {
       Log.e("ChatRepository", "Registration failed", e)
@@ -275,6 +272,8 @@ class ChatRepository(
 
       _currentUser.value = finalUser
       startFirebaseSync(uid)
+      runCatching { AppwriteStorageService.ensureSession(forceRefresh = true) }
+        .onFailure { Log.w("ChatRepository", "Appwrite user mirror pending: ${it.message}") }
       Result.success(finalUser)
     } catch (e: Exception) {
       Log.e("ChatRepository", "Sign in failed", e)
@@ -298,6 +297,7 @@ class ChatRepository(
     }
 
     stopFirebaseSync()
+    AppwriteStorageService.clearSession()
     auth?.signOut()
 
     _currentUser.value = User(
@@ -534,19 +534,18 @@ class ChatRepository(
     onResult: (Result<String>) -> Unit = {}
   ) {
     val uid = auth?.currentUser?.uid ?: _currentUser.value.uid
-    val storageRef = storage?.reference?.child("chats/$conversationId/${UUID.randomUUID()}")
-      ?: run {
-        onResult(Result.failure(IllegalStateException("Firebase Storage unavailable")))
-        return
-      }
+    if (uid.isBlank() || uid == "usr_guest") {
+      onResult(Result.failure(IllegalStateException("You must be signed in")))
+      return
+    }
 
     scope.launch {
       try {
-        val upload = storageRef.putFile(uri).await()
-        val url = storageRef.downloadUrl.await().toString()
+        val category = "chat_${conversationId}_${type.name.lowercase()}"
+        val url = AppwriteStorageService.upload(uri, category, uid)
         onResult(Result.success(url))
       } catch (e: Exception) {
-        Log.e("ChatRepository", "Chat media upload failed", e)
+        Log.e("ChatRepository", "Appwrite chat media upload failed", e)
         onResult(Result.failure(e))
       }
     }
@@ -1264,7 +1263,7 @@ class ChatRepository(
       try {
         firestore?.collection("statuses")?.document(statusId)?.delete()?.await()
         if (status.type != StatusType.TEXT && status.content.startsWith("https://")) {
-          runCatching { storage?.getReferenceFromUrl(status.content)?.delete()?.await() }
+          runCatching { AppwriteStorageService.deleteByUrl(status.content) }
         }
         onResult(Result.success(Unit))
       } catch (e: Exception) {
@@ -1434,10 +1433,7 @@ class ChatRepository(
     scope.launch {
       try {
         val id = "st_" + UUID.randomUUID().toString().take(8)
-        val ref = storage?.reference?.child("statuses/$uid/$id")
-          ?: throw IllegalStateException("Firebase Storage unavailable")
-        ref.putFile(uri).await()
-        val url = ref.downloadUrl.await().toString()
+        val url = AppwriteStorageService.upload(uri, "status_${id}_${type.name.lowercase()}", uid)
         val current = _currentUser.value
         val status = UserStatus(
           id = id, userId = uid, userName = current.displayName,
@@ -1723,12 +1719,13 @@ class ChatRepository(
     }
     scope.launch {
       try {
-        val ref = storage?.reference?.child("users/$uid/profile.jpg")
-          ?: throw IllegalStateException("Firebase Storage unavailable")
-        ref.putFile(uri).await()
-        val downloadUrl = ref.downloadUrl.await().toString()
+        val previousUrl = _currentUser.value.photoUrl
+        val downloadUrl = AppwriteStorageService.upload(uri, "profile_$uid", uid)
         firestore?.collection("users")?.document(uid)?.update("photoUrl", downloadUrl)?.await()
         _currentUser.update { it.copy(photoUrl = downloadUrl) }
+        if (AppwriteStorageService.isAppwriteFileUrl(previousUrl)) {
+          runCatching { AppwriteStorageService.deleteByUrl(previousUrl) }
+        }
         onResult(Result.success(downloadUrl))
       } catch (e: Exception) {
         Log.e("ChatRepository", "Profile photo upload failed", e)
@@ -1865,9 +1862,13 @@ class ChatRepository(
   suspend fun deleteAccount(): Result<Unit> {
     val uid = auth?.currentUser?.uid ?: return Result.failure(IllegalStateException("Not signed in"))
     return try {
+      val currentPhoto = _currentUser.value.photoUrl
+      if (AppwriteStorageService.isAppwriteFileUrl(currentPhoto)) {
+        runCatching { AppwriteStorageService.deleteByUrl(currentPhoto) }
+      }
       firestore?.collection("users")?.document(uid)?.delete()?.await()
-      storage?.reference?.child("users/$uid/profile.jpg")?.delete()?.await()
       auth?.currentUser?.delete()?.await()
+      AppwriteStorageService.clearSession()
       stopFirebaseSync()
       _currentUser.value = User(uid = "usr_guest", displayName = "Liquid User", username = "liquid.user")
       _conversations.value = emptyList()

@@ -127,7 +127,7 @@ Liquid Chat combines familiar messaging functionality with a modern Android-firs
 | 💬 Real-time Chat       |    ✅   | Cloud Firestore       |
 | 👤 Authentication       |    ✅   | Firebase Auth         |
 | 👥 Group Chat           |   🟡   | Firestore             |
-| 📸 Media Sharing        |   🟡   | Firebase Storage      |
+| 📸 Media Sharing        |   🟡   | Appwrite Storage      |
 | 📷 Camera Flow          |   🟡   | Android APIs          |
 | 🟢 Status System        |   🟡   | Firebase              |
 | 🔔 Push Notifications   |   🟡   | FCM                   |
@@ -160,7 +160,7 @@ flowchart TB
 
     FIRESTORE["🔥 Cloud Firestore<br/>Messages / Users / Signaling"]
 
-    STORAGE["☁️ Firebase Storage<br/>Images / Media"]
+    STORAGE["☁️ Appwrite Storage<br/>Images / Media"]
 
     FCM["🔔 Firebase Cloud Messaging"]
 
@@ -213,7 +213,7 @@ flowchart TB
 | Architecture   | Repository + ViewModel   |
 | Authentication | Firebase Authentication  |
 | Database       | Cloud Firestore          |
-| Storage        | Firebase Storage         |
+| Storage        | Appwrite Storage         |
 | Notifications  | Firebase Cloud Messaging |
 | Backend        | Firebase Cloud Functions |
 | Calling        | WebRTC                   |
@@ -265,7 +265,6 @@ Enable:
 ```text
 Authentication
 Cloud Firestore
-Firebase Storage
 Firebase Cloud Messaging
 Cloud Functions
 ```
@@ -277,9 +276,10 @@ Deploy:
 ```text
 Firestore Rules
 Firestore Indexes
-Storage Rules
 Cloud Functions
 ```
+
+Media files are stored in Appwrite rather than Firebase Storage. Follow `APPWRITE_SETUP.md` to create the Appwrite bucket and Firebase-to-Appwrite bridge function.
 
 ---
 
@@ -341,7 +341,7 @@ Receiver
 
 # 🔐 Security
 
-Liquid Chat is designed around Android platform security and Firebase security rules.
+Liquid Chat is designed around Android platform security, Firebase security rules, and Appwrite file permissions.
 
 Recommended production architecture:
 
@@ -350,7 +350,7 @@ Firebase Authentication
           ↓
 Firestore Security Rules
           ↓
-Storage Security Rules
+Appwrite Bridge + File Permissions
           ↓
 Firebase App Check
           ↓
@@ -483,10 +483,10 @@ pro777/
 │       ├── profile.png
 │       └── settings.png
 │
-├── firebase/
-│   ├── firestore.rules
-│   ├── firestore.indexes.json
-│   └── storage.rules
+├── firestore.rules
+├── firestore.indexes.json
+├── appwrite-functions/
+│   └── firebase-appwrite-bridge/
 │
 ├── gradle/
 ├── build.gradle.kts

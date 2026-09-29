@@ -1,100 +1,130 @@
-# Liquid Chat — Firebase Auth + Appwrite Storage Bridge
+# Liquid Chat — Firebase + Appwrite configuration
 
-This patch keeps Firebase Auth/Firestore/FCM and replaces Firebase Storage with Appwrite Storage.
+## Architecture used by this project
 
-## IDs already configured
+- Firebase Authentication: email/password identity
+- Cloud Firestore: users, conversations, messages, status metadata, presence, typing, call signaling
+- Firebase Cloud Messaging: push notifications
+- Firebase Cloud Functions: notification + cleanup jobs
+- Appwrite Storage: chat media, status media and profile photos
+- Appwrite Function `firebase-appwrite-bridge`: validates Firebase ID tokens, mirrors Firebase users, issues Appwrite JWTs and creates file access tokens
+
+No Appwrite secret/API key is stored in the Android APK.
+
+## IDs currently wired into the Android source
 
 - Appwrite endpoint: `https://sgp.cloud.appwrite.io/v1`
-- Appwrite project: `6abae44b0030a4b3c0b4`
-- Appwrite bucket: `6abae4e300352b37c209`
-- Firebase project: `liquid-chat-v2`
-- Android package: `com.aistudio.liquidchat.vwnxkp`
+- Appwrite project ID: `6abae44b0030a4b3c0b4`
+- Appwrite bucket ID: `6abae4e300352b37c209`
+- Firebase project in `google-services.json`: `liquid-chat-v2`
+- Android application ID/package: `com.aistudio.liquidchat.vwnxkp`
 
-## 1. Appwrite bucket permissions
+If you create a different Appwrite project/bucket, edit the constants at the top of:
 
-Open:
-`Storage → Liquid Chat Media → Settings → Permissions`
+`app/src/main/java/com/example/data/repository/AppwriteStorageService.kt`
 
-Keep **File Security = ON**.
+## A. Firebase Console
 
-At bucket level grant **CREATE** to **Users** only.
+### 1. Android app
 
-Do NOT grant bucket-level READ/UPDATE/DELETE. File-level permissions will control who can read each file.
+Create/select Firebase project, then add Android app with package:
 
-## 2. Create the Firebase/Appwrite bridge Function
+`com.aistudio.liquidchat.vwnxkp`
 
-In Appwrite:
-`Functions → Create function`
+Download `google-services.json` and replace:
 
-Use:
+`app/google-services.json`
+
+### 2. Authentication
+
+Firebase Console -> Authentication -> Sign-in method -> Email/Password -> Enable.
+
+### 3. Firestore
+
+Create a Cloud Firestore database. Then deploy the repository rules and indexes:
+
+- `firestore.rules`
+- `firestore.indexes.json`
+
+### 4. Cloud Messaging
+
+FCM is already wired in the Android app. Each signed-in device stores its token in `users/{uid}.fcmToken`.
+
+### 5. Firebase Functions
+
+The `functions/` directory contains notification and cleanup functions. Deploy them with Firebase CLI/GitHub deployment when ready.
+
+## B. Appwrite Console
+
+### 1. Android platform
+
+Add an Android platform with package:
+
+`com.aistudio.liquidchat.vwnxkp`
+
+### 2. Storage bucket
+
+Create/select bucket ID:
+
+`6abae4e300352b37c209`
+
+Recommended settings:
+
+- File Security: ON
+- Bucket CREATE permission: Users
+- Do not grant bucket-level READ/UPDATE/DELETE
+
+The Android client grants file-level read/write only to the mirrored owner. Chat/status/profile URLs use Appwrite resource tokens so the existing image/video UI can load them without shipping an Appwrite secret.
+
+### 3. Bridge Function
+
+Create an Appwrite Function:
+
 - Name: `Firebase Appwrite Bridge`
 - Function ID: `firebase-appwrite-bridge`
 - Runtime: Node.js 22
-- Execute access: `Any`
 - Entrypoint: `src/main.js`
-- Build command: `npm install`
+- Root directory for Git deployment: `appwrite-functions/firebase-appwrite-bridge`
+- Execute access: Any (the function itself validates the Firebase ID token)
 
-If using GitHub deployment, point the function root directory to:
-`appwrite-functions/firebase-appwrite-bridge`
+Function scopes required:
 
-Deploy the function.
-
-## 3. Function scopes
-
-Function → Settings → Scopes:
 - `users.read`
 - `users.write`
+- `files.read`
+- `tokens.write`
 
-Do not give broader scopes.
+Environment variables:
 
-Appwrite provides the function's ephemeral API key automatically; it is not put into the Android app.
+- `FIREBASE_WEB_API_KEY` = Firebase Web API key
+- `APPWRITE_BUCKET_ID` = `6abae4e300352b37c209`
 
-## 4. Function environment variable
+Appwrite injects the project context and ephemeral function API key automatically.
 
-Add:
+After changing variables, redeploy the function.
 
-`FIREBASE_WEB_API_KEY = <Firebase Web API Key>`
+### 4. Function URL
 
-You can find the Web API Key in:
-Firebase Console → Project settings → General → Your apps / Web API Key.
+Appwrite Console -> Functions -> `firebase-appwrite-bridge` -> Domains.
 
-The function uses Firebase's `accounts:lookup` REST endpoint to validate the Firebase ID token.
-
-## 5. Copy the generated Function URL
-
-After deployment, open:
-`Functions → firebase-appwrite-bridge → Domains`
-
-Copy the generated `https://....appwrite.run` URL.
-
-In:
-`app/src/main/java/com/example/data/repository/AppwriteStorageService.kt`
-
-replace:
+Copy the generated `https://....appwrite.run` URL and replace:
 
 `REPLACE_WITH_APPWRITE_FUNCTION_URL`
 
-with the generated URL.
+inside:
 
-## 6. What the code does
+`app/src/main/java/com/example/data/repository/AppwriteStorageService.kt`
 
-1. Android signs in with Firebase.
-2. Android obtains the Firebase ID token.
-3. The Appwrite Function validates that token.
-4. The Function creates/gets an Appwrite user whose ID is the same Firebase UID.
-5. The Function returns a short-lived Appwrite JWT.
-6. Android uses that JWT with Appwrite Storage.
-7. Each uploaded file receives read permission for the Firebase conversation participants and write permission for the sender.
-8. Firestore stores the Appwrite file-view URL in `mediaUrl`.
+## C. Quick end-to-end test
 
-No Appwrite secret API key is shipped in the APK.
+1. Build/install debug APK.
+2. Register two Firebase users on two devices/accounts.
+3. Sign in on both.
+4. Send a text message; verify it appears through Firestore.
+5. Send an image; verify a new file appears in the Appwrite bucket and the image opens in chat.
+6. Post a media status and upload a profile photo.
+7. Verify each user document contains `fcmToken`, `isOnline` and `lastSeen`.
 
-## 7. Android files changed by this patch
+## Important
 
-- `ChatRepository.kt`
-- `AppwriteStorageService.kt` (new)
-- `ConversationScreen.kt`
-- `app/build.gradle.kts`
-- `gradle/libs.versions.toml`
-
-Firebase Storage dependency is removed.
+Do not put Firebase service-account JSON or Appwrite API keys into the Android project or GitHub repository.
