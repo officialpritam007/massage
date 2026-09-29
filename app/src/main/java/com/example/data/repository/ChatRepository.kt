@@ -886,10 +886,10 @@ class ChatRepository(
     val appearanceMap = doc.get("appearance") as? Map<*, *>
     if (appearanceMap != null) {
       _appearance.value = AppearanceSettings(
-        isDarkMode = appearanceMap["isDarkMode"] as? Boolean ?: false,
+        isDarkMode = appearanceMap["isDarkMode"] as? Boolean ?: true,
         glassIntensity = (appearanceMap["glassIntensity"] as? Number)?.toFloat() ?: 0.85f,
         blurAlpha = (appearanceMap["blurAlpha"] as? Number)?.toFloat() ?: 0.70f,
-        cornerRadiusDp = (appearanceMap["cornerRadiusDp"] as? Number)?.toFloat() ?: 24f,
+        cornerRadiusDp = (appearanceMap["cornerRadiusDp"] as? Number)?.toFloat() ?: 32f,
         borderStrength = (appearanceMap["borderStrength"] as? Number)?.toFloat() ?: 0.70f,
         accentColorHex = appearanceMap["accentColorHex"] as? String ?: "#176BFF",
         isReducedMotion = appearanceMap["isReducedMotion"] as? Boolean ?: false

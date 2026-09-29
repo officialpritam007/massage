@@ -88,12 +88,12 @@ fun GlassCard(
     label = "glass_card_press"
   )
   val surface = if (config.isDark) {
-    Color.White.copy(alpha = 0.075f + config.glassIntensity * 0.025f)
+    Color(0xFFB7D9FF).copy(alpha = (0.035f + config.blurAlpha * 0.085f + config.glassIntensity * 0.025f).coerceIn(0.06f, 0.18f))
   } else {
-    Color.White.copy(alpha = 0.68f + config.glassIntensity * 0.10f)
+    Color(0xFF1B5488).copy(alpha = (0.70f + config.blurAlpha * 0.20f + config.glassIntensity * 0.05f).coerceIn(0.70f, 0.94f))
   }
-  val border = borderColor ?: if (config.isDark) GlassBorderStrokeDark else GlassBorderStrokeLight
-  val resolvedShape: Shape = RoundedCornerShape(config.cornerRadiusDp.coerceIn(0f, 40f).dp)
+  val border = borderColor ?: if (config.isDark) GlassBorderStrokeDark else Color.White.copy(alpha = 0.38f)
+  val resolvedShape: Shape = RoundedCornerShape(config.cornerRadiusDp.coerceIn(0f, 64f).dp)
   val topHighlight = if (config.isDark) GlassHighlight.copy(alpha = 0.30f) else Color.White.copy(alpha = 0.95f)
   val shadow = if (config.isDark) Color.Black.copy(alpha = 0.42f) else Color.Black.copy(alpha = 0.10f)
 
@@ -136,7 +136,7 @@ fun GlassButton(
   isPrimary: Boolean = true,
   isLoading: Boolean = false,
   enabled: Boolean = true,
-  shape: Shape = RoundedCornerShape(20.dp),
+  shape: Shape? = null,
   testTag: String = "glass_button"
 ) {
   val config = LocalLiquidGlass.current
@@ -148,13 +148,14 @@ fun GlassButton(
     label = "glass_button_color"
   )
   val contentColor = if (isPrimary) Color.White else if (config.isDark) TextPrimary else TextPrimaryLight
+  val resolvedShape = shape ?: RoundedCornerShape(config.cornerRadiusDp.coerceIn(0f, 64f).dp)
 
   Box(
     modifier = modifier
       .defaultMinSize(minHeight = 50.dp)
-      .clip(shape)
+      .clip(resolvedShape)
       .background(accent.copy(alpha = if (isPrimary) 0.78f else 1f))
-      .border(1.dp, if (config.isDark) GlassHighlight.copy(alpha = 0.32f) else GlassBorderStrokeLight, shape)
+      .border(1.dp, if (config.isDark) GlassHighlight.copy(alpha = 0.32f) else GlassBorderStrokeLight, resolvedShape)
       .clickable(enabled = enabled && !isLoading, interactionSource = pressedSource, indication = null, onClick = onClick)
       .padding(horizontal = 22.dp, vertical = 14.dp)
       .testTag(testTag),
@@ -213,18 +214,19 @@ fun GlassTextField(
   keyboardActions: KeyboardActions = KeyboardActions.Default,
   singleLine: Boolean = true,
   maxLines: Int = 1,
-  shape: Shape = RoundedCornerShape(20.dp),
+  shape: Shape? = null,
   testTag: String = "glass_text_field"
 ) {
   val config = LocalLiquidGlass.current
   val primaryText = if (config.isDark) TextPrimary else TextPrimaryLight
-  val secondaryText = if (config.isDark) TextMuted else TextMuted.copy(alpha = 0.82f)
+  val secondaryText = if (config.isDark) Color(0xFFB7CBE2) else TextSecondaryLight
+  val resolvedShape = shape ?: RoundedCornerShape(config.cornerRadiusDp.coerceIn(0f, 64f).dp)
   Box(
     modifier = modifier
       .defaultMinSize(minHeight = 52.dp)
-      .clip(shape)
+      .clip(resolvedShape)
       .background(if (config.isDark) Color.White.copy(alpha = 0.075f) else Color.White.copy(alpha = 0.76f))
-      .border(1.dp, if (config.isDark) GlassBorderStrokeDark else GlassBorderStrokeLight, shape)
+      .border(1.dp, if (config.isDark) GlassBorderStrokeDark else GlassBorderStrokeLight, resolvedShape)
       .padding(horizontal = 16.dp, vertical = 12.dp)
       .testTag(testTag),
     contentAlignment = Alignment.CenterStart

@@ -51,9 +51,8 @@ class LiquidChatViewModel(
     searchQuery,
     users,
     conversations,
-    groups,
     messages
-  ) { query, uList, cList, gList, mMaps ->
+  ) { query, uList, cList, mMaps ->
     if (query.isBlank()) {
       SearchResults()
     } else {
@@ -67,17 +66,12 @@ class LiquidChatViewModel(
         it.otherUser.displayName.contains(trimmed, ignoreCase = true) ||
           it.lastMessageText.contains(trimmed, ignoreCase = true)
       }
-      val matchedGroups = gList.filter {
-        it.name.contains(trimmed, ignoreCase = true) ||
-          it.description.contains(trimmed, ignoreCase = true)
-      }
       val matchedMsgs = mMaps.values.flatten().filter {
         it.text.contains(trimmed, ignoreCase = true)
       }
       SearchResults(
         users = matchedUsers,
         conversations = matchedConvs,
-        groups = matchedGroups,
         messages = matchedMsgs
       )
     }
@@ -288,8 +282,7 @@ class LiquidChatViewModel(
 data class SearchResults(
   val users: List<User> = emptyList(),
   val conversations: List<Conversation> = emptyList(),
-  val groups: List<Group> = emptyList(),
   val messages: List<Message> = emptyList()
 ) {
-  val isEmpty: Boolean get() = users.isEmpty() && conversations.isEmpty() && groups.isEmpty() && messages.isEmpty()
+  val isEmpty: Boolean get() = users.isEmpty() && conversations.isEmpty() && messages.isEmpty()
 }

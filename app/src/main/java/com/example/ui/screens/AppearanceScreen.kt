@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -69,7 +70,7 @@ fun AppearanceScreen(
       containerColor = Color.Transparent,
       topBar = {
         GlassCard(
-          modifier = Modifier.fillMaxWidth(),
+          modifier = Modifier.fillMaxWidth().statusBarsPadding(),
           shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
           elevation = 8.dp
         ) {
@@ -265,15 +266,35 @@ fun AppearanceScreen(
               horizontalArrangement = Arrangement.SpaceBetween,
               verticalAlignment = Alignment.CenterVertically
             ) {
-              Text("Boxy ↔ Rounded", color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+              Text("Boxy ↔ Extra Rounded", color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
               Text("${appearance.cornerRadiusDp.toInt()} dp", color = CyanAccent, fontWeight = FontWeight.Bold, fontSize = 14.sp)
             }
             Slider(
               value = appearance.cornerRadiusDp,
               onValueChange = { viewModel.updateAppearance(appearance.copy(cornerRadiusDp = it)) },
-              valueRange = 0f..32f,
+              valueRange = 0f..64f,
               colors = SliderDefaults.colors(thumbColor = CyanAccent, activeTrackColor = CyanAccent)
             )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+              listOf("Boxy" to 4f, "Balanced" to 20f, "Rounded" to 40f, "Extra Round" to 64f).forEach { (label, radius) ->
+                Box(
+                  modifier = Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
+                    .background(if (kotlin.math.abs(appearance.cornerRadiusDp - radius) < 7f) CyanAccent.copy(alpha = 0.24f) else Color.White.copy(alpha = if (glassConfig.isDark) 0.06f else 0.45f))
+                    .border(1.dp, if (kotlin.math.abs(appearance.cornerRadiusDp - radius) < 7f) CyanAccent else Color.White.copy(alpha = 0.16f), RoundedCornerShape(12.dp))
+                    .clickable { viewModel.updateAppearance(appearance.copy(cornerRadiusDp = radius)) }
+                    .padding(vertical = 9.dp, horizontal = 2.dp),
+                  contentAlignment = Alignment.Center
+                ) { Text(label, color = TextPrimary, fontSize = 10.sp, fontWeight = FontWeight.SemiBold) }
+              }
+            }
+            Box(
+              modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                .clip(RoundedCornerShape(appearance.cornerRadiusDp.coerceIn(0f, 64f).dp))
+                .background(if (glassConfig.isDark) Color(0xFF176BFF).copy(alpha = 0.42f) else Color(0xFF176BFF).copy(alpha = 0.16f))
+                .border(1.dp, CyanAccent.copy(alpha = 0.55f), RoundedCornerShape(appearance.cornerRadiusDp.coerceIn(0f, 64f).dp))
+                .padding(horizontal = 16.dp, vertical = 15.dp),
+              contentAlignment = Alignment.Center
+            ) { Text("Extra Rounded Live Preview", color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
           }
         }
 
@@ -327,7 +348,7 @@ fun AppearanceScreen(
 
         GlassButton(
           text = "Reset Glass Defaults",
-          onClick = { viewModel.updateAppearance(appearance.copy(glassIntensity = 0.85f, blurAlpha = 0.70f, cornerRadiusDp = 24f, borderStrength = 0.70f, isReducedMotion = false)) },
+          onClick = { viewModel.updateAppearance(appearance.copy(glassIntensity = 0.85f, blurAlpha = 0.70f, cornerRadiusDp = 32f, borderStrength = 0.70f, isReducedMotion = false)) },
           modifier = Modifier.fillMaxWidth(),
           isPrimary = false
         )

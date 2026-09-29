@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -71,6 +72,7 @@ fun SettingsScreen(
   viewModel: LiquidChatViewModel,
   onBackClick: () -> Unit,
   onNavigateToAppearance: () -> Unit,
+  onNavigateToHomeTab: (String) -> Unit = {},
   onLogout: () -> Unit,
   modifier: Modifier = Modifier
 ) {
@@ -102,6 +104,15 @@ fun SettingsScreen(
   LiquidBackground(modifier = modifier) {
     Scaffold(
       containerColor = Color.Transparent,
+      bottomBar = {
+        GlassBottomBar(
+          selectedRoute = "settings",
+          onNavigateToChats = { onNavigateToHomeTab("All") },
+          onNavigateToFavorites = { onNavigateToHomeTab("Favorites") },
+          onNavigateToArchived = { onNavigateToHomeTab("Archived") },
+          onNavigateToSettings = {}
+        )
+      },
       topBar = {
         GlassCard(
           modifier = Modifier.fillMaxWidth().statusBarsPadding(),
@@ -202,7 +213,7 @@ fun SettingsScreen(
             SettingsNavigationRow(
               icon = Icons.Default.Settings,
               title = "Appearance & Liquid Glass",
-              subtitle = "Themes, blur intensity, refraction, accents",
+              subtitle = "Themes, glass transparency, corner roundness",
               onClick = onNavigateToAppearance,
               testTag = "settings_appearance_row"
             )
@@ -217,7 +228,7 @@ fun SettingsScreen(
             SettingsNavigationRow(
               icon = Icons.Default.Notifications,
               title = "Notifications & Sounds",
-              subtitle = "Messages, groups, ringtones, vibration",
+              subtitle = "Messages, ringtones, vibration",
               onClick = { showNotificationsDialog = true }
             )
 
@@ -238,7 +249,7 @@ fun SettingsScreen(
             SettingsNavigationRow(
               icon = Icons.Default.Info,
               title = "About Liquid Chat",
-              subtitle = "Liquid Glass messaging • Groups • Privacy controls",
+              subtitle = "Liquid Glass messaging • Privacy controls",
               onClick = { showAboutDialog = true },
               testTag = "settings_about_row"
             )
@@ -349,7 +360,6 @@ fun SettingsScreen(
           PrivacySelectorRow("Last seen", privacy.lastSeenVisibility) { activePrivacyField = "lastSeen" }
           PrivacySelectorRow("Online status", privacy.onlineVisibility) { activePrivacyField = "online" }
           PrivacySelectorRow("Profile photo", privacy.profilePhotoVisibility) { activePrivacyField = "photo" }
-          PrivacySelectorRow("Group invites", privacy.whoCanAddToGroups) { activePrivacyField = "groups" }
           Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
             Column(modifier = Modifier.weight(1f)) {
               Text("Read receipts", color = TextPrimary, fontWeight = FontWeight.SemiBold)
@@ -374,15 +384,11 @@ fun SettingsScreen(
   }
 
   activePrivacyField?.let { field ->
-    val options = when (field) {
-      "groups" -> listOf("Everyone", "Contacts Only")
-      else -> listOf("Everyone", "Contacts Only", "Nobody")
-    }
+    val options = listOf("Everyone", "Contacts Only", "Nobody")
     val title = when (field) {
       "lastSeen" -> "Last seen"
       "online" -> "Online status"
-      "photo" -> "Profile photo"
-      else -> "Group invites"
+      else -> "Profile photo"
     }
     AlertDialog(
       onDismissRequest = { activePrivacyField = null },
@@ -393,8 +399,7 @@ fun SettingsScreen(
             val selected = when (field) {
               "lastSeen" -> privacy.lastSeenVisibility == option
               "online" -> privacy.onlineVisibility == option
-              "photo" -> privacy.profilePhotoVisibility == option
-              else -> privacy.whoCanAddToGroups == option
+              else -> privacy.profilePhotoVisibility == option
             }
             Row(
               modifier = Modifier
@@ -403,8 +408,7 @@ fun SettingsScreen(
                   val updated = when (field) {
                     "lastSeen" -> privacy.copy(lastSeenVisibility = option)
                     "online" -> privacy.copy(onlineVisibility = option)
-                    "photo" -> privacy.copy(profilePhotoVisibility = option)
-                    else -> privacy.copy(whoCanAddToGroups = option)
+                    else -> privacy.copy(profilePhotoVisibility = option)
                   }
                   viewModel.updatePrivacy(updated)
                   activePrivacyField = null
@@ -456,7 +460,7 @@ fun SettingsScreen(
       title = { Text("About Liquid Chat", color = TextPrimary, fontWeight = FontWeight.Bold) },
       text = {
         Text(
-          text = "Liquid Chat\n\nReal-time messaging, media sharing, groups and privacy controls.\n\nDeveloped by: Pritam Pal\nContact info: officialpritam07@gmail.com",
+          text = "Liquid Chat\n\nReal-time messaging, media sharing and privacy controls.\n\nDeveloped by: Pritam Pal\nContact info: officialpritam07@gmail.com",
           color = TextSecondary,
           fontSize = 14.sp
         )

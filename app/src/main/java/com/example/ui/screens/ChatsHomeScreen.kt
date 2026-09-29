@@ -29,13 +29,13 @@ import androidx.compose.material.icons.filled.Unarchive
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DoneAll
-import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.WaterDrop
@@ -48,6 +48,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -88,19 +89,30 @@ import java.util.Locale
 fun ChatsHomeScreen(
   viewModel: LiquidChatViewModel,
   onNavigateToConversation: (String) -> Unit,
-  onNavigateToGroups: () -> Unit,
   onNavigateToSettings: () -> Unit,
   onNavigateToSearch: () -> Unit,
   onNavigateToAppearance: () -> Unit,
   onNavigateToProfile: (String) -> Unit,
+  initialTab: String = "All",
+  onHomeTabSelected: (String) -> Unit = {},
   modifier: Modifier = Modifier
 ) {
   val conversations by viewModel.conversations.collectAsState()
   val glassConfig = LocalLiquidGlass.current
   val currentUser by viewModel.currentUser.collectAsState()
 
-  var selectedFilter by remember { mutableStateOf("All") }
-  val filters = listOf("All", "Unread", "Favorites", "Archived")
+  var selectedFilter by remember { mutableStateOf(initialTab) }
+  LaunchedEffect(initialTab) { selectedFilter = initialTab }
+  val filters = when (selectedFilter) {
+    "Favorites" -> listOf("Favorites")
+    "Archived" -> listOf("Archived")
+    else -> listOf("All", "Unread")
+  }
+  val selectedRoute = when (selectedFilter) {
+    "Favorites" -> "favorites"
+    "Archived" -> "archived"
+    else -> "chats"
+  }
 
   val filteredConversations = remember(conversations, selectedFilter) {
     when (selectedFilter) {
@@ -180,9 +192,10 @@ fun ChatsHomeScreen(
       bottomBar = {
         // Floating Liquid Glass Navigation Bar
         GlassBottomBar(
-          selectedRoute = "chats",
-          onNavigateToChats = {},
-          onNavigateToGroups = onNavigateToGroups,
+          selectedRoute = selectedRoute,
+          onNavigateToChats = { selectedFilter = "All"; onHomeTabSelected("All") },
+          onNavigateToFavorites = { selectedFilter = "Favorites"; onHomeTabSelected("Favorites") },
+          onNavigateToArchived = { selectedFilter = "Archived"; onHomeTabSelected("Archived") },
           onNavigateToSettings = onNavigateToSettings
         )
       },
@@ -215,11 +228,8 @@ fun ChatsHomeScreen(
                     shape = RoundedCornerShape(16.dp)
                   )
                   .clickable {
-                    if (filter == "Groups") {
-                      onNavigateToGroups()
-                    } else {
-                      selectedFilter = filter
-                    }
+                    selectedFilter = filter
+                    onHomeTabSelected(if (filter == "Unread") "All" else filter)
                   }
                   .padding(horizontal = 14.dp, vertical = 7.dp)
               ) {
@@ -239,7 +249,7 @@ fun ChatsHomeScreen(
         // Conversation List Header
         item {
           Text(
-            text = "CHATS",
+            text = when (selectedFilter) { "Favorites" -> "FAVORITES"; "Archived" -> "ARCHIVED"; "Unread" -> "UNREAD CHATS"; else -> "CHATS" },
             style = MaterialTheme.typography.labelSmall.copy(
               color = TextMuted,
               fontWeight = FontWeight.Bold,
@@ -456,7 +466,8 @@ fun ConversationRowItem(
 fun GlassBottomBar(
   selectedRoute: String,
   onNavigateToChats: () -> Unit,
-  onNavigateToGroups: () -> Unit,
+  onNavigateToFavorites: () -> Unit,
+  onNavigateToArchived: () -> Unit,
   onNavigateToSettings: () -> Unit,
   modifier: Modifier = Modifier
 ) {
@@ -487,11 +498,18 @@ fun GlassBottomBar(
           testTag = "nav_chats"
         )
         BottomNavItem(
-          icon = Icons.Default.Group,
-          label = "Groups",
-          isSelected = selectedRoute == "groups",
-          onClick = onNavigateToGroups,
-          testTag = "nav_groups"
+          icon = Icons.Default.Star,
+          label = "Favorites",
+          isSelected = selectedRoute == "favorites",
+          onClick = onNavigateToFavorites,
+          testTag = "nav_favorites"
+        )
+        BottomNavItem(
+          icon = Icons.Default.Archive,
+          label = "Archived",
+          isSelected = selectedRoute == "archived",
+          onClick = onNavigateToArchived,
+          testTag = "nav_archived"
         )
         BottomNavItem(
           icon = Icons.Default.Settings,
@@ -535,6 +553,12 @@ fun BottomNavItem(
         modifier = Modifier.size(22.dp)
       )
     }
-
+    Text(
+      text = label,
+      color = if (isSelected) CyanAccent else TextMuted,
+      fontSize = 9.sp,
+      fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+      maxLines = 1
+    )
   }
 }

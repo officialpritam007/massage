@@ -13,7 +13,7 @@ import androidx.compose.ui.graphics.Color
 data class LiquidGlassConfig(
   val glassIntensity: Float = 0.82f,
   val blurAlpha: Float = 0.70f,
-  val cornerRadiusDp: Float = 24f,
+  val cornerRadiusDp: Float = 32f,
   val borderStrength: Float = 0.70f,
   val accentColor: Color = CyanAccent,
   val isGlassEnabled: Boolean = true,
@@ -31,9 +31,9 @@ private val DarkColorScheme = darkColorScheme(
   secondary = AzureBlue,
   onSecondary = Color.Black,
   tertiary = VioletAccent,
-  background = Color.Black,
+  background = Color(0xFF03152D),
   onBackground = TextPrimary,
-  surface = Color(0xFF080808),
+  surface = Color(0xE6102B50),
   onSurface = TextPrimary,
   surfaceVariant = SurfaceGlassDark,
   onSurfaceVariant = TextSecondary,
@@ -48,12 +48,12 @@ private val LightColorScheme = lightColorScheme(
   secondary = AzureBlue,
   onSecondary = Color.White,
   tertiary = VioletAccent,
-  background = Color.White,
+  background = Color(0xFFEAF4FF),
   onBackground = TextPrimaryLight,
-  surface = Color.White,
-  onSurface = TextPrimaryLight,
-  surfaceVariant = Color(0xFFF7F9FC),
-  onSurfaceVariant = TextSecondaryLight,
+  surface = Color(0xFF174575),
+  onSurface = TextPrimary,
+  surfaceVariant = Color(0xFF245D91),
+  onSurfaceVariant = Color(0xFFE4F1FF),
   outline = GlassBorderStrokeLight
 )
 

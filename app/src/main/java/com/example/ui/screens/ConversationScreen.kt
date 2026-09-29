@@ -12,6 +12,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -78,6 +83,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -157,7 +163,9 @@ fun ConversationScreen(
   var typingJob by remember { mutableStateOf<Job?>(null) }
   var showChatSettings by remember { mutableStateOf(false) }
   var isRecordingVoice by remember { mutableStateOf(false) }
+  var isUploadingVoice by remember { mutableStateOf(false) }
   var recordingStartedAt by remember { mutableStateOf(0L) }
+  var recordingElapsedSeconds by remember { mutableStateOf(0L) }
   var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
   var recordingFile by remember { mutableStateOf<File?>(null) }
   val context = LocalContext.current
@@ -165,15 +173,22 @@ fun ConversationScreen(
   fun finishVoiceRecording() {
     val activeRecorder = recorder ?: return
     val file = recordingFile
-    runCatching { activeRecorder.stop() }
+    val stoppedSuccessfully = runCatching { activeRecorder.stop() }.isSuccess
     runCatching { activeRecorder.release() }
     recorder = null
     recordingFile = null
     isRecordingVoice = false
+    recordingElapsedSeconds = 0L
     val duration = ((System.currentTimeMillis() - recordingStartedAt) / 1000L).toInt().coerceAtLeast(1)
-    if (file != null && file.exists() && file.length() > 0L) {
-      viewModel.uploadChatMedia(conversationId, Uri.fromFile(file), MessageType.VOICE) { result ->
-        result.onSuccess { url ->
+    if (!stoppedSuccessfully || file == null || !file.exists() || file.length() <= 0L) {
+      file?.delete()
+      Toast.makeText(context, "Recording was too short or could not be saved. Please try again.", Toast.LENGTH_SHORT).show()
+      return
+    }
+    isUploadingVoice = true
+    viewModel.uploadChatMedia(conversationId, Uri.fromFile(file), MessageType.VOICE) { result ->
+      isUploadingVoice = false
+      result.onSuccess { url ->
           viewModel.sendMessage(
             conversationId = conversationId,
             text = "",
@@ -190,7 +205,6 @@ fun ConversationScreen(
           Toast.makeText(context, "Voice message upload failed", Toast.LENGTH_SHORT).show()
           file.delete()
         }
-      }
     }
   }
 
@@ -199,21 +213,44 @@ fun ConversationScreen(
       finishVoiceRecording()
       return
     }
-    val output = File.createTempFile("voice_", ".m4a", context.cacheDir)
-    val newRecorder = MediaRecorder().apply {
-      setAudioSource(MediaRecorder.AudioSource.MIC)
-      setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-      setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-      setAudioEncodingBitRate(128000)
-      setAudioSamplingRate(44100)
-      setOutputFile(output.absolutePath)
-      prepare()
-      start()
+    var output: File? = null
+    var newRecorder: MediaRecorder? = null
+    try {
+      output = File.createTempFile("voice_", ".m4a", context.cacheDir)
+      val createdRecorder = MediaRecorder()
+      newRecorder = createdRecorder
+      createdRecorder.apply {
+        setAudioSource(MediaRecorder.AudioSource.MIC)
+        setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+        setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+        setAudioEncodingBitRate(128000)
+        setAudioSamplingRate(44100)
+        setOutputFile(output!!.absolutePath)
+        prepare()
+        start()
+      }
+      recordingFile = output
+      recordingStartedAt = System.currentTimeMillis()
+      recordingElapsedSeconds = 0L
+      recorder = createdRecorder
+      isRecordingVoice = true
+    } catch (e: Exception) {
+      runCatching { newRecorder?.reset() }
+      runCatching { newRecorder?.release() }
+      output?.delete()
+      recorder = null
+      recordingFile = null
+      isRecordingVoice = false
+      recordingElapsedSeconds = 0L
+      Toast.makeText(context, "Unable to start voice recording. Check microphone permission and try again.", Toast.LENGTH_LONG).show()
     }
-    recordingFile = output
-    recordingStartedAt = System.currentTimeMillis()
-    recorder = newRecorder
-    isRecordingVoice = true
+  }
+
+  LaunchedEffect(isRecordingVoice, recordingStartedAt) {
+    while (isRecordingVoice) {
+      recordingElapsedSeconds = ((System.currentTimeMillis() - recordingStartedAt) / 1000L).coerceAtLeast(0L)
+      delay(250)
+    }
   }
 
   val microphonePermissionLauncher = rememberLauncherForActivityResult(
@@ -395,17 +432,17 @@ fun ConversationScreen(
                   maxLines = 1,
                   overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                  text = when {
-                    conversation?.isTyping == true -> "Typing..."
-                    conversation?.isOnline == true -> "Online"
-                    else -> formatLastSeen(otherUser.lastSeen)
-                  },
-                  style = MaterialTheme.typography.bodySmall.copy(
-                    color = if (conversation?.isOnline == true) EmeraldOnline else TextMuted,
-                    fontSize = 11.sp
+                if (conversation?.isTyping == true) {
+                  TypingDotsLabel()
+                } else {
+                  Text(
+                    text = if (conversation?.isOnline == true) "Online" else formatLastSeen(otherUser.lastSeen),
+                    style = MaterialTheme.typography.bodySmall.copy(
+                      color = if (conversation?.isOnline == true) EmeraldOnline else TextMuted,
+                      fontSize = 11.sp
+                    )
                   )
-                )
+                }
               }
             }
 
@@ -484,6 +521,66 @@ fun ConversationScreen(
               }
             }
           }
+
+            AnimatedVisibility(visible = isRecordingVoice || isUploadingVoice) {
+              if (isUploadingVoice && !isRecordingVoice) {
+                Text("Uploading voice message…", color = if (glassConfig.isDark) Color.White else Color(0xFF16437B), fontSize = 12.sp, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+              } else {
+              val pulseTransition = rememberInfiniteTransition(label = "voice_recording_pulse")
+              val pulseScale by if (glassConfig.isReducedMotion) {
+                remember { androidx.compose.runtime.mutableFloatStateOf(1f) }
+              } else {
+                pulseTransition.animateFloat(
+                  initialValue = 0.78f, targetValue = 1.18f,
+                  animationSpec = infiniteRepeatable(tween(700), repeatMode = RepeatMode.Reverse),
+                  label = "voice_recording_dot_scale"
+                )
+              }
+              val pulseAlpha by if (glassConfig.isReducedMotion) {
+                remember { androidx.compose.runtime.mutableFloatStateOf(1f) }
+              } else {
+                pulseTransition.animateFloat(
+                  initialValue = 0.45f, targetValue = 1f,
+                  animationSpec = infiniteRepeatable(tween(700), repeatMode = RepeatMode.Reverse),
+                  label = "voice_recording_dot_alpha"
+                )
+              }
+              Column(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+              ) {
+                Row(
+                  modifier = Modifier.clip(RoundedCornerShape(24.dp))
+                    .background(Color(0xFF0B1C36).copy(alpha = if (glassConfig.isDark) 0.72f else 0.92f))
+                    .border(1.dp, Color(0xFFFF4B72).copy(alpha = 0.58f), RoundedCornerShape(24.dp))
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                  Box(Modifier.size(8.dp).graphicsLayer { scaleX = pulseScale; scaleY = pulseScale; alpha = pulseAlpha }.clip(CircleShape).background(Color(0xFFFF4B72)))
+                  Text("Recording %02d:%02d".format(recordingElapsedSeconds / 60, recordingElapsedSeconds % 60), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                  Text("• Tap ✓ to send", color = Color.White.copy(alpha = 0.78f), fontSize = 11.sp)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                  repeat(7) { index ->
+                    val barTransition = rememberInfiniteTransition(label = "voice_wave_$index")
+                    val barHeight by if (glassConfig.isReducedMotion) {
+                      remember(index) { androidx.compose.runtime.mutableFloatStateOf(10f) }
+                    } else {
+                      barTransition.animateFloat(
+                        initialValue = 5f + (index % 3) * 2f,
+                        targetValue = 12f + ((index + 1) % 4) * 5f,
+                        animationSpec = infiniteRepeatable(tween(320 + index * 55), repeatMode = RepeatMode.Reverse),
+                        label = "voice_wave_height_$index"
+                      )
+                    }
+                    Box(Modifier.width(4.dp).height(barHeight.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFFFF4B72).copy(alpha = 0.72f + (index % 2) * 0.25f)))
+                  }
+                }
+              }
+              }
+            }
 
           // Input Bar Row
           Row(
@@ -810,6 +907,28 @@ fun AttachmentOption(
     }
     Spacer(modifier = Modifier.height(8.dp))
     Text(title, style = MaterialTheme.typography.labelSmall.copy(color = TextSecondary))
+  }
+}
+
+@Composable
+private fun TypingDotsLabel() {
+  val transition = rememberInfiniteTransition(label = "typing_indicator")
+  val glassConfig = LocalLiquidGlass.current
+  if (glassConfig.isReducedMotion) {
+    Text("Typing...", color = CyanAccent, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+    return
+  }
+  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+    Text("Typing", color = CyanAccent, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+    repeat(3) { index ->
+      val alpha by transition.animateFloat(
+        initialValue = 0.28f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(420, delayMillis = index * 140), repeatMode = RepeatMode.Reverse),
+        label = "typing_dot_$index"
+      )
+      Box(Modifier.size(3.dp).clip(CircleShape).background(CyanAccent.copy(alpha = alpha)))
+    }
   }
 }
 

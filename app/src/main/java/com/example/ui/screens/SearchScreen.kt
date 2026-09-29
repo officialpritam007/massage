@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -26,7 +27,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
@@ -64,7 +64,6 @@ import com.example.ui.viewmodel.LiquidChatViewModel
 fun SearchScreen(
   viewModel: LiquidChatViewModel,
   onNavigateToConversation: (String) -> Unit,
-  onNavigateToGroupChat: (String) -> Unit,
   onNavigateToProfile: (String) -> Unit,
   onBackClick: () -> Unit,
   modifier: Modifier = Modifier
@@ -79,7 +78,7 @@ fun SearchScreen(
       containerColor = Color.Transparent,
       topBar = {
         GlassCard(
-          modifier = Modifier.fillMaxWidth(),
+          modifier = Modifier.fillMaxWidth().statusBarsPadding(),
           shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
           elevation = 8.dp
         ) {
@@ -99,7 +98,7 @@ fun SearchScreen(
             GlassTextField(
               value = searchQuery,
               onValueChange = { viewModel.onSearchQueryChanged(it) },
-              placeholder = "Search messages, people, groups...",
+              placeholder = "Search messages and people...",
               modifier = Modifier.weight(1f),
               leadingIcon = {
                 Icon(Icons.Default.Search, contentDescription = null, tint = CyanAccent, modifier = Modifier.size(20.dp))
@@ -244,36 +243,6 @@ fun SearchScreen(
                   Column(modifier = Modifier.weight(1f)) {
                     Text(conv.otherUser.displayName, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     Text(conv.lastMessageText, color = TextSecondary, fontSize = 12.sp, maxLines = 1)
-                  }
-                }
-              }
-            }
-          }
-
-          if (searchResults.groups.isNotEmpty()) {
-            item {
-              Text(
-                text = "GROUPS",
-                style = MaterialTheme.typography.labelSmall.copy(color = CyanAccent, fontWeight = FontWeight.Bold)
-              )
-            }
-            items(searchResults.groups) { group ->
-              GlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                onClick = { onNavigateToGroupChat(group.id) }
-              ) {
-                Row(
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                  verticalAlignment = Alignment.CenterVertically
-                ) {
-                  GlassAvatar(photoUrl = group.photoUrl, name = group.name, size = 44.dp)
-                  Spacer(modifier = Modifier.width(12.dp))
-                  Column(modifier = Modifier.weight(1f)) {
-                    Text(group.name, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                    Text("${group.members.size} members • ${group.description}", color = TextSecondary, fontSize = 12.sp, maxLines = 1)
                   }
                 }
               }

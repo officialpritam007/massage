@@ -3,6 +3,9 @@ package com.example.ui
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -22,8 +25,6 @@ import com.example.ui.screens.CameraScreen
 import com.example.ui.screens.ChatsHomeScreen
 import com.example.ui.screens.ContactProfileScreen
 import com.example.ui.screens.ConversationScreen
-import com.example.ui.screens.GroupChatScreen
-import com.example.ui.screens.GroupsScreen
 import com.example.ui.screens.SearchScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.LiquidChatTheme
@@ -35,6 +36,7 @@ fun LiquidChatApp(
   chatViewModel: LiquidChatViewModel = viewModel()
 ) {
   val appearance by chatViewModel.appearance.collectAsState()
+  var homeTab by remember { mutableStateOf("All") }
   val lifecycleOwner = LocalLifecycleOwner.current
 
   DisposableEffect(lifecycleOwner) {
@@ -91,9 +93,6 @@ fun LiquidChatApp(
           onNavigateToConversation = { convId ->
             navController.navigate(Screen.Conversation.createRoute(convId))
           },
-          onNavigateToGroups = {
-            navController.navigate(Screen.Groups.route)
-          },
           onNavigateToSettings = {
             navController.navigate(Screen.Settings.route)
           },
@@ -105,7 +104,9 @@ fun LiquidChatApp(
           },
           onNavigateToProfile = { userId ->
             navController.navigate(Screen.ContactProfile.createRoute(userId))
-          }
+          },
+          initialTab = homeTab,
+          onHomeTabSelected = { homeTab = it }
         )
       }
 
@@ -147,46 +148,11 @@ fun LiquidChatApp(
         )
       }
 
-      composable(Screen.Groups.route) {
-        GroupsScreen(
-          viewModel = chatViewModel,
-          onNavigateToGroupChat = { grpId ->
-            navController.navigate(Screen.GroupChat.createRoute(grpId))
-          },
-          onNavigateToChats = {
-            navController.navigate(Screen.Chats.route)
-          },
-          onNavigateToSettings = {
-            navController.navigate(Screen.Settings.route)
-          },
-          onNavigateToSearch = {
-            navController.navigate(Screen.Search.route)
-          }
-        )
-      }
-
-      composable(
-        route = Screen.GroupChat.route,
-        arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-      ) { backStackEntry ->
-        val grpId = backStackEntry.arguments?.getString("groupId") ?: "grp_design_lab"
-        GroupChatScreen(
-          groupId = grpId,
-          viewModel = chatViewModel,
-          onBackClick = { navController.popBackStack() }
-        )
-      }
-
-
-
       composable(Screen.Search.route) {
         SearchScreen(
           viewModel = chatViewModel,
           onNavigateToConversation = { convId ->
             navController.navigate(Screen.Conversation.createRoute(convId))
-          },
-          onNavigateToGroupChat = { grpId ->
-            navController.navigate(Screen.GroupChat.createRoute(grpId))
           },
           onNavigateToProfile = { userId ->
             navController.navigate(Screen.ContactProfile.createRoute(userId))
@@ -223,6 +189,10 @@ fun LiquidChatApp(
           onBackClick = { navController.popBackStack() },
           onNavigateToAppearance = {
             navController.navigate(Screen.Appearance.route)
+          },
+          onNavigateToHomeTab = { tab ->
+            homeTab = tab
+            navController.popBackStack(Screen.Chats.route, false)
           },
           onLogout = {
             navController.navigate(Screen.Auth.route) {
