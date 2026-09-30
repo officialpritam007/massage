@@ -11,7 +11,7 @@ jobs:
     name: Build Debug APK
     runs-on: ubuntu-latest
     env:
-      LIQUID_API_URL: ${{ vars.LIQUID_API_URL }}
+      LIQUID_API_URL: ${{ vars.LIQUID_API_URL || 'https://liquichat.sgp.appwrite.run' }}
       APPWRITE_ENDPOINT: ${{ vars.APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1' }}
       APPWRITE_PROJECT_ID: ${{ vars.APPWRITE_PROJECT_ID || '6abae44b0030a4b3c0b4' }}
       APPWRITE_BUCKET_ID: ${{ vars.APPWRITE_BUCKET_ID || '6abae4e300352b37c209' }}
@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -30,7 +30,7 @@ jobs:
         shell: bash
         run: |
           if [[ -z "$LIQUID_API_URL" ]]; then
-            echo "::error::Missing repository variable LIQUID_API_URL. Deploy appwrite-functions/liquid-api and set its HTTPS function domain in Settings > Secrets and variables > Actions > Variables."
+            echo "::error::Missing LIQUID_API_URL."
             exit 1
           fi
           if [[ "$LIQUID_API_URL" != https://* ]]; then
