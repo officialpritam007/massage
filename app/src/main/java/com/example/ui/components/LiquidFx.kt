@@ -15,7 +15,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.drawscope.drawOutline
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -119,14 +118,15 @@ fun Modifier.lensEdge(
   strength: Float = 1f
 ): Modifier = drawWithCache {
   val outline = shape.createOutline(size, layoutDirection, this)
+  val outlinePath = outline.path
   val rim = Color.White.copy(alpha = (if (dark) .55f else .92f) * strength)
   val innerGlow = Color.White.copy(alpha = (if (dark) .12f else .45f) * strength)
   val refraction = Color.White.copy(alpha = (if (dark) .05f else .16f) * strength)
   onDrawWithContent {
     drawContent()
-    drawOutline(outline, brush = Brush.verticalGradient(listOf(rim, Color.Transparent, rim.copy(alpha = rim.alpha * .55f))), style = Stroke(width = 1.dp.toPx()))
-    drawOutline(outline, brush = Brush.verticalGradient(listOf(innerGlow, Color.Transparent)), style = Stroke(width = 2.5f.dp.toPx()))
-    drawOutline(outline, brush = Brush.verticalGradient(listOf(refraction, Color.Transparent)), style = Stroke(width = 5.5f.dp.toPx()))
+    drawPath(outlinePath, brush = Brush.verticalGradient(listOf(rim, Color.Transparent, rim.copy(alpha = rim.alpha * .55f))), style = Stroke(width = 1.dp.toPx()))
+    drawPath(outlinePath, brush = Brush.verticalGradient(listOf(innerGlow, Color.Transparent)), style = Stroke(width = 2.5f.dp.toPx()))
+    drawPath(outlinePath, brush = Brush.verticalGradient(listOf(refraction, Color.Transparent)), style = Stroke(width = 5.5f.dp.toPx()))
   }
 }
 
