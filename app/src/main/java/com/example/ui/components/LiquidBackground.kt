@@ -25,16 +25,21 @@ fun LiquidBackground(
     crystal: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val dark = LocalLiquidGlass.current.isDark
+    val config = LocalLiquidGlass.current
+    val dark = config.isDark
     val state = remember { HazeState() }
 
-    CompositionLocalProvider(LocalGlassBackdrop provides state) {
+    CompositionLocalProvider(LocalGlassBackdrop provides if (config.isGlassEnabled) state else null) {
         Box(
             modifier
                 .fillMaxSize()
                 .background(if (dark) Color(0xFF131722) else Color(0xFFF9FAFD))
         ) {
-            Canvas(Modifier.fillMaxSize().hazeSource(state)) {
+            Canvas(
+                Modifier
+                    .fillMaxSize()
+                    .then(if (config.isGlassEnabled) Modifier.hazeSource(state) else Modifier)
+            ) {
                 if (crystal) {
                     val tint = if (dark) Color(0xFF496285) else Color(0xFFB7D6F4)
                     for (i in 0..8) {
