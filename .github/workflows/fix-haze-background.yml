@@ -1,0 +1,51 @@
+name: Fix Haze Background Runtime Crash
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-haze-background.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch Haze background color
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/example/ui/components/LiquidGlass.kt')
+          s = p.read_text(encoding='utf-8')
+
+          old_backdrop = '  val backdrop = LocalGlassBackdrop.current\n'
+          new_backdrop = '  val glassBackground = backgroundColor ?: surface\n  val backdrop = LocalGlassBackdrop.current\n'
+          if old_backdrop not in s:
+              raise SystemExit('Could not find GlassCard backdrop declaration')
+          s = s.replace(old_backdrop, new_backdrop, 1)
+
+          old_haze = '      .then(if (backdrop != null && config.isGlassEnabled) Modifier.hazeEffect(backdrop) { blurRadius = (12f + config.blurAlpha * 20f).dp; noiseFactor = 0.025f } else Modifier)\n      .background(backgroundColor ?: surface)'
+          new_haze = '''      .then(\n        if (backdrop != null && config.isGlassEnabled) {\n          Modifier.hazeEffect(backdrop) {\n            blurRadius = (12f + config.blurAlpha * 20f).dp\n            noiseFactor = 0.025f\n            backgroundColor = glassBackground\n          }\n        } else Modifier\n      )\n      .background(glassBackground)'''
+          if old_haze not in s:
+              raise SystemExit('Could not find Haze effect chain')
+          s = s.replace(old_haze, new_haze, 1)
+
+          p.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Remove temporary workflow and commit fix
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/fix-haze-background.yml
+          git add app/src/main/java/com/example/ui/components/LiquidGlass.kt
+          git commit -m 'Fix Haze glass background runtime crash'
+          git push origin main
