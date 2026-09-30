@@ -41,6 +41,7 @@ data class Message(
   val type: MessageType = MessageType.TEXT,
   val mediaUrl: String = "",
   val voiceDurationSeconds: Int = 0,
+  val waveform: List<Float> = emptyList(),
   val createdAt: Long = System.currentTimeMillis(),
   val status: MessageDeliveryStatus = MessageDeliveryStatus.SENT,
   val replyToId: String? = null,
@@ -91,6 +92,5 @@ data class PrivacySettings(
   val lastSeenVisibility: String = "Everyone",
   val onlineVisibility: String = "Everyone",
   val profilePhotoVisibility: String = "Everyone",
-  val readReceipts: Boolean = true,
-
+  val readReceipts: Boolean = true
 )
