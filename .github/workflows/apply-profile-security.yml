@@ -36,3 +36,5 @@ jobs:
           fi
           git commit -m 'Add username availability and report throttling'
           git push origin HEAD:main
+
+# retried on the latest confirmed implementation head
