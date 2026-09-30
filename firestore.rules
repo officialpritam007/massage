@@ -17,7 +17,6 @@ service cloud.firestore {
       return signedIn()
         && conversationExists(cid)
         && get(/databases/$(database)/documents/conversations/$(cid)).data.participantIds is list
-        && get(/databases/$(database)/documents/conversations/$(cid)).data.participantIds.size() == 2
         && request.auth.uid in get(/databases/$(database)/documents/conversations/$(cid)).data.participantIds;
     }
 
@@ -76,10 +75,14 @@ service cloud.firestore {
     }
 
     match /conversations/{cid} {
+      // Firestore evaluates query rules against the query constraints, not by post-filtering
+      // individual documents. The Android chat-list query constrains participantIds with
+      // array-contains(currentUid), so membership is the rule predicate here. The app parser and
+      // authenticated backend still enforce the product's 1-to-1 (exactly two participants) model.
       allow read: if signedIn()
         && resource.data.participantIds is list
-        && resource.data.participantIds.size() == 2
         && request.auth.uid in resource.data.participantIds;
+
       // Conversation/message mutation is server-authoritative via the authenticated API.
       allow create, update, delete: if false;
 
