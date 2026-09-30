@@ -1,0 +1,33 @@
+name: Apply First Message Outbox Fix
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-first-message-outbox-fix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply patch
+        run: python scripts/apply_first_message_outbox_fix.py
+      - name: Commit changes
+        run: |
+          git config user.name 'officialpritam007'
+          git config user.email 'officialpritam07@gmail.com'
+          git add app/src/main/java/com/example/data/repository/ChatRepository.kt
+          if git diff --cached --quiet; then
+            echo 'No changes needed.'
+            exit 0
+          fi
+          git commit -m 'Preserve first message for fresh and deleted chats'
+          git push origin HEAD:main
