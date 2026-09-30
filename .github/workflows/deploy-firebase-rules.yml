@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   deploy:
-    name: Publish Firestore and Storage rules
+    name: Publish Firestore rules
     runs-on: ubuntu-latest
     env:
       FIREBASE_PROJECT_ID: liquid-chat-v2
@@ -44,13 +44,13 @@ jobs:
       - name: Install Firebase CLI
         run: npm install --global firebase-tools
 
-      - name: Deploy Firestore and Storage rules
+      - name: Deploy Firestore rules
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
         run: |
           firebase deploy \
             --project "$FIREBASE_PROJECT_ID" \
-            --only firestore:rules,storage \
+            --only firestore:rules \
             --non-interactive
 
       - name: Remove temporary credentials
