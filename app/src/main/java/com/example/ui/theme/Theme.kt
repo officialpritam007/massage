@@ -16,7 +16,7 @@ data class LiquidGlassConfig(
   val cornerRadiusDp: Float = 32f,
   val borderStrength: Float = 0.70f,
   val accentColor: Color = CyanAccent,
-  val isGlassEnabled: Boolean = true,
+  val isGlassEnabled: Boolean = false,
   val isReducedMotion: Boolean = false,
   val isDark: Boolean = false
 )
