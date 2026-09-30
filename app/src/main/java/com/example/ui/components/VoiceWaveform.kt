@@ -59,8 +59,8 @@ fun VoiceWaveformPlayer(
       return@LaunchedEffect
     }
     runCatching {
-      val url = LiquidApi.resolve(mediaUrl, forceRefresh = retry > 0)
-      player.setDataSource(url)
+      val file = LiquidApi.cachedPrivateMedia(mediaUrl, forceRefresh = retry > 0)
+      player.setDataSource(file.absolutePath)
       player.setOnPreparedListener {
         duration = it.duration.coerceAtLeast(1)
         ready = true
