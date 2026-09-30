@@ -229,8 +229,6 @@ export default async ({req, res, error}) => {
             deletedFor: [],
             deletedBefore: {}
           });
-        } else {
-          t.update(ref, {deletedFor: FieldValue.arrayRemove(uid)});
         }
       });
       await allowed(db, cid, uid);
@@ -291,10 +289,25 @@ export default async ({req, res, error}) => {
       if (meta.conversationId) {
         let ok = false;
         const revoked = new Set(meta.revokedFrom || []);
+        const mediaRef = 'appwrite:' + p.fileId;
         for (const cid of [meta.conversationId, ...(meta.forwardedTo || [])]) {
-          if (revoked.has(cid)) continue;
+          if (!cid || revoked.has(cid)) continue;
           try {
-            await allowed(db, cid, uid);
+            const access = await allowed(db, cid, uid);
+            const cutoff = Number(access.c.deletedBefore?.[uid] || 0);
+            const candidates = await access.ref.collection('messages')
+              .where('mediaUrl', '==', mediaRef)
+              .limit(20)
+              .get();
+            const visible = candidates.docs.some(doc => {
+              const message = doc.data();
+              const createdAt = Number(message.createdAt || 0);
+              return !message.deletedForEveryone
+                && !(message.hiddenFor || []).includes(uid)
+                && !(message.expiresAt && Number(message.expiresAt) <= now)
+                && (!cutoff || createdAt > cutoff);
+            });
+            if (!visible) continue;
             ok = true;
             break;
           } catch {}
@@ -305,7 +318,7 @@ export default async ({req, res, error}) => {
         if (u?.privacy?.profilePhotoVisibility === 'Nobody' || u?.blockedUserIds?.includes(uid)) throw new Error('Photo is private');
       }
       const fileToken = await aw(`/tokens/buckets/${env.APPWRITE_BUCKET_ID}/files/${p.fileId}`, 'POST', {
-        expire: new Date(now + 5 * 60000).toISOString()
+        expire: new Date(now + 60 * 1000).toISOString()
       });
       return res.json({
         url: `${env.APPWRITE_ENDPOINT}/storage/buckets/${env.APPWRITE_BUCKET_ID}/files/${p.fileId}/view?project=${env.APPWRITE_PROJECT_ID}&token=${encodeURIComponent(fileToken.secret)}`
@@ -406,7 +419,7 @@ export default async ({req, res, error}) => {
           status: 'SENT',
           isDeleted: false,
           deletedForEveryone: false,
-          hiddenFor,
+          hiddenFor: [],
           isEdited: false,
           isPinned: false,
           reactions: [],
@@ -466,7 +479,7 @@ export default async ({req, res, error}) => {
           status: 'SENT',
           isDeleted: false,
           deletedForEveryone: false,
-          hiddenFor: [],
+          hiddenFor,
           isEdited: false,
           isPinned: false,
           reactions: [],

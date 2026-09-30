@@ -81,8 +81,13 @@ object LiquidApi {
     }
   }
 
-  fun invalidateMedia(url: String) {
+  fun invalidateMedia(url: String, purgeCaches: Boolean = true) {
     if (url.startsWith("appwrite:")) resolvedMedia.remove(url.removePrefix("appwrite:"))
+    if (purgeCaches && ::context.isInitialized) {
+      // A deleted message must never be resurrected from an already-resolved URL.
+      coil.Coil.imageLoader(context).memoryCache?.clear()
+      coil.Coil.imageLoader(context).diskCache?.clear()
+    }
   }
 
   suspend fun upload(
@@ -189,7 +194,7 @@ object LiquidApi {
     }
     val resolved = call("mediaAccess", mapOf("fileId" to fileId)).getString("url")
     // Server tokens live for five minutes; refresh before the actual expiry boundary.
-    resolvedMedia[fileId] = ResolvedMedia(resolved, now + 4 * 60_000)
+    resolvedMedia[fileId] = ResolvedMedia(resolved, now + 45_000)
     return resolved
   }
 }

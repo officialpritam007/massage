@@ -226,7 +226,7 @@ fun SettingsScreen(
                 context.startActivity(
                   android.content.Intent(
                     android.content.Intent.ACTION_SENDTO,
-                    android.net.Uri.parse("mailto:officialpritam@gmail.com")
+                    android.net.Uri.parse("mailto:officialpritam07@gmail.com")
                   )
                 )
               }

@@ -714,14 +714,18 @@ class ChatRepository(
   fun addReaction(cid: String, id: String, emoji: String) = action("react", cid, id, mapOf("emoji" to emoji))
 
   fun deleteMessageForMe(cid: String, id: String) = runAction {
+    val mediaUrl = _messages.value[cid].orEmpty().firstOrNull { it.id == id }?.mediaUrl.orEmpty()
     prefs.edit().remove("outbox:$uid:$id").apply()
     LiquidApi.call("deleteForMe", mapOf("conversationId" to cid, "messageId" to id))
+    if (mediaUrl.isNotBlank()) LiquidApi.invalidateMedia(mediaUrl)
     removeLocalMessage(cid, id)
   }
 
   fun deleteMessageForEveryone(cid: String, id: String) = runAction {
+    val mediaUrl = _messages.value[cid].orEmpty().firstOrNull { it.id == id }?.mediaUrl.orEmpty()
     prefs.edit().remove("outbox:$uid:$id").apply()
     LiquidApi.call("deleteForEveryone", mapOf("conversationId" to cid, "messageId" to id))
+    if (mediaUrl.isNotBlank()) LiquidApi.invalidateMedia(mediaUrl)
     removeLocalMessage(cid, id)
   }
 
@@ -761,8 +765,11 @@ class ChatRepository(
   fun setFavorite(cid: String, value: Boolean) = setting(cid, "favoriteFor", value)
 
   fun deleteChatForMe(cid: String) = runAction {
-    val messageIds = _messages.value[cid].orEmpty().map { it.id }.toSet()
+    val currentMessages = _messages.value[cid].orEmpty()
+    val messageIds = currentMessages.map { it.id }.toSet()
+    val mediaUrls = currentMessages.map { it.mediaUrl }.filter { it.isNotBlank() }.distinct()
     LiquidApi.call("deleteChat", mapOf("conversationId" to cid))
+    mediaUrls.forEach { LiquidApi.invalidateMedia(it) }
     messageListeners.remove(cid)?.remove()
     presenceListeners.remove(cid)?.remove()
     deletedBefore[cid] = System.currentTimeMillis()

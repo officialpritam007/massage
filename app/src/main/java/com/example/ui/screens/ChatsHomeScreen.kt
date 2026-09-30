@@ -332,7 +332,7 @@ fun ChatsHomeScreen(
 
         delete?.let { conversation ->
             GlassDialog("Delete this chat?", { delete = null }) {
-                Text("This hides the conversation from your inbox. A new message can bring it back.")
+                Text("This permanently removes the current history from your account. It will not return after restart, sign-in, reinstall or sync. A later new message may start a fresh chat without restoring deleted history.")
                 TextButton(onClick = {
                     viewModel.deleteChatForMe(conversation.id)
                     delete = null

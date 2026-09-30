@@ -33,6 +33,12 @@ class LiquidFirebaseMessagingService : FirebaseMessagingService() {
     if (message.data["type"] == "message_deleted") {
       NotificationManagerCompat.from(this).cancel(id.hashCode())
       prefs.edit().remove("notified:$id").apply()
+      // The exact media ref is intentionally not sent in FCM. Clear private media
+      // caches so a remote Delete for everyone cannot leave stale photo/video UI.
+      if (com.example.data.network.LiquidApi::context.isInitialized) {
+        coil.Coil.imageLoader(this).memoryCache?.clear()
+        coil.Coil.imageLoader(this).diskCache?.clear()
+      }
       return
     }
 

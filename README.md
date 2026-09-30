@@ -2,7 +2,7 @@
 
 A Kotlin/Jetpack Compose personal messaging app with a white Liquid Glass-inspired UI.
 
-**Developer:** Pritam Pal · **Support:** officialpritam@gmail.com  
+**Developer:** Pritam Pal · **Support:** officialpritam07@gmail.com  
 © 2026 Pritam Pal
 
 ## This update
