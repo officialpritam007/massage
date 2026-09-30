@@ -187,6 +187,15 @@ export default async ({req, res, error}) => {
       t.set(rate, {minute: Math.floor(now / 60000), count: same ? d.count + 1 : 1});
     });
 
+    if (p.action === 'usernameCheck') {
+      const username = String(p.username || '').trim().toLowerCase();
+      if (!/^[a-z0-9_.]{3,32}$/.test(username)) {
+        throw new Error('Username must have 3–32 letters, numbers, dots or underscores');
+      }
+      const reserved = await db.doc('usernames/' + username).get();
+      return res.json({available: !reserved.exists || reserved.data()?.uid === uid});
+    }
+
     if (p.action === 'profile') {
       const old = (await own.get()).data() || {};
       const name = String(p.displayName ?? old.displayName ?? claims.name ?? 'User').trim().slice(0, 60);
@@ -331,6 +340,15 @@ export default async ({req, res, error}) => {
 
     if (p.action === 'report') {
       if (!p.otherUid || p.otherUid === uid || String(p.reason || '').trim().length < 4) throw new Error('Please enter a report reason');
+      const reportRate = db.doc('_reportRate/' + uid);
+      await db.runTransaction(async t => {
+        const previous = (await t.get(reportRate)).data();
+        const hour = Math.floor(now / 3600000);
+        const sameHour = previous?.hour === hour;
+        const count = sameHour ? Number(previous?.count || 0) : 0;
+        if (count >= 5) throw new Error('Report limit reached. Try again later.');
+        t.set(reportRate, {hour, count: count + 1, updatedAt: now});
+      });
       await db.collection('reports').add({
         reporterId: uid,
         targetUid: p.otherUid,
@@ -354,6 +372,7 @@ export default async ({req, res, error}) => {
       if (u?.username) await db.doc('usernames/' + u.username).delete();
       await db.doc('_sessions/' + uid).delete();
       await db.doc('_rate/' + uid).delete();
+      await db.doc('_reportRate/' + uid).delete();
       await db.doc('directory/' + uid).delete();
       await own.delete();
       await aw('/users/' + appUser(uid), 'DELETE').catch(() => {});

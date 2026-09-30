@@ -41,6 +41,9 @@ fun SettingsScreen(
   var name by remember(me.displayName) { mutableStateOf(me.displayName) }
   var username by remember(me.username) { mutableStateOf(me.username) }
   var bio by remember(me.bio) { mutableStateOf(me.bio) }
+  var phone by remember(me.phoneNumber) { mutableStateOf(me.phoneNumber) }
+  var usernameStatus by remember { mutableStateOf<String?>(null) }
+  var checkingUsername by remember { mutableStateOf(false) }
   var busy by remember { mutableStateOf(false) }
   var cacheSize by remember { mutableLongStateOf(0L) }
 
@@ -140,7 +143,38 @@ fun SettingsScreen(
         when (dialog) {
           "Profile" -> {
             GlassTextField(name, { name = it.take(60) }, placeholder = "Name")
-            GlassTextField(username, { username = it.lowercase().take(32) }, placeholder = "Username")
+            GlassTextField(
+              username,
+              {
+                username = it.lowercase().take(32)
+                usernameStatus = null
+              },
+              placeholder = "Username"
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              TextButton(
+                enabled = !checkingUsername && username.isNotBlank(),
+                onClick = {
+                  checkingUsername = true
+                  scope.launch {
+                    val result = viewModel.checkUsernameAvailability(username)
+                    usernameStatus = result.fold(
+                      onSuccess = { if (it) "Username is available" else "Username is already taken" },
+                      onFailure = { it.message ?: "Could not check username" }
+                    )
+                    checkingUsername = false
+                  }
+                }
+              ) { Text(if (checkingUsername) "Checking…" else "Check availability") }
+              usernameStatus?.let {
+                Text(
+                  it,
+                  style = MaterialTheme.typography.bodySmall,
+                  color = if (it.contains("available", ignoreCase = true) && !it.contains("taken", ignoreCase = true))
+                    MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                )
+              }
+            }
             GlassTextField(
               bio,
               { bio = it.take(160) },
@@ -148,10 +182,15 @@ fun SettingsScreen(
               singleLine = false,
               maxLines = 4
             )
+            GlassTextField(
+              phone,
+              { phone = it.filter { ch -> ch.isDigit() || ch == '+' || ch == ' ' || ch == '-' }.take(30) },
+              placeholder = "Phone (optional)"
+            )
             GlassButton(
               "Save",
               {
-                viewModel.updateProfile(name.trim(), username.trim(), bio.trim(), me.phoneNumber)
+                viewModel.updateProfile(name.trim(), username.trim(), bio.trim(), phone.trim())
                 dialog = ""
               },
               modifier = Modifier.fillMaxWidth()

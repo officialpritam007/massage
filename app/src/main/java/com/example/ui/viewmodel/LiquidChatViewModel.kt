@@ -126,6 +126,9 @@ class LiquidChatViewModel(
     }
   }
 
+  suspend fun checkUsernameAvailability(username: String): Result<Boolean> =
+    repository.checkUsernameAvailability(username)
+
   fun getOrCreateConversationId(otherUid: String): String = repository.getOrCreateConversationId(otherUid)
   fun observeConversation(conversationId: String) = repository.observeConversation(conversationId)
   fun updateProfile(displayName: String, username: String, bio: String, phoneNumber: String) =

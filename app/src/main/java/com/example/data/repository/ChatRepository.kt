@@ -875,6 +875,10 @@ class ChatRepository(
   fun draft(cid: String) = prefs.getString("draft:$uid:$cid", "").orEmpty()
   fun saveDraft(cid: String, text: String) { prefs.edit().putString("draft:$uid:$cid", text).apply() }
 
+  suspend fun checkUsernameAvailability(username: String): Result<Boolean> = runCatching {
+    LiquidApi.call("usernameCheck", mapOf("username" to username.trim().lowercase())).optBoolean("available", false)
+  }
+
   fun updateProfile(displayName: String, username: String, bio: String, phoneNumber: String) = runAction {
     LiquidApi.call("profile", mapOf(
       "displayName" to displayName,
