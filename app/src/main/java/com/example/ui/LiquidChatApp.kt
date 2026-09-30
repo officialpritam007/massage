@@ -6,7 +6,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -18,6 +21,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.data.model.MessageType
 import com.example.ui.components.GlassDialog
+import com.example.ui.components.NetworkStatusBanner
 import com.example.ui.navigation.Screen
 import com.example.ui.screens.*
 import com.example.ui.theme.LiquidChatTheme
@@ -87,8 +91,9 @@ fun LiquidChatApp(
       }
     }
 
-    NavHost(
-      navController = navController,
+    Box(Modifier.fillMaxSize()) {
+      NavHost(
+        navController = navController,
       startDestination = startDestination,
       enterTransition = {
         if (appearance.isReducedMotion) fadeIn(tween(0))
@@ -212,6 +217,14 @@ fun LiquidChatApp(
           }
         )
       }
+      }
+
+      NetworkStatusBanner(
+        Modifier
+          .align(Alignment.TopCenter)
+          .statusBarsPadding()
+          .padding(top = 8.dp)
+      )
     }
   }
 }
