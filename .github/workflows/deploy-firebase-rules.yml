@@ -1,0 +1,58 @@
+name: Deploy Firebase Rules
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Publish Firestore and Storage rules
+    runs-on: ubuntu-latest
+    env:
+      FIREBASE_PROJECT_ID: liquid-chat-v2
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Validate Firebase service account secret
+        shell: bash
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [[ -z "$FIREBASE_SERVICE_ACCOUNT_JSON" ]]; then
+            echo "::error::Missing repository secret FIREBASE_SERVICE_ACCOUNT_JSON. Add the Firebase service-account JSON as an Actions secret before running this workflow."
+            exit 1
+          fi
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/firebase-service-account.json"
+          python3 - <<'PY'
+          import json, os
+          path = os.path.join(os.environ['RUNNER_TEMP'], 'firebase-service-account.json')
+          with open(path, encoding='utf-8') as f:
+              data = json.load(f)
+          required = {'project_id', 'client_email', 'private_key'}
+          missing = sorted(required - set(data))
+          if missing:
+              raise SystemExit('Service account JSON is missing: ' + ', '.join(missing))
+          if data['project_id'] != os.environ['FIREBASE_PROJECT_ID']:
+              raise SystemExit(f"Service account project_id {data['project_id']} does not match {os.environ['FIREBASE_PROJECT_ID']}")
+          print('Firebase service account validated for', data['project_id'])
+          PY
+
+      - name: Install Firebase CLI
+        run: npm install --global firebase-tools
+
+      - name: Deploy Firestore and Storage rules
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
+        run: |
+          firebase deploy \
+            --project "$FIREBASE_PROJECT_ID" \
+            --only firestore:rules,storage \
+            --non-interactive
+
+      - name: Remove temporary credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/firebase-service-account.json"
