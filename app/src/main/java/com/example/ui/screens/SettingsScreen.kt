@@ -99,7 +99,7 @@ fun SettingsScreen(
         SettingsSection("Personalize") {
           SettingRow("Appearance & Liquid Glass", "Theme, blur, tint, motion", onNavigateToAppearance)
           SettingRow("Privacy", "Last seen, online, photo, receipts") { dialog = "Privacy" }
-          SettingRow("Notifications", "Messages and vibration") { dialog = "Notifications" }
+          SettingRow("Notifications", "Messages, vibration and previews") { dialog = "Notifications" }
         }
 
         SettingsSection("Data & tools") {
@@ -180,6 +180,14 @@ fun SettingsScreen(
             Toggle("Vibration", notifications.vibration) {
               viewModel.updateNotifications(notifications.copy(vibration = it))
             }
+            Toggle("Show message previews", notifications.showPreview) {
+              viewModel.updateNotifications(notifications.copy(showPreview = it))
+            }
+            Text(
+              "When previews are off, notifications hide the sender and message text.",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
           }
 
           "Data & Storage" -> {

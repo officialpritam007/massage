@@ -70,15 +70,28 @@ class LiquidFirebaseMessagingService : FirebaseMessagingService() {
       intent,
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
+    val groupKey = "liquid_chat_messages"
     val notification = NotificationCompat.Builder(this, channel)
       .setSmallIcon(R.drawable.ic_launcher_foreground)
       .setContentTitle(message.data["title"] ?: "Liquid Chat")
       .setContentText(message.data["body"] ?: "New message")
       .setContentIntent(pending)
       .setAutoCancel(true)
+      .setGroup(groupKey)
+      .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+      .build()
+
+    val summary = NotificationCompat.Builder(this, channel)
+      .setSmallIcon(R.drawable.ic_launcher_foreground)
+      .setContentTitle("Liquid Chat")
+      .setContentText("New messages")
+      .setGroup(groupKey)
+      .setGroupSummary(true)
+      .setOnlyAlertOnce(true)
       .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
       .build()
 
     NotificationManagerCompat.from(this).notify(id.hashCode(), notification)
+    NotificationManagerCompat.from(this).notify(-7717, summary)
   }
 }

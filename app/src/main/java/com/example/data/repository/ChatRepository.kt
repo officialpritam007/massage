@@ -294,8 +294,9 @@ class ChatRepository(
 
         (snapshot.get("notifications") as? Map<*, *>)?.let { n ->
           _notifications.value = NotificationSettings(
-            anyBoolean(n["messages"], true),
-            anyBoolean(n["vibration"], true)
+            messages = anyBoolean(n["messages"], true),
+            vibration = anyBoolean(n["vibration"], true),
+            showPreview = anyBoolean(n["showPreview"], true)
           )
         }
         prefs.edit().putBoolean("notifications", _notifications.value.messages).apply()
@@ -913,7 +914,11 @@ class ChatRepository(
 
   fun updateNotifications(settings: NotificationSettings) {
     _notifications.value = settings
-    save("notifications", mapOf("messages" to settings.messages, "vibration" to settings.vibration))
+    save("notifications", mapOf(
+      "messages" to settings.messages,
+      "vibration" to settings.vibration,
+      "showPreview" to settings.showPreview
+    ))
   }
 
   private fun save(field: String, value: Any) {

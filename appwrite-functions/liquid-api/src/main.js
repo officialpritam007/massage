@@ -133,6 +133,7 @@ async function notify(db, cid, id) {
   }
   const tokens = Object.values(u.tokens || {}).filter(x => typeof x === 'string').slice(0, 10);
   if (tokens.length) {
+    const showPreview = u.notifications?.showPreview !== false;
     await getMessaging().sendEachForMulticast({
       tokens,
       android: {priority: 'high'},
@@ -140,9 +141,12 @@ async function notify(db, cid, id) {
         type: 'message',
         conversationId: cid,
         messageId: id,
-        title: m.senderName || 'Liquid Chat',
-        body: m.type === 'TEXT' ? String(m.text || '').slice(0, 120) : m.type.toLowerCase() + ' message',
-        vibration: String(u.notifications?.vibration !== false)
+        title: showPreview ? (m.senderName || 'Liquid Chat') : 'Liquid Chat',
+        body: showPreview
+          ? (m.type === 'TEXT' ? String(m.text || '').slice(0, 120) : m.type.toLowerCase() + ' message')
+          : 'New message',
+        vibration: String(u.notifications?.vibration !== false),
+        preview: String(showPreview)
       }
     });
   }

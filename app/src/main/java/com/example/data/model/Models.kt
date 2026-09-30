@@ -85,7 +85,8 @@ data class AppearanceSettings(
 
 data class NotificationSettings(
   val messages: Boolean = true,
-  val vibration: Boolean = true
+  val vibration: Boolean = true,
+  val showPreview: Boolean = true
 )
 
 data class PrivacySettings(
