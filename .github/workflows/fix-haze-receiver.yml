@@ -1,0 +1,42 @@
+name: Fix Haze Receiver Compile Error
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-haze-receiver.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Qualify HazeEffectScope backgroundColor receiver
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/example/ui/components/LiquidGlass.kt')
+          s = p.read_text(encoding='utf-8')
+          old = '            backgroundColor = glassBackground'
+          new = '            this.backgroundColor = glassBackground'
+          if old not in s:
+              raise SystemExit('Target Haze backgroundColor assignment not found')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          PY
+
+      - name: Remove temporary workflow and commit
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/fix-haze-receiver.yml
+          git add app/src/main/java/com/example/ui/components/LiquidGlass.kt
+          git commit -m 'Qualify Haze backgroundColor receiver'
+          git push origin main
