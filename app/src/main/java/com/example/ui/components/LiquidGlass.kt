@@ -94,6 +94,7 @@ fun GlassCard(
   } else {
     Color.White.copy(alpha = (0.48f + config.blurAlpha * 0.18f + config.glassIntensity * 0.08f).coerceIn(0.48f, 0.78f))
   }
+  val glassBackground = backgroundColor ?: surface
   val backdrop = LocalGlassBackdrop.current
   val border = borderColor ?: if (config.isDark) GlassBorderStrokeDark else Color.White.copy(alpha = 0.38f)
   val resolvedShape: Shape = shape ?: RoundedCornerShape(config.cornerRadiusDp.coerceIn(16f, 32f).dp)
@@ -105,8 +106,16 @@ fun GlassCard(
       .then(Modifier.graphicsLayerCompat(scale))
       .shadow(elevation, resolvedShape, ambientColor = shadow, spotColor = shadow)
       .clip(resolvedShape)
-      .then(if (backdrop != null && config.isGlassEnabled) Modifier.hazeEffect(backdrop) { blurRadius = (12f + config.blurAlpha * 20f).dp; noiseFactor = 0.025f } else Modifier)
-      .background(backgroundColor ?: surface)
+      .then(
+        if (backdrop != null && config.isGlassEnabled) {
+          Modifier.hazeEffect(backdrop) {
+            blurRadius = (12f + config.blurAlpha * 20f).dp
+            noiseFactor = 0.025f
+            backgroundColor = glassBackground
+          }
+        } else Modifier
+      )
+      .background(glassBackground)
       .border(BorderStroke(1.dp, Brush.verticalGradient(listOf(topHighlight, border.copy(alpha = (border.alpha * config.borderStrength).coerceIn(0.06f, 1f))))), resolvedShape)
       .then(
         if (onClick != null) Modifier.clickable(
