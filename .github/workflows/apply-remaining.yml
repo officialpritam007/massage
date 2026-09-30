@@ -1,0 +1,52 @@
+name: Apply Remaining Implementation Patch
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/apply-remaining.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'Run remaining implementation patch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply implementation patch
+        run: python scripts/apply_remaining_scope.py
+
+      - name: Normalize generated Compose helpers
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/example/ui/screens/ConversationScreen.kt')
+          s = p.read_text()
+          if 'import androidx.compose.ui.geometry.Offset' not in s:
+              s = s.replace('import androidx.compose.ui.graphics.Color\n', 'import androidx.compose.ui.graphics.Color\nimport androidx.compose.ui.geometry.Offset\n', 1)
+          marker = 'private fun LiveRecordingWaveform(values: List<Float>, modifier: Modifier = Modifier) {\n    androidx.compose.foundation.Canvas(modifier.height(30.dp)) {'
+          if marker in s:
+              s = s.replace(marker, 'private fun LiveRecordingWaveform(values: List<Float>, modifier: Modifier = Modifier) {\n    val waveformColor = MaterialTheme.colorScheme.error\n    androidx.compose.foundation.Canvas(modifier.height(30.dp)) {', 1)
+          s = s.replace('drawLine(MaterialTheme.colorScheme.error,', 'drawLine(waveformColor,')
+          p.write_text(s)
+          PY
+
+      - name: Commit patched sources
+        shell: bash
+        run: |
+          git config user.name 'officialpritam007'
+          git config user.email 'officialpritam07@gmail.com'
+          git add appwrite-functions/liquid-api/src/main.js app/src/main/java/com/example/ui/screens/ConversationScreen.kt app/src/main/java/com/example/ui/screens/MediaViewer.kt
+          if git diff --cached --quiet; then
+            echo 'No changes produced.'
+            exit 1
+          fi
+          git commit -m 'Complete voice media and permanent deletion implementation'
+          git push origin HEAD:main
