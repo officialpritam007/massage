@@ -111,7 +111,7 @@ fun GlassCard(
           Modifier.hazeEffect(backdrop) {
             blurRadius = (12f + config.blurAlpha * 20f).dp
             noiseFactor = 0.025f
-            backgroundColor = glassBackground
+            this.backgroundColor = glassBackground
           }
         } else Modifier
       )
