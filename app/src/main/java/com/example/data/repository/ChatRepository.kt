@@ -255,7 +255,8 @@ class ChatRepository(
 
     FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
       if (uid == account) {
-        db.document("users/$account").update("tokens.$device", token)
+        db.document("users/$account")
+          .set(mapOf("tokens" to mapOf(device to token)), SetOptions.merge())
           .addOnFailureListener { runAction { LiquidApi.call("profile") } }
       }
     }
@@ -334,10 +335,8 @@ class ChatRepository(
             presenceListeners.remove(it)?.remove()
           }
           _messages.update { map -> map.filterKeys { it in active } }
-          next.forEach { conversation ->
-            observeConversation(conversation.id)
-            observePresence(conversation.id)
-          }
+          // Message + typing listeners are attached only when a conversation is opened.
+          // The chat list needs only the lightweight conversation-summary listener.
         }
       }
 
@@ -351,7 +350,7 @@ class ChatRepository(
     heartbeat = scope.launch {
       var ticks = 0
       while (isActive && uid == account) {
-        if (resumed && ticks++ % 25 == 0) writePresence(true)
+        if (resumed && ticks++ % 60 == 0) writePresence(true)
         refreshUsers()
         refreshTyping()
         expireMessages()
@@ -374,7 +373,7 @@ class ChatRepository(
       phoneNumber = if (own) snapshot.safeString("phoneNumber") else "",
       photoUrl = pubPhoto,
       bio = snapshot.safeString("bio"),
-      isOnline = snapshot.safeBoolean("isOnline") && System.currentTimeMillis() - heartbeatAt < 45_000,
+      isOnline = snapshot.safeBoolean("isOnline") && System.currentTimeMillis() - heartbeatAt < 90_000,
       lastSeen = snapshot.safeLong("lastSeen"),
       lastActiveAt = heartbeatAt,
       onlineVisible = snapshot.safeBoolean("onlineVisible", true),
@@ -414,12 +413,12 @@ class ChatRepository(
 
   private fun refreshUsers() {
     _users.update { users ->
-      users.map { user -> user.copy(isOnline = user.isOnline && System.currentTimeMillis() - user.lastActiveAt < 45_000) }
+      users.map { user -> user.copy(isOnline = user.isOnline && System.currentTimeMillis() - user.lastActiveAt < 90_000) }
     }
     _conversations.update { conversations ->
       conversations.map { conversation ->
         val user = _users.value.find { it.uid == conversation.otherUser.uid } ?: conversation.otherUser
-        val online = user.isOnline && System.currentTimeMillis() - user.lastActiveAt < 45_000
+        val online = user.isOnline && System.currentTimeMillis() - user.lastActiveAt < 90_000
         conversation.copy(otherUser = user.copy(isOnline = online), isOnline = online)
       }
     }
@@ -446,8 +445,17 @@ class ChatRepository(
   }
 
   fun observeConversation(cid: String) {
+    // Keep at most one heavy message/typing realtime stream active. Conversation summaries
+    // remain realtime through the lightweight chat-list listener.
+    messageListeners.keys.filter { it != cid }.toList().forEach { key ->
+      messageListeners.remove(key)?.remove()
+    }
+    presenceListeners.keys.filter { it != cid }.toList().forEach { key ->
+      presenceListeners.remove(key)?.remove()
+    }
+    observePresence(cid)
     if (messageListeners.containsKey(cid)) return
-    val limit = limits.getOrPut(cid) { 100 }
+    val limit = limits.getOrPut(cid) { 60 }
     messageListeners[cid] = db.collection("conversations/$cid/messages")
       .orderBy("createdAt", Query.Direction.DESCENDING)
       .limit(limit)
@@ -471,7 +479,7 @@ class ChatRepository(
   }
 
   fun loadOlder(cid: String) {
-    limits[cid] = (limits[cid] ?: 100) + 100
+    limits[cid] = (limits[cid] ?: 60) + 60
     messageListeners.remove(cid)?.remove()
     observeConversation(cid)
   }
