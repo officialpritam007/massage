@@ -331,6 +331,8 @@ fun ChatsHomeScreen(
                     }
                 }
             }
+        }
+
         menu?.let { conversation ->
             GlassDialog("Chat actions", { menu = null }) {
                 Text(conversation.otherUser.displayName.ifBlank { "Contact" }, fontWeight = FontWeight.SemiBold)

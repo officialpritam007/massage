@@ -114,7 +114,7 @@ fun GlassCard(
   val topHighlight = if (config.isDark) GlassHighlight.copy(alpha = 0.30f) else Color.White.copy(alpha = 0.95f)
   val shadow = if (config.isDark) Color.Black.copy(alpha = 0.42f) else Color.Black.copy(alpha = 0.10f)
   // Clear style keeps a thin blur so content behind stays legible; Regular gets the full frost.
-  val blurRadius = when {
+  val blurDp = when {
     !config.isGlassEnabled -> 0f
     clear -> (4f + config.glassIntensity * 8f) * (0.45f + config.blurAlpha * 0.55f)
     else -> 12f + config.blurAlpha * 20f
@@ -129,7 +129,7 @@ fun GlassCard(
       .then(
         if (backdrop != null && config.isGlassEnabled) {
           Modifier.hazeEffect(backdrop) {
-            blurRadius = blurRadius.dp
+            this.blurRadius = blurDp.dp
             noiseFactor = noise
             this.backgroundColor = glassBackground
           }
