@@ -614,7 +614,12 @@ class ChatRepository(
       runCatching {
         val j = JSONObject(raw as String)
         val cid = j.getString("conversationId")
-        if (_conversations.value.none { it.id == cid }) return@runCatching
+        val otherUid = j.optString("otherUid").takeIf { it.isNotBlank() }
+        if (_conversations.value.none { it.id == cid }) {
+          if (otherUid == null) return@runCatching
+          pendingPeers[cid] = _users.value.find { it.uid == otherUid }
+            ?: User(uid = otherUid, displayName = "Contact")
+        }
         val message = Message(
           id = j.getString("id"),
           conversationId = cid,
@@ -644,11 +649,20 @@ class ChatRepository(
         val id = j.getString("id")
         if (id in failed) continue
         val cid = j.getString("conversationId")
-        if (_conversations.value.none { it.id == cid }) {
+        val knownConversation = _conversations.value.any { it.id == cid }
+        val otherUid = j.optString("otherUid").takeIf { it.isNotBlank() }
+          ?: pendingPeers[cid]?.uid?.takeIf { it.isNotBlank() }
+        if (!knownConversation && otherUid == null) {
+          // Corrupt/legacy outbox entry: there is no safe recipient to send to.
           prefs.edit().remove(key).apply()
           continue
         }
-        val data = j.keys().asSequence().associateWith { j.opt(it).takeUnless { value -> value == JSONObject.NULL } }
+        if (!knownConversation && otherUid != null) {
+          pendingPeers[cid] = _users.value.find { it.uid == otherUid }
+            ?: User(uid = otherUid, displayName = "Contact")
+        }
+        val data = j.keys().asSequence().associateWith { j.opt(it).takeUnless { value -> value == JSONObject.NULL } }.toMutableMap()
+        if (data["otherUid"] == null && otherUid != null) data["otherUid"] = otherUid
         try {
           val response = LiquidApi.call("send", data)
           prefs.edit().remove(key).apply()
@@ -659,7 +673,7 @@ class ChatRepository(
           if (e !is java.io.IOException) {
             failed += id
             updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.FAILED) }
-            _error.value = e.message
+            _error.value = friendlyError(e)
           }
         }
       }
@@ -695,9 +709,20 @@ class ChatRepository(
     uploadJob?.cancel()
     _upload.value = 0f
     uploadJob = scope.launch {
-      val result = runCatching { LiquidApi.upload(uri, cid) { progress -> scope.launch { _upload.value = progress } } }
+      val result = runCatching {
+        if (_conversations.value.none { it.id == cid }) {
+          val peer = pendingPeers[cid]?.uid?.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("Contact is not ready yet")
+          // Ensure the server-side conversation document exists before uploadBegin.
+          // This does not resurrect deleted history; only a subsequent new send unhides the fresh chat.
+          LiquidApi.call("conversation", mapOf("otherUid" to peer))
+        }
+        LiquidApi.upload(uri, cid) { progress -> scope.launch { _upload.value = progress } }
+      }
       _upload.value = null
-      if (result.isFailure && result.exceptionOrNull() !is CancellationException) _error.value = result.exceptionOrNull()?.message
+      if (result.isFailure && result.exceptionOrNull() !is CancellationException) {
+        _error.value = result.exceptionOrNull()?.let { friendlyError(it) }
+      }
       if (result.isSuccess) retryUpload = null
       onResult(result)
     }
