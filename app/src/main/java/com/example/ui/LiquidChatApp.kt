@@ -1,12 +1,15 @@
 package com.example.ui
 
+import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -30,6 +33,7 @@ import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.LiquidChatTheme
 import com.example.ui.theme.LiquidGlassConfig
 import com.example.ui.viewmodel.LiquidChatViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun LiquidChatApp(
@@ -38,6 +42,8 @@ fun LiquidChatApp(
   val appearance by chatViewModel.appearance.collectAsState()
   var homeTab by remember { mutableStateOf("All") }
   val lifecycleOwner = LocalLifecycleOwner.current
+  val context = LocalContext.current
+  val appScope = rememberCoroutineScope()
 
   DisposableEffect(lifecycleOwner) {
     val observer = LifecycleEventObserver { _, event ->
@@ -136,13 +142,23 @@ fun LiquidChatApp(
         CameraScreen(
           conversationId = convId,
           onPhotoCaptured = { uri, caption ->
-            chatViewModel.sendMessage(
-              conversationId = convId,
-              text = if (caption.isNotBlank()) caption else "Photo",
-              type = MessageType.IMAGE,
-              mediaUrl = uri.toString()
-            )
-            navController.popBackStack()
+            // Camera URIs are local to the sender's device. Upload the captured
+            // file to Appwrite first and only publish the shared URL to Firestore.
+            chatViewModel.uploadChatMedia(convId, uri, MessageType.IMAGE) { result ->
+              appScope.launch {
+                result.onSuccess { url ->
+                  chatViewModel.sendMessage(
+                    conversationId = convId,
+                    text = caption.trim(),
+                    type = MessageType.IMAGE,
+                    mediaUrl = url
+                  )
+                  navController.popBackStack()
+                }.onFailure {
+                  Toast.makeText(context, "Photo upload failed. Please try again.", Toast.LENGTH_SHORT).show()
+                }
+              }
+            }
           },
           onClose = { navController.popBackStack() }
         )
