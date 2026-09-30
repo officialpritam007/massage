@@ -92,7 +92,7 @@ fun GlassCard(
   val surface = if (config.isDark) {
     Color(0xFFB7D9FF).copy(alpha = (0.035f + config.blurAlpha * 0.085f + config.glassIntensity * 0.025f).coerceIn(0.06f, 0.18f))
   } else {
-    Color.White.copy(alpha = (0.48f + config.blurAlpha * 0.18f + config.glassIntensity * 0.08f).coerceIn(0.48f, 0.78f))
+    Color.White.copy(alpha = (0.36f + config.blurAlpha * 0.14f + config.glassIntensity * 0.06f).coerceIn(0.38f, 0.64f))
   }
   val glassBackground = backgroundColor ?: surface
   val backdrop = LocalGlassBackdrop.current
@@ -200,7 +200,7 @@ fun GlassIconButton(
   testTag: String = "glass_icon_button"
 ) {
   val config = LocalLiquidGlass.current
-  val bg = backgroundColor ?: if (config.isDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.72f)
+  val bg = backgroundColor ?: if (config.isDark) Color.White.copy(alpha = 0.065f) else Color.White.copy(alpha = 0.54f)
   val iconTint = if (tint == TextPrimary && !config.isDark) TextPrimaryLight else tint
   val interactions = remember { MutableInteractionSource() }
   val pressed by interactions.collectIsPressedAsState()
@@ -242,11 +242,11 @@ fun GlassTextField(
   val resolvedShape = shape ?: RoundedCornerShape(config.cornerRadiusDp.coerceIn(0f, 64f).dp)
   Box(
     modifier = modifier
-      .defaultMinSize(minHeight = 52.dp)
+      .defaultMinSize(minHeight = 48.dp)
       .clip(resolvedShape)
-      .background(if (config.isDark) Color.White.copy(alpha = 0.075f) else Color.White.copy(alpha = 0.76f))
+      .background(if (config.isDark) Color.White.copy(alpha = 0.055f) else Color.White.copy(alpha = 0.48f))
       .border(1.dp, if (config.isDark) GlassBorderStrokeDark else GlassBorderStrokeLight, resolvedShape)
-      .padding(horizontal = 16.dp, vertical = 12.dp)
+      .padding(horizontal = 14.dp, vertical = 10.dp)
       .testTag(testTag),
     contentAlignment = Alignment.CenterStart
   ) {
