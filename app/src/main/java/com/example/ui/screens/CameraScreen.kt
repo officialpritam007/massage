@@ -339,6 +339,19 @@ fun CameraScreen(
         }
       )
 
+      if (imageCapture == null) {
+        Box(
+          modifier = Modifier.fillMaxSize().background(DeepMidnight),
+          contentAlignment = Alignment.Center
+        ) {
+          Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator(color = CyanAccent)
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("Starting camera…", color = Color.White)
+          }
+        }
+      }
+
       // Top Control Bar (Close, Flash, Lens Facing)
       Row(
         modifier = Modifier

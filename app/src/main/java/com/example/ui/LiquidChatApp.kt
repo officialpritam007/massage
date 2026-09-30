@@ -1,15 +1,22 @@
 package com.example.ui
 
-import android.widget.Toast
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.ui.Modifier
+import com.example.ui.components.GlassDialog
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -33,17 +40,16 @@ import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.LiquidChatTheme
 import com.example.ui.theme.LiquidGlassConfig
 import com.example.ui.viewmodel.LiquidChatViewModel
-import kotlinx.coroutines.launch
 
 @Composable
 fun LiquidChatApp(
+  notificationConversation: String? = null,
+  onNotificationHandled: () -> Unit = {},
   chatViewModel: LiquidChatViewModel = viewModel()
 ) {
   val appearance by chatViewModel.appearance.collectAsState()
-  var homeTab by remember { mutableStateOf("All") }
+  var homeTab by rememberSaveable { mutableStateOf("All") }
   val lifecycleOwner = LocalLifecycleOwner.current
-  val context = LocalContext.current
-  val appScope = rememberCoroutineScope()
 
   DisposableEffect(lifecycleOwner) {
     val observer = LifecycleEventObserver { _, event ->
@@ -78,9 +84,18 @@ fun LiquidChatApp(
     val navController = rememberNavController()
 
     val startDestination = if (chatViewModel.isUserLoggedIn()) Screen.Chats.route else Screen.Auth.route
+    LaunchedEffect(notificationConversation) {
+      if (!notificationConversation.isNullOrBlank() && chatViewModel.isUserLoggedIn()) { navController.navigate(Screen.Conversation.createRoute(notificationConversation)); onNotificationHandled() }
+    }
+    val error by chatViewModel.error.collectAsState()
+    error?.let { message -> GlassDialog("Liquid Chat", { chatViewModel.repository.clearError() }) { Text(message); if(chatViewModel.repository.hasUploadRetry()) TextButton(onClick = { chatViewModel.repository.retryUpload(); chatViewModel.repository.clearError() }) { Text("Retry upload") } } }
     NavHost(
       navController = navController,
-      startDestination = startDestination
+      startDestination = startDestination,
+      enterTransition = { if (appearance.isReducedMotion) fadeIn(tween(0)) else fadeIn(tween(180)) + slideInHorizontally(spring(dampingRatio = 0.8f, stiffness = 420f)) { it / 5 } },
+      exitTransition = { fadeOut(tween(if (appearance.isReducedMotion) 0 else 130)) },
+      popEnterTransition = { fadeIn(tween(if (appearance.isReducedMotion) 0 else 180)) },
+      popExitTransition = { if (appearance.isReducedMotion) fadeOut(tween(0)) else fadeOut(tween(150)) + slideOutHorizontally(tween(220)) { it / 4 } }
     ) {
       composable(Screen.Auth.route) {
         AuthScreen(
@@ -142,23 +157,10 @@ fun LiquidChatApp(
         CameraScreen(
           conversationId = convId,
           onPhotoCaptured = { uri, caption ->
-            // Camera URIs are local to the sender's device. Upload the captured
-            // file to Appwrite first and only publish the shared URL to Firestore.
             chatViewModel.uploadChatMedia(convId, uri, MessageType.IMAGE) { result ->
-              appScope.launch {
-                result.onSuccess { url ->
-                  chatViewModel.sendMessage(
-                    conversationId = convId,
-                    text = caption.trim(),
-                    type = MessageType.IMAGE,
-                    mediaUrl = url
-                  )
-                  navController.popBackStack()
-                }.onFailure {
-                  Toast.makeText(context, "Photo upload failed. Please try again.", Toast.LENGTH_SHORT).show()
-                }
-              }
+              result.onSuccess { url -> chatViewModel.sendMessage(convId, caption.ifBlank { "Photo" }, MessageType.IMAGE, url) }
             }
+            navController.popBackStack()
           },
           onClose = { navController.popBackStack() }
         )

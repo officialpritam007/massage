@@ -53,9 +53,6 @@ import com.example.ui.components.GlassTextField
 import com.example.ui.components.LiquidBackground
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.GlassBorderStroke
-import com.example.ui.theme.TextMuted
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
 
@@ -92,7 +89,7 @@ fun SearchScreen(
               onClick = onBackClick,
               modifier = Modifier.testTag("search_back_button")
             ) {
-              Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary)
+              Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
             }
 
             GlassTextField(
@@ -109,7 +106,7 @@ fun SearchScreen(
                     onClick = { viewModel.clearSearchQuery() },
                     modifier = Modifier.size(24.dp)
                   ) {
-                    Icon(Icons.Default.Clear, contentDescription = "Clear", tint = TextSecondary)
+                    Icon(Icons.Default.Clear, contentDescription = "Clear", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                   }
                 }
               },
@@ -138,7 +135,7 @@ fun SearchScreen(
                 Text(
                   text = "RECENT SEARCHES",
                   style = MaterialTheme.typography.labelSmall.copy(
-                    color = TextMuted,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.sp,
                     letterSpacing = 1.sp
@@ -169,9 +166,9 @@ fun SearchScreen(
                       .padding(horizontal = 14.dp, vertical = 8.dp)
                   ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                      Icon(Icons.Default.History, contentDescription = null, tint = TextMuted, modifier = Modifier.size(16.dp))
+                      Icon(Icons.Default.History, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f), modifier = Modifier.size(16.dp))
                       Spacer(modifier = Modifier.width(6.dp))
-                      Text(historyQuery, color = TextPrimary, fontSize = 13.sp)
+                      Text(historyQuery, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
                     }
                   }
                 }
@@ -202,8 +199,8 @@ fun SearchScreen(
                   GlassAvatar(photoUrl = user.photoUrl, name = user.displayName, size = 44.dp)
                   Spacer(modifier = Modifier.width(12.dp))
                   Column(modifier = Modifier.weight(1f)) {
-                    Text(user.displayName, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                    Text("@${user.username} • ${user.bio}", color = TextSecondary, fontSize = 12.sp, maxLines = 1)
+                    Text(user.displayName, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("@${user.username} • ${user.bio}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 1)
                   }
                   IconButton(
                     onClick = {
@@ -241,8 +238,8 @@ fun SearchScreen(
                   GlassAvatar(photoUrl = conv.otherUser.photoUrl, name = conv.otherUser.displayName, size = 44.dp)
                   Spacer(modifier = Modifier.width(12.dp))
                   Column(modifier = Modifier.weight(1f)) {
-                    Text(conv.otherUser.displayName, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                    Text(conv.lastMessageText, color = TextSecondary, fontSize = 12.sp, maxLines = 1)
+                    Text(conv.otherUser.displayName, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text(conv.lastMessageText, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 1)
                   }
                 }
               }
@@ -271,8 +268,8 @@ fun SearchScreen(
                   Icon(Icons.Default.Chat, contentDescription = null, tint = CyanAccent, modifier = Modifier.size(24.dp))
                   Spacer(modifier = Modifier.width(12.dp))
                   Column(modifier = Modifier.weight(1f)) {
-                    Text(msg.senderName, color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    Text(msg.text, color = TextSecondary, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(msg.senderName, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text(msg.text, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                   }
                 }
               }
@@ -289,7 +286,7 @@ fun SearchScreen(
               ) {
                 Text(
                   text = "No results found for \"$searchQuery\"",
-                  color = TextMuted,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
                   fontSize = 14.sp
                 )
               }

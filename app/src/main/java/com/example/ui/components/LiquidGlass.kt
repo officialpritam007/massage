@@ -4,6 +4,8 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
+import dev.chrisbanes.haze.hazeEffect
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -72,7 +74,7 @@ import com.example.ui.theme.TextSecondaryLight
 @Composable
 fun GlassCard(
   modifier: Modifier = Modifier,
-  shape: Shape = RoundedCornerShape(24.dp),
+  shape: Shape? = null,
   backgroundColor: Color? = null,
   borderColor: Color? = null,
   elevation: Dp = 3.dp,
@@ -83,17 +85,18 @@ fun GlassCard(
   val interactionSource = remember { MutableInteractionSource() }
   val pressed by interactionSource.collectIsPressedAsState()
   val scale by animateFloatAsState(
-    targetValue = if (pressed && onClick != null) 0.985f else 1f,
-    animationSpec = tween(180, easing = FastOutSlowInEasing),
+    targetValue = if (pressed && onClick != null && !config.isReducedMotion) 0.97f else 1f,
+    animationSpec = spring(dampingRatio = 0.7f, stiffness = 450f),
     label = "glass_card_press"
   )
   val surface = if (config.isDark) {
     Color(0xFFB7D9FF).copy(alpha = (0.035f + config.blurAlpha * 0.085f + config.glassIntensity * 0.025f).coerceIn(0.06f, 0.18f))
   } else {
-    Color(0xFF1B5488).copy(alpha = (0.70f + config.blurAlpha * 0.20f + config.glassIntensity * 0.05f).coerceIn(0.70f, 0.94f))
+    Color.White.copy(alpha = (0.48f + config.blurAlpha * 0.18f + config.glassIntensity * 0.08f).coerceIn(0.48f, 0.78f))
   }
+  val backdrop = LocalGlassBackdrop.current
   val border = borderColor ?: if (config.isDark) GlassBorderStrokeDark else Color.White.copy(alpha = 0.38f)
-  val resolvedShape: Shape = RoundedCornerShape(config.cornerRadiusDp.coerceIn(0f, 64f).dp)
+  val resolvedShape: Shape = shape ?: RoundedCornerShape(config.cornerRadiusDp.coerceIn(16f, 32f).dp)
   val topHighlight = if (config.isDark) GlassHighlight.copy(alpha = 0.30f) else Color.White.copy(alpha = 0.95f)
   val shadow = if (config.isDark) Color.Black.copy(alpha = 0.42f) else Color.Black.copy(alpha = 0.10f)
 
@@ -102,6 +105,7 @@ fun GlassCard(
       .then(Modifier.graphicsLayerCompat(scale))
       .shadow(elevation, resolvedShape, ambientColor = shadow, spotColor = shadow)
       .clip(resolvedShape)
+      .then(if (backdrop != null && config.isGlassEnabled) Modifier.hazeEffect(backdrop) { blurRadius = (12f + config.blurAlpha * 20f).dp; noiseFactor = 0.025f } else Modifier)
       .background(backgroundColor ?: surface)
       .border(BorderStroke(1.dp, Brush.verticalGradient(listOf(topHighlight, border.copy(alpha = (border.alpha * config.borderStrength).coerceIn(0.06f, 1f))))), resolvedShape)
       .then(
@@ -119,7 +123,7 @@ fun GlassCard(
         .height(1.dp)
         .background(topHighlight.copy(alpha = if (config.isDark) 0.38f else 0.70f))
     )
-    content()
+    CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides androidx.compose.material3.MaterialTheme.colorScheme.onSurface) { content() }
   }
 }
 
@@ -147,11 +151,13 @@ fun GlassButton(
     animationSpec = tween(180),
     label = "glass_button_color"
   )
+  val buttonScale by animateFloatAsState(if (pressed && !config.isReducedMotion) 0.95f else 1f, spring(dampingRatio = .65f, stiffness = 450f), label = "button_spring")
   val contentColor = if (isPrimary) Color.White else if (config.isDark) TextPrimary else TextPrimaryLight
   val resolvedShape = shape ?: RoundedCornerShape(config.cornerRadiusDp.coerceIn(0f, 64f).dp)
 
   Box(
     modifier = modifier
+      .graphicsLayer { scaleX = buttonScale; scaleY = buttonScale }
       .defaultMinSize(minHeight = 50.dp)
       .clip(resolvedShape)
       .background(accent.copy(alpha = if (isPrimary) 0.78f else 1f))
@@ -187,13 +193,17 @@ fun GlassIconButton(
   val config = LocalLiquidGlass.current
   val bg = backgroundColor ?: if (config.isDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.72f)
   val iconTint = if (tint == TextPrimary && !config.isDark) TextPrimaryLight else tint
+  val interactions = remember { MutableInteractionSource() }
+  val pressed by interactions.collectIsPressedAsState()
+  val pressScale by animateFloatAsState(if (pressed && !config.isReducedMotion) .90f else 1f, spring(dampingRatio = .62f, stiffness = 440f), label = "icon_spring")
   Box(
     modifier = modifier
+      .graphicsLayer { scaleX = pressScale; scaleY = pressScale }
       .size(size)
       .clip(CircleShape)
       .background(bg)
       .border(1.dp, if (config.isDark) GlassBorderStrokeDark else GlassBorderStrokeLight, CircleShape)
-      .clickable(onClick = onClick)
+      .clickable(interactionSource = interactions, indication = null, onClick = onClick)
       .testTag(testTag),
     contentAlignment = Alignment.Center
   ) {
@@ -275,7 +285,7 @@ fun GlassAvatar(
       contentAlignment = Alignment.Center
     ) {
       if (!photoUrl.isNullOrBlank()) {
-        AsyncImage(model = photoUrl, contentDescription = name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        PrivateImage(model = photoUrl, contentDescription = name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
       } else {
         val initials = name.split(" ").take(2).mapNotNull { it.firstOrNull()?.uppercaseChar() }.joinToString("").ifEmpty { "LC" }
         Text(initials, style = MaterialTheme.typography.titleMedium.copy(color = config.accentColor, fontWeight = FontWeight.Bold, fontSize = (size.value * 0.38f).sp))

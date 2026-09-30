@@ -5,7 +5,7 @@ enum class MessageType {
 }
 
 enum class MessageDeliveryStatus {
-  SENDING, SENT, DELIVERED, READ
+  SENDING, SENT, DELIVERED, READ, FAILED
 }
 
 data class User(
@@ -16,8 +16,11 @@ data class User(
   val phoneNumber: String = "",
   val photoUrl: String = "",
   val bio: String = "Fluid connections in real-time.",
+  val onlineVisible: Boolean = true,
+  val lastSeenVisible: Boolean = true,
   val isOnline: Boolean = false,
-  val lastSeen: Long = System.currentTimeMillis(),
+  val lastSeen: Long = 0,
+  val lastActiveAt: Long = 0,
   val createdAt: Long = System.currentTimeMillis(),
   val isVerified: Boolean = false,
   val website: String = "",
@@ -47,6 +50,7 @@ data class Message(
   val isEdited: Boolean = false,
   val isDeleted: Boolean = false,
   val isPinned: Boolean = false,
+  val isStarred: Boolean = false,
   val expiresAt: Long? = null
 )
 
@@ -62,77 +66,14 @@ data class Conversation(
   val isMuted: Boolean = false,
   val isOnline: Boolean = false,
   val isTyping: Boolean = false,
+  val typingUntil: Long = 0,
   val isArchived: Boolean = false,
   val disappearingSeconds: Long = 0L,
   val wallpaperIndex: Int = 0
 )
 
-data class Group(
-  val id: String,
-  val name: String,
-  val description: String = "",
-  val photoUrl: String = "",
-  val adminIds: List<String>,
-  val members: List<User>,
-  val createdAt: Long = System.currentTimeMillis(),
-  val lastMessageText: String = "",
-  val lastMessageTime: Long = System.currentTimeMillis(),
-  val lastMessageSender: String = "",
-  val unreadCount: Int = 0,
-  val onlyAdminsCanPost: Boolean = false,
-  val isMuted: Boolean = false,
-  val isPinned: Boolean = false
-)
-
-enum class StatusType {
-  TEXT, IMAGE, VIDEO
-}
-
-data class UserStatus(
-  val id: String,
-  val userId: String,
-  val userName: String,
-  val userPhotoUrl: String,
-  val type: StatusType = StatusType.TEXT,
-  val content: String,
-  val backgroundGradientIndex: Int = 0,
-  val createdAt: Long = System.currentTimeMillis(),
-  val expiresAt: Long = System.currentTimeMillis() + 24 * 60 * 60 * 1000,
-  val viewerNames: List<String> = emptyList(),
-  val isViewedByMe: Boolean = false
-)
-
-enum class CallType {
-  AUDIO, VIDEO
-}
-
-enum class CallStatus {
-  INCOMING, OUTGOING, MISSED, COMPLETED
-}
-
-data class CallRecord(
-  val id: String,
-  val otherUser: User,
-  val type: CallType = CallType.AUDIO,
-  val status: CallStatus = CallStatus.COMPLETED,
-  val timestamp: Long = System.currentTimeMillis(),
-  val durationSeconds: Int = 0
-)
-
-data class ActiveCallState(
-  val callId: String,
-  val user: User,
-  val type: CallType,
-  val isOutgoing: Boolean,
-  val isConnected: Boolean = false,
-  val isMuted: Boolean = false,
-  val isCameraOn: Boolean = true,
-  val isSpeakerOn: Boolean = true,
-  val durationSeconds: Int = 0
-)
-
 data class AppearanceSettings(
-  val isDarkMode: Boolean = true,
+  val isDarkMode: Boolean = false,
   val glassIntensity: Float = 0.85f,
   val blurAlpha: Float = 0.70f,
   val cornerRadiusDp: Float = 32f,
@@ -143,8 +84,6 @@ data class AppearanceSettings(
 
 data class NotificationSettings(
   val messages: Boolean = true,
-  val calls: Boolean = true,
-  val status: Boolean = true,
   val vibration: Boolean = true
 )
 
@@ -153,6 +92,5 @@ data class PrivacySettings(
   val onlineVisibility: String = "Everyone",
   val profilePhotoVisibility: String = "Everyone",
   val readReceipts: Boolean = true,
-  val statusVisibility: String = "Contacts Only",
-  val whoCanAddToGroups: String = "Everyone"
+
 )

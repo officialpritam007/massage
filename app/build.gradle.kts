@@ -16,8 +16,14 @@ android {
     applicationId = "com.aistudio.liquidchat.vwnxkp"
     minSdk = 24
     targetSdk = 36
-    versionCode = 392
-    versionName = "3.9.2"
+    versionCode = 400
+    versionName = "4.0.0"
+
+    fun config(name: String, fallback: String = "") = providers.gradleProperty(name).orElse(providers.environmentVariable(name)).getOrElse(fallback)
+    buildConfigField("String", "APPWRITE_ENDPOINT", "\"${config("APPWRITE_ENDPOINT", "https://sgp.cloud.appwrite.io/v1")}\"")
+    buildConfigField("String", "APPWRITE_PROJECT_ID", "\"${config("APPWRITE_PROJECT_ID", "6abae44b0030a4b3c0b4")}\"")
+    buildConfigField("String", "APPWRITE_BUCKET_ID", "\"${config("APPWRITE_BUCKET_ID", "6abae4e300352b37c209")}\"")
+    buildConfigField("String", "LIQUID_API_URL", "\"${config("LIQUID_API_URL")}\"")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -99,16 +105,16 @@ dependencies {
   implementation(libs.androidx.room.runtime)
   implementation(libs.coil.compose)
   implementation(libs.converter.moshi)
-  implementation(libs.firebase.ai)
+
   // Firestore and Firebase Auth
   implementation(libs.firebase.firestore)
   implementation(libs.firebase.auth)
   implementation(libs.firebase.messaging)
-  implementation(libs.androidx.biometric)
-  implementation(libs.webrtc)
-  implementation(libs.appwrite.android)
-  implementation(libs.firebase.appcheck.recaptcha)
-  implementation(libs.firebase.appcheck.debug)
+
+
+  implementation("dev.chrisbanes.haze:haze:1.5.4")
+
+
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.logging.interceptor)

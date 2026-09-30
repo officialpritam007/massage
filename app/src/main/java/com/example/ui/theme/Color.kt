@@ -3,8 +3,8 @@ package com.example.ui.theme
 import androidx.compose.ui.graphics.Color
 
 // Liquid Chat - Primary Brand & Accent Colors
-val CyanNeon = Color(0xFF00F2FE)
-val CyanAccent = Color(0xFF00D2FF)
+val CyanNeon = Color(0xFF3984EF)
+val CyanAccent = Color(0xFF2377DF)
 val AzureBlue = Color(0xFF4FACFE)
 val ElectricBlue = Color(0xFF0072FF)
 val DeepOcean = Color(0xFF0D2240)
@@ -36,7 +36,7 @@ val GlassHighlight = Color(0x4DFFFFFF)
 
 // Message Bubbles
 val BubbleOutgoingGradientStart = Color(0xFF0072FF)
-val BubbleOutgoingGradientEnd = Color(0xFF00D2FF)
+val BubbleOutgoingGradientEnd = Color(0xFF2377DF)
 val BubbleIncoming = Color(0xFF152038)
 val BubbleIncomingBorder = Color(0x20FFFFFF)
 

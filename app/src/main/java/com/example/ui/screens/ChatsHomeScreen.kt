@@ -1,564 +1,96 @@
 package com.example.ui.screens
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.shape.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Archive
-import androidx.compose.material.icons.filled.Unarchive
-import androidx.compose.material.icons.filled.Chat
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.DoneAll
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Verified
-import androidx.compose.material.icons.filled.WaterDrop
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.*
 import com.example.data.model.Conversation
-import com.example.ui.components.GlassAvatar
-import com.example.ui.components.GlassBadge
-import com.example.ui.components.GlassCard
-import com.example.ui.components.LiquidBackground
-import com.example.ui.theme.AmberPinned
-import com.example.ui.theme.CyanAccent
-import com.example.ui.theme.CyanNeon
-import com.example.ui.theme.ElectricBlue
-import com.example.ui.theme.GlassBorderStroke
-import com.example.ui.theme.TextMuted
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
-import com.example.ui.theme.LocalLiquidGlass
+import com.example.ui.components.*
+import com.example.ui.theme.*
 import com.example.ui.viewmodel.LiquidChatViewModel
 import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.util.*
 
 @Composable
-fun ChatsHomeScreen(
-  viewModel: LiquidChatViewModel,
-  onNavigateToConversation: (String) -> Unit,
-  onNavigateToSettings: () -> Unit,
-  onNavigateToSearch: () -> Unit,
-  onNavigateToAppearance: () -> Unit,
-  onNavigateToProfile: (String) -> Unit,
-  initialTab: String = "All",
-  onHomeTabSelected: (String) -> Unit = {},
-  modifier: Modifier = Modifier
-) {
+fun ChatsHomeScreen(viewModel:LiquidChatViewModel,onNavigateToConversation:(String)->Unit,onNavigateToSettings:()->Unit,onNavigateToSearch:()->Unit,onNavigateToAppearance:()->Unit,onNavigateToProfile:(String)->Unit,initialTab:String="All",onHomeTabSelected:(String)->Unit={},modifier:Modifier=Modifier) {
   val conversations by viewModel.conversations.collectAsState()
-  val glassConfig = LocalLiquidGlass.current
-  val currentUser by viewModel.currentUser.collectAsState()
-
-  var selectedFilter by remember { mutableStateOf(initialTab) }
-  LaunchedEffect(initialTab) { selectedFilter = initialTab }
-  val filters = when (selectedFilter) {
-    "Favorites" -> listOf("Favorites")
-    "Archived" -> listOf("Archived")
-    else -> listOf("All", "Unread")
-  }
-  val selectedRoute = when (selectedFilter) {
-    "Favorites" -> "favorites"
-    "Archived" -> "archived"
-    else -> "chats"
-  }
-
-  val filteredConversations = remember(conversations, selectedFilter) {
-    when (selectedFilter) {
-      "Unread" -> conversations.filter { it.unreadCount > 0 }
-      "Favorites" -> conversations.filter { it.isPinned && !it.isArchived }
-      "Archived" -> conversations.filter { it.isArchived }
-      else -> conversations.filter { !it.isArchived }
-    }
-  }
-
-  LiquidBackground(modifier = modifier) {
-    Scaffold(
-      containerColor = Color.Transparent,
-      topBar = {
-        // Liquid Header
-        GlassCard(
-          modifier = Modifier.fillMaxWidth().statusBarsPadding(),
-          shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
-          elevation = 8.dp
-        ) {
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            // Liquid Logo
-            Box(
-              modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(
-                  Brush.linearGradient(listOf(CyanNeon, ElectricBlue))
-                )
-                .clickable { onNavigateToProfile(currentUser.uid) },
-              contentAlignment = Alignment.Center
-            ) {
-              Icon(
-                imageVector = Icons.Default.WaterDrop,
-                contentDescription = "Liquid Chat",
-                tint = Color.Black,
-                modifier = Modifier.size(24.dp)
-              )
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-              Text(
-                text = "Liquid Chat",
-                style = MaterialTheme.typography.titleLarge.copy(
-                  fontWeight = FontWeight.ExtraBold,
-                  color = TextPrimary,
-                  fontSize = 20.sp
-                )
-              )
-              Text(
-                text = "Real-time • Liquid Glass UI",
-                style = MaterialTheme.typography.bodySmall.copy(
-                  color = CyanAccent,
-                  fontSize = 11.sp
-                )
-              )
-            }
-
-            // Quick Actions: Search, Appearance, Settings
-            IconButton(
-              onClick = onNavigateToSearch,
-              modifier = Modifier.testTag("home_search_button")
-            ) {
-              Icon(Icons.Default.Search, contentDescription = "Search", tint = TextPrimary)
-            }
-
-          }
-        }
-      },
-      bottomBar = {
-        // Floating Liquid Glass Navigation Bar
-        GlassBottomBar(
-          selectedRoute = selectedRoute,
-          onNavigateToChats = { selectedFilter = "All"; onHomeTabSelected("All") },
-          onNavigateToFavorites = { selectedFilter = "Favorites"; onHomeTabSelected("Favorites") },
-          onNavigateToArchived = { selectedFilter = "Archived"; onHomeTabSelected("Archived") },
-          onNavigateToSettings = onNavigateToSettings
-        )
-      },
-    ) { innerPadding ->
-      LazyColumn(
-        modifier = Modifier
-          .fillMaxSize()
-          .padding(innerPadding),
-        contentPadding = PaddingValues(bottom = 90.dp)
-      ) {
-        // Filter Chips Row
+  val loading by viewModel.loading.collectAsState()
+  val current by viewModel.currentUser.collectAsState()
+  var tab by rememberSaveable{mutableStateOf(initialTab)}
+  var menu by remember{mutableStateOf<Conversation?>(null)}
+  var delete by remember{mutableStateOf<Conversation?>(null)}
+  LaunchedEffect(initialTab){tab=initialTab}
+  val visible=conversations.filter{when(tab){"Favorites"->it.isPinned&&!it.isArchived;"Archived"->it.isArchived;else->!it.isArchived}}
+  LiquidBackground(modifier) {
+    Scaffold(containerColor=Color.Transparent,bottomBar={GlassBottomBar(if(tab=="Favorites")"favorites" else if(tab=="Archived")"archived" else "chats",{tab="All";onHomeTabSelected(tab)},{tab="Favorites";onHomeTabSelected(tab)},{tab="Archived";onHomeTabSelected(tab)},onNavigateToSettings)}){padding->
+      LazyColumn(Modifier.fillMaxSize().padding(padding),contentPadding=PaddingValues(horizontal=20.dp,vertical=12.dp)) {
         item {
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-          ) {
-            filters.forEach { filter ->
-              val isSelected = selectedFilter == filter
-              Box(
-                modifier = Modifier
-                  .clip(RoundedCornerShape(16.dp))
-                  .background(
-                    if (isSelected) CyanAccent.copy(alpha = 0.88f) else if (glassConfig.isDark) Color.White.copy(alpha = 0.07f) else Color.White.copy(alpha = 0.72f)
-                  )
-                  .border(
-                    width = 1.dp,
-                    color = if (isSelected) Color.Transparent else GlassBorderStroke,
-                    shape = RoundedCornerShape(16.dp)
-                  )
-                  .clickable {
-                    selectedFilter = filter
-                    onHomeTabSelected(if (filter == "Unread") "All" else filter)
-                  }
-                  .padding(horizontal = 14.dp, vertical = 7.dp)
-              ) {
-                Text(
-                  text = filter,
-                  style = MaterialTheme.typography.labelMedium.copy(
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                    color = if (isSelected) Color.White else TextSecondary,
-                    fontSize = 13.sp
-                  )
-                )
-              }
+          Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
+            GlassAvatar(current.photoUrl,current.displayName,size=38.dp,onClick={onNavigateToProfile(current.uid)})
+            Spacer(Modifier.weight(1f))
+            GlassIconButton(Icons.Default.Palette,"Appearance",onNavigateToAppearance)
+            Spacer(Modifier.width(8.dp))
+            GlassIconButton(Icons.Default.Add,"New message",onNavigateToSearch,tint=Color.White,backgroundColor=Color(0xFF18B96A))
+          }
+          Text(if(tab=="All")"Chats"else tab,style=MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.Bold,modifier=Modifier.padding(top=20.dp,bottom=14.dp))
+          GlassCard(Modifier.fillMaxWidth(),shape=RoundedCornerShape(30.dp),onClick=onNavigateToSearch){Row(Modifier.padding(15.dp),verticalAlignment=Alignment.CenterVertically){Icon(Icons.Default.Search,null,tint=MaterialTheme.colorScheme.onSurfaceVariant);Spacer(Modifier.width(10.dp));Text("Search people and messages",color=MaterialTheme.colorScheme.onSurfaceVariant)}}
+          Spacer(Modifier.height(20.dp))
+        }
+        if(loading)item{LinearProgressIndicator(Modifier.fillMaxWidth())}
+        items(visible,key={it.id}){c->
+          Row(Modifier.fillMaxWidth().clickable{onNavigateToConversation(c.id)}.padding(vertical=13.dp),verticalAlignment=Alignment.CenterVertically){
+            GlassAvatar(c.otherUser.photoUrl,c.otherUser.displayName,isOnline=c.isOnline&&c.otherUser.onlineVisible,size=54.dp,onClick={onNavigateToProfile(c.otherUser.uid)})
+            Spacer(Modifier.width(13.dp))
+            Column(Modifier.weight(1f)){
+              Row(verticalAlignment=Alignment.CenterVertically){Text(c.otherUser.displayName,fontWeight=FontWeight.SemiBold,maxLines=1,overflow=TextOverflow.Ellipsis,modifier=Modifier.weight(1f));Text(if(c.lastMessageTime>0)SimpleDateFormat("h:mm a",Locale.getDefault()).format(Date(c.lastMessageTime)) else "",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+              Spacer(Modifier.height(5.dp))
+              Row(verticalAlignment=Alignment.CenterVertically){Text(if(c.isTyping)"Typing…"else c.lastMessageText.ifBlank{"Start a conversation"},maxLines=2,overflow=TextOverflow.Ellipsis,color=if(c.isTyping)EmeraldOnline else MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.weight(1f));if(c.unreadCount>0)GlassBadge(c.unreadCount,color=EmeraldOnline)}
             }
+            IconButton(onClick={menu=c},modifier=Modifier.size(32.dp)){Icon(Icons.Default.MoreVert,"Chat actions",modifier=Modifier.size(19.dp),tint=MaterialTheme.colorScheme.onSurfaceVariant)}
           }
+          HorizontalDivider(Modifier.padding(start=67.dp),color=MaterialTheme.colorScheme.outline.copy(alpha=.12f))
         }
-
-        // Conversation List Header
-        item {
-          Text(
-            text = when (selectedFilter) { "Favorites" -> "FAVORITES"; "Archived" -> "ARCHIVED"; "Unread" -> "UNREAD CHATS"; else -> "CHATS" },
-            style = MaterialTheme.typography.labelSmall.copy(
-              color = TextMuted,
-              fontWeight = FontWeight.Bold,
-              fontSize = 11.sp,
-              letterSpacing = 1.sp
-            ),
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-          )
-        }
-
-        // Conversation Items
-        items(filteredConversations, key = { it.id }) { conv ->
-          ConversationRowItem(
-            conversation = conv,
-            onClick = { onNavigateToConversation(conv.id) },
-            onAvatarClick = { onNavigateToProfile(conv.otherUser.uid) },
-            onArchiveToggle = { viewModel.setConversationArchived(conv.id, !conv.isArchived) },
-            onDelete = { viewModel.deleteChatForMe(conv.id) },
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-          )
-        }
-
-        if (filteredConversations.isEmpty()) {
-          item {
-            Box(
-              modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 40.dp),
-              contentAlignment = Alignment.Center
-            ) {
-              Text(
-                text = "No messages found in this view",
-                color = TextMuted,
-                fontSize = 14.sp
-              )
-            }
-          }
-        }
+        if(!loading&&visible.isEmpty())item{Column(Modifier.fillMaxWidth().padding(vertical=64.dp),horizontalAlignment=Alignment.CenterHorizontally){Icon(Icons.Default.ChatBubbleOutline,null,Modifier.size(40.dp),tint=MaterialTheme.colorScheme.onSurfaceVariant);Spacer(Modifier.height(12.dp));Text("No ${if(tab=="All")"chats yet" else tab.lowercase()+" chats"}");TextButton(onClick=onNavigateToSearch){Text("Start a new conversation")}}}
       }
     }
+    menu?.let{c->GlassDialog("Chat actions",{menu=null}){
+      Text(c.otherUser.displayName,fontWeight=FontWeight.SemiBold)
+      TextButton(onClick={viewModel.repository.setFavorite(c.id,!c.isPinned);menu=null}){Text(if(c.isPinned)"Remove from Favorites" else "Add to Favorites")}
+      TextButton(onClick={viewModel.setConversationArchived(c.id,!c.isArchived);menu=null}){Text(if(c.isArchived)"Unarchive" else "Archive")}
+      TextButton(onClick={viewModel.setConversationMuted(c.id,!c.isMuted);menu=null}){Text(if(c.isMuted)"Unmute" else "Mute")}
+      TextButton(onClick={delete=c;menu=null}){Text("Delete chat for me",color=MaterialTheme.colorScheme.error)}
+    }}
+    delete?.let{c->GlassDialog("Delete this chat?",{delete=null}){Text("This hides the conversation from your inbox. A new message can bring it back.");TextButton(onClick={viewModel.deleteChatForMe(c.id);delete=null}){Text("Delete for me")}}}
   }
 }
 
 @Composable
-fun ConversationRowItem(
-  conversation: Conversation,
-  onClick: () -> Unit,
-  onAvatarClick: () -> Unit,
-  onArchiveToggle: () -> Unit,
-  onDelete: () -> Unit,
-  modifier: Modifier = Modifier
-) {
-  val other = conversation.otherUser
-  var menuExpanded by remember { mutableStateOf(false) }
-  var confirmDelete by remember { mutableStateOf(false) }
-
-  GlassCard(
-    modifier = modifier
-      .fillMaxWidth()
-      .testTag("conversation_item_${conversation.id}"),
-    shape = RoundedCornerShape(20.dp),
-    elevation = 4.dp,
-    onClick = onClick
-  ) {
-    Row(
-      modifier = Modifier
-        .fillMaxWidth()
-        .padding(horizontal = 14.dp, vertical = 12.dp),
-      verticalAlignment = Alignment.CenterVertically
-    ) {
-      // Avatar with Online dot
-      GlassAvatar(
-        photoUrl = other.photoUrl,
-        name = other.displayName,
-        size = 52.dp,
-        isOnline = conversation.isOnline,
-        onClick = onAvatarClick
-      )
-
-      Spacer(modifier = Modifier.width(14.dp))
-
-      // Center Details: Name + Last Message
-      Column(modifier = Modifier.weight(1f)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-          Text(
-            text = other.displayName,
-            style = MaterialTheme.typography.titleMedium.copy(
-              fontWeight = FontWeight.Bold,
-              color = TextPrimary,
-              fontSize = 15.sp
-            ),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false)
-          )
-
-          if (other.isVerified) {
-            Spacer(modifier = Modifier.width(4.dp))
-            Icon(
-              imageVector = Icons.Default.Verified,
-              contentDescription = "Verified",
-              tint = CyanAccent,
-              modifier = Modifier.size(16.dp)
-            )
-          }
-
-          if (conversation.isPinned) {
-            Spacer(modifier = Modifier.width(4.dp))
-            Icon(
-              imageVector = Icons.Default.PushPin,
-              contentDescription = "Pinned",
-              tint = AmberPinned,
-              modifier = Modifier.size(14.dp)
-            )
-          }
-        }
-
-        Spacer(modifier = Modifier.height(3.dp))
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-          if (conversation.lastMessageSenderId == "usr_current_arjun") {
-            Icon(
-              imageVector = Icons.Default.DoneAll,
-              contentDescription = "Delivered",
-              tint = CyanAccent,
-              modifier = Modifier
-                .size(15.dp)
-                .padding(end = 4.dp)
-            )
-          }
-
-          if (conversation.lastMessageText.contains("Voice message")) {
-            Icon(
-              imageVector = Icons.Default.Mic,
-              contentDescription = null,
-              tint = CyanAccent,
-              modifier = Modifier
-                .size(14.dp)
-                .padding(end = 4.dp)
-            )
-          }
-
-          Text(
-            text = if (conversation.isTyping) "Typing..." else conversation.lastMessageText,
-            style = MaterialTheme.typography.bodyMedium.copy(
-              color = if (conversation.isTyping) CyanAccent else if (conversation.unreadCount > 0) TextPrimary else TextSecondary,
-              fontWeight = if (conversation.unreadCount > 0) FontWeight.SemiBold else FontWeight.Normal,
-              fontSize = 13.sp
-            ),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-          )
-        }
-      }
-
-      Spacer(modifier = Modifier.width(10.dp))
-
-      // Trailing: Time + Unread Badge
-      Column(
-        horizontalAlignment = Alignment.End,
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-      ) {
-        val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
-        Text(
-          text = timeFormat.format(Date(conversation.lastMessageTime)),
-          style = MaterialTheme.typography.bodySmall.copy(
-            color = if (conversation.unreadCount > 0) CyanAccent else TextMuted,
-            fontSize = 11.sp
-          )
-        )
-
-        GlassBadge(count = conversation.unreadCount)
-      }
-      Box {
-        IconButton(onClick = { menuExpanded = true }) {
-          Icon(Icons.Default.MoreVert, contentDescription = "Chat actions", tint = TextMuted)
-        }
-        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-          DropdownMenuItem(
-            text = { Text(if (conversation.isArchived) "Unarchive" else "Archive") },
-            leadingIcon = { Icon(if (conversation.isArchived) Icons.Default.Unarchive else Icons.Default.Archive, contentDescription = null) },
-            onClick = { menuExpanded = false; onArchiveToggle() }
-          )
-          DropdownMenuItem(
-            text = { Text("Delete chat") },
-            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
-            onClick = { menuExpanded = false; confirmDelete = true }
-          )
-        }
+fun GlassBottomBar(selectedRoute:String,onNavigateToChats:()->Unit,onNavigateToFavorites:()->Unit,onNavigateToArchived:()->Unit,onNavigateToSettings:()->Unit,modifier:Modifier=Modifier){
+  val items=listOf(Triple("chats","All",Icons.Default.ChatBubbleOutline),Triple("favorites","Favorites",Icons.Default.StarOutline),Triple("archived","Archived",Icons.Default.Inventory2),Triple("settings","Settings",Icons.Default.Settings))
+  val clicks=listOf(onNavigateToChats,onNavigateToFavorites,onNavigateToArchived,onNavigateToSettings)
+  val index=items.indexOfFirst{it.first==selectedRoute}.coerceAtLeast(0)
+  val reduced=LocalLiquidGlass.current.isReducedMotion
+  Box(modifier.navigationBarsPadding().padding(horizontal=16.dp,vertical=9.dp)){
+    GlassCard(Modifier.fillMaxWidth(),shape=RoundedCornerShape(36.dp),elevation=8.dp){
+      BoxWithConstraints(Modifier.fillMaxWidth().padding(6.dp)){
+        val width=maxWidth/4
+        val x by animateDpAsState(width*index,if(reduced)tween(0)else spring(dampingRatio=.72f,stiffness=430f),label="tab_glass_pill")
+        Box(Modifier.offset(x=x).width(width).height(58.dp).clip(RoundedCornerShape(29.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha=.13f)))
+        Row(Modifier.fillMaxWidth()) {items.forEachIndexed{i,item->Column(Modifier.weight(1f).height(58.dp).clip(RoundedCornerShape(29.dp)).clickable(onClick=clicks[i]),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){val color=if(index==i)MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant;Icon(item.third,item.second,tint=color,modifier=Modifier.size(23.dp));Spacer(Modifier.height(3.dp));Text(item.second,fontSize=10.sp,color=color,maxLines=1)}}
       }
     }
-  }
-
-  if (confirmDelete) {
-    Dialog(onDismissRequest = { confirmDelete = false }) {
-      GlassCard(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(24.dp)) {
-        Column(modifier = Modifier.padding(20.dp)) {
-          Text("Delete chat?", color = TextPrimary, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
-          Spacer(modifier = Modifier.height(8.dp))
-          Text("This removes the conversation from your chat list. The other person will keep their copy.", color = TextSecondary)
-          Spacer(modifier = Modifier.height(18.dp))
-          Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            Text("Cancel", color = TextSecondary, modifier = Modifier.clickable { confirmDelete = false }.padding(10.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Delete", color = CyanAccent, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { confirmDelete = false; onDelete() }.padding(10.dp))
-          }
-        }
-      }
-    }
-  }
-}
-
-@Composable
-fun GlassBottomBar(
-  selectedRoute: String,
-  onNavigateToChats: () -> Unit,
-  onNavigateToFavorites: () -> Unit,
-  onNavigateToArchived: () -> Unit,
-  onNavigateToSettings: () -> Unit,
-  modifier: Modifier = Modifier
-) {
-  Box(
-    modifier = modifier
-      .fillMaxWidth()
-      .navigationBarsPadding()
-      .padding(horizontal = 16.dp, vertical = 10.dp),
-    contentAlignment = Alignment.Center
-  ) {
-    GlassCard(
-      modifier = Modifier.fillMaxWidth(),
-      shape = RoundedCornerShape(26.dp),
-      elevation = 12.dp
-    ) {
-      Row(
-        modifier = Modifier
-          .fillMaxWidth()
-          .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceAround,
-        verticalAlignment = Alignment.CenterVertically
-      ) {
-        BottomNavItem(
-          icon = Icons.Default.Chat,
-          label = "Chats",
-          isSelected = selectedRoute == "chats",
-          onClick = onNavigateToChats,
-          testTag = "nav_chats"
-        )
-        BottomNavItem(
-          icon = Icons.Default.Star,
-          label = "Favorites",
-          isSelected = selectedRoute == "favorites",
-          onClick = onNavigateToFavorites,
-          testTag = "nav_favorites"
-        )
-        BottomNavItem(
-          icon = Icons.Default.Archive,
-          label = "Archived",
-          isSelected = selectedRoute == "archived",
-          onClick = onNavigateToArchived,
-          testTag = "nav_archived"
-        )
-        BottomNavItem(
-          icon = Icons.Default.Settings,
-          label = "Settings",
-          isSelected = selectedRoute == "settings",
-          onClick = onNavigateToSettings,
-          testTag = "nav_settings"
-        )
-      }
-    }
-  }
-}
-
-@Composable
-fun BottomNavItem(
-  icon: ImageVector,
-  label: String,
-  isSelected: Boolean,
-  onClick: () -> Unit,
-  testTag: String
-) {
-  Column(
-    horizontalAlignment = Alignment.CenterHorizontally,
-    modifier = Modifier
-      .clip(RoundedCornerShape(14.dp))
-      .clickable(onClick = onClick)
-      .padding(horizontal = 12.dp, vertical = 6.dp)
-      .testTag(testTag)
-  ) {
-    Box(
-      modifier = Modifier
-        .clip(RoundedCornerShape(12.dp))
-        .background(if (isSelected) CyanAccent.copy(alpha = 0.2f) else Color.Transparent)
-        .padding(horizontal = 12.dp, vertical = 4.dp),
-      contentAlignment = Alignment.Center
-    ) {
-      Icon(
-        imageVector = icon,
-        contentDescription = label,
-        tint = if (isSelected) CyanAccent else TextMuted,
-        modifier = Modifier.size(22.dp)
-      )
-    }
-    Text(
-      text = label,
-      color = if (isSelected) CyanAccent else TextMuted,
-      fontSize = 9.sp,
-      fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-      maxLines = 1
-    )
   }
 }

@@ -3,19 +3,13 @@ package com.example.ui.viewmodel
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.data.model.ActiveCallState
 import com.example.data.model.AppearanceSettings
-import com.example.data.model.CallRecord
-import com.example.data.model.CallType
 import com.example.data.model.Conversation
-import com.example.data.model.Group
 import com.example.data.model.Message
 import com.example.data.model.MessageType
 import com.example.data.model.PrivacySettings
 import com.example.data.model.NotificationSettings
-import com.example.data.model.StatusType
 import com.example.data.model.User
-import com.example.data.model.UserStatus
 import com.example.data.repository.ChatRepository
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,15 +27,16 @@ class LiquidChatViewModel(
   val users: StateFlow<List<User>> = repository.users
   val conversations: StateFlow<List<Conversation>> = repository.conversations
   val messages: StateFlow<Map<String, List<Message>>> = repository.messages
-  val groups: StateFlow<List<Group>> = repository.groups
-  val statuses: StateFlow<List<UserStatus>> = repository.statuses
-  val callRecords: StateFlow<List<CallRecord>> = repository.callRecords
-  val activeCall: StateFlow<ActiveCallState?> = repository.activeCall
   val appearance: StateFlow<AppearanceSettings> = repository.appearance
   val privacy: StateFlow<PrivacySettings> = repository.privacy
   val notifications: StateFlow<NotificationSettings> = repository.notifications
   val searchHistory: StateFlow<List<String>> = repository.searchHistory
   val blockedUserIds: StateFlow<Set<String>> = repository.blockedUserIds
+
+  val error = repository.error
+  val loading = repository.loading
+  val upload = repository.upload
+  override fun onCleared() { repository.close() }
 
   // Search Filter State
   private val _searchQuery = MutableStateFlow("")
@@ -150,64 +145,6 @@ class LiquidChatViewModel(
 
   fun clearUnread(conversationId: String) {
     repository.clearUnread(conversationId)
-  }
-
-  // Groups
-  fun createGroup(name: String, description: String, selectedUserIds: List<String>) {
-    repository.createGroup(name, description, selectedUserIds)
-  }
-
-  fun sendGroupMessage(groupId: String, text: String) {
-    repository.sendGroupMessage(groupId, text)
-  }
-
-  fun deleteGroup(groupId: String, onResult: (Result<Unit>) -> Unit = {}) = repository.deleteGroup(groupId, onResult)
-
-  fun leaveGroup(groupId: String, onResult: (Result<Unit>) -> Unit = {}) = repository.leaveGroup(groupId, onResult)
-
-  // Statuses
-  fun postStatus(type: StatusType, content: String, bgIndex: Int = 0) {
-    repository.postStatus(type, content, bgIndex)
-  }
-
-  fun markStatusViewed(statusId: String) {
-    repository.markStatusViewed(statusId)
-  }
-
-  fun deleteStatus(statusId: String, onResult: (Result<Unit>) -> Unit = {}) = repository.deleteStatus(statusId, onResult)
-
-  fun uploadAndPostStatus(uri: Uri, type: StatusType, bgIndex: Int = 0, onResult: (Result<Unit>) -> Unit = {}) =
-    repository.uploadAndPostStatus(uri, type, bgIndex, onResult)
-
-  // Calls
-  fun startCall(otherUser: User, type: CallType) {
-    repository.startCall(otherUser, type)
-  }
-
-  fun acceptIncomingCall(context: android.content.Context) = repository.acceptIncomingCall(context)
-
-  fun rejectIncomingCall() = repository.rejectIncomingCall()
-
-  fun initializeWebRtc(context: android.content.Context) = repository.initializeWebRtc(context)
-
-  fun setWebRtcMicrophoneEnabled(enabled: Boolean) = repository.setWebRtcMicrophoneEnabled(enabled)
-
-  fun setWebRtcCameraEnabled(enabled: Boolean) = repository.setWebRtcCameraEnabled(enabled)
-
-  fun toggleMuteCall() {
-    repository.toggleMuteCall()
-  }
-
-  fun toggleCameraCall() {
-    repository.toggleCameraCall()
-  }
-
-  fun toggleSpeakerCall() {
-    repository.toggleSpeakerCall()
-  }
-
-  fun endCall() {
-    repository.endCall()
   }
 
   fun uploadProfilePhoto(uri: Uri, onResult: (Result<String>) -> Unit = {}) =

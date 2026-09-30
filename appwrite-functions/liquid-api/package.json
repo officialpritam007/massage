@@ -1,0 +1,1 @@
+{"name":"liquid-chat-api","private":true,"type":"module","scripts":{"test":"node --test test/*.test.js"},"dependencies":{"firebase-admin":"13.4.0"},"engines":{"node":">=20"}}

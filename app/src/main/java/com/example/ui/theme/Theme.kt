@@ -18,7 +18,7 @@ data class LiquidGlassConfig(
   val accentColor: Color = CyanAccent,
   val isGlassEnabled: Boolean = true,
   val isReducedMotion: Boolean = false,
-  val isDark: Boolean = true
+  val isDark: Boolean = false
 )
 
 val LocalLiquidGlass = compositionLocalOf { LiquidGlassConfig() }
@@ -31,9 +31,9 @@ private val DarkColorScheme = darkColorScheme(
   secondary = AzureBlue,
   onSecondary = Color.Black,
   tertiary = VioletAccent,
-  background = Color(0xFF03152D),
+  background = Color(0xFF131722),
   onBackground = TextPrimary,
-  surface = Color(0xE6102B50),
+  surface = Color(0xE6222835),
   onSurface = TextPrimary,
   surfaceVariant = SurfaceGlassDark,
   onSurfaceVariant = TextSecondary,
@@ -48,18 +48,18 @@ private val LightColorScheme = lightColorScheme(
   secondary = AzureBlue,
   onSecondary = Color.White,
   tertiary = VioletAccent,
-  background = Color(0xFFEAF4FF),
+  background = Color(0xFFF7F8FC),
   onBackground = TextPrimaryLight,
-  surface = Color(0xFF174575),
-  onSurface = TextPrimary,
-  surfaceVariant = Color(0xFF245D91),
-  onSurfaceVariant = Color(0xFFE4F1FF),
+  surface = Color(0xFFF7F8FC),
+  onSurface = TextPrimaryLight,
+  surfaceVariant = Color(0xFFEDF0F5),
+  onSurfaceVariant = TextPrimaryLight,
   outline = GlassBorderStrokeLight
 )
 
 @Composable
 fun LiquidChatTheme(
-  darkTheme: Boolean = true,
+  darkTheme: Boolean = false,
   glassConfig: LiquidGlassConfig = LiquidGlassConfig(isDark = darkTheme),
   content: @Composable () -> Unit
 ) {
@@ -70,7 +70,7 @@ fun LiquidChatTheme(
     MaterialTheme(
       colorScheme = colorScheme,
       typography = Typography,
-      content = content
+      content = { androidx.compose.material3.Surface(color = colorScheme.background, contentColor = colorScheme.onBackground) { content() } }
     )
   }
 }
