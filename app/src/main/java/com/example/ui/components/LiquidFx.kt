@@ -19,6 +19,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -118,7 +120,11 @@ fun Modifier.lensEdge(
   strength: Float = 1f
 ): Modifier = drawWithCache {
   val outline = shape.createOutline(size, layoutDirection, this)
-  val outlinePath = outline.path
+  val outlinePath: Path = when (val o = outline) {
+    is Outline.Generic -> o.path
+    is Outline.Rounded -> Path().apply { addRoundRect(o.roundRect) }
+    is Outline.Rectangle -> Path().apply { addRect(o.rect) }
+  }
   val rim = Color.White.copy(alpha = (if (dark) .55f else .92f) * strength)
   val innerGlow = Color.White.copy(alpha = (if (dark) .12f else .45f) * strength)
   val refraction = Color.White.copy(alpha = (if (dark) .05f else .16f) * strength)
