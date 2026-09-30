@@ -3,21 +3,10 @@ package com.example.ui.viewmodel
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.data.model.AppearanceSettings
-import com.example.data.model.Conversation
-import com.example.data.model.Message
-import com.example.data.model.MessageType
-import com.example.data.model.PrivacySettings
-import com.example.data.model.NotificationSettings
-import com.example.data.model.User
+import com.example.data.model.*
 import com.example.data.repository.ChatRepository
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.stateIn
 
 class LiquidChatViewModel(
   val repository: ChatRepository = ChatRepository()
@@ -64,7 +53,6 @@ class LiquidChatViewModel(
 
   fun clearSearchQuery() { _searchQuery.value = "" }
   fun clearSearchHistory() = repository.clearSearchHistory()
-
   fun setConversationMuted(conversationId: String, muted: Boolean) = repository.setConversationMuted(conversationId, muted)
   fun setDisappearingMessages(conversationId: String, seconds: Long) = repository.setDisappearingMessages(conversationId, seconds)
   fun setConversationWallpaper(conversationId: String, index: Int) = repository.setConversationWallpaper(conversationId, index)
@@ -86,7 +74,8 @@ class LiquidChatViewModel(
     replyToId: String? = null,
     replyToText: String? = null,
     replyToSender: String? = null,
-    voiceDurationSeconds: Int = 0
+    voiceDurationSeconds: Int = 0,
+    waveform: List<Float> = emptyList()
   ) = repository.sendMessage(
     conversationId = conversationId,
     text = text,
@@ -95,37 +84,30 @@ class LiquidChatViewModel(
     replyToId = replyToId,
     replyToText = replyToText,
     replyToSender = replyToSender,
-    voiceDurationSeconds = voiceDurationSeconds
+    voiceDurationSeconds = voiceDurationSeconds,
+    waveform = waveform
   )
 
   fun addReaction(conversationId: String, messageId: String, emoji: String) =
     repository.addReaction(conversationId, messageId, emoji)
-
   fun deleteMessageForMe(conversationId: String, messageId: String) =
     repository.deleteMessageForMe(conversationId, messageId)
-
   fun deleteMessageForEveryone(conversationId: String, messageId: String) =
     repository.deleteMessageForEveryone(conversationId, messageId)
-
   fun deleteMessage(conversationId: String, messageId: String) =
     repository.deleteMessageForEveryone(conversationId, messageId)
-
   fun editMessage(conversationId: String, messageId: String, newText: String) =
     repository.editMessage(conversationId, messageId, newText)
-
   fun pinMessage(conversationId: String, messageId: String) = repository.pinMessage(conversationId, messageId)
   fun clearUnread(conversationId: String) = repository.clearUnread(conversationId)
 
   fun uploadProfilePhoto(uri: Uri, onResult: (Result<String>) -> Unit = {}) =
     repository.uploadProfilePhoto(uri, onResult)
-
   fun setPresence(isOnline: Boolean) = repository.setPresence(isOnline)
   fun setTyping(conversationId: String, isTyping: Boolean) = repository.setTyping(conversationId, isTyping)
   fun isUserLoggedIn(): Boolean = repository.isUserLoggedIn()
 
-  suspend fun signInWithEmail(email: String, pass: String): Result<User> =
-    repository.signInWithEmail(email, pass)
-
+  suspend fun signInWithEmail(email: String, pass: String): Result<User> = repository.signInWithEmail(email, pass)
   suspend fun registerWithEmail(
     email: String,
     pass: String,
@@ -146,10 +128,8 @@ class LiquidChatViewModel(
 
   fun getOrCreateConversationId(otherUid: String): String = repository.getOrCreateConversationId(otherUid)
   fun observeConversation(conversationId: String) = repository.observeConversation(conversationId)
-
   fun updateProfile(displayName: String, username: String, bio: String, phoneNumber: String) =
     repository.updateProfile(displayName, username, bio, phoneNumber)
-
   fun updateAppearance(settings: AppearanceSettings) = repository.updateAppearance(settings)
   fun updatePrivacy(settings: PrivacySettings) = repository.updatePrivacy(settings)
   fun blockUser(userId: String) = repository.blockUser(userId)
