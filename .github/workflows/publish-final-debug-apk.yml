@@ -1,0 +1,47 @@
+name: Publish Final Debug APK
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/publish-final-debug-apk.yml'
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FINAL_RUN_ID: '36763685221'
+      RELEASE_TAG: liquid-glass-debug-20260930-6578df1
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download verified APK artifact
+        run: |
+          mkdir -p /tmp/final-apk
+          gh run download "$FINAL_RUN_ID" --repo "$GITHUB_REPOSITORY" --name liquid-chat-debug-apk --dir /tmp/final-apk
+          test -n "$(find /tmp/final-apk -maxdepth 2 -name '*.apk' -print -quit)"
+
+      - name: Publish debug prerelease
+        run: |
+          APK="$(find /tmp/final-apk -maxdepth 2 -name '*.apk' -print -quit)"
+          gh release create "$RELEASE_TAG" "$APK#Liquid-Chat-iOS26-Liquid-Glass-debug.apk" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target 6578df1a0f7fe4cb1c8f5bb0084f557a0f2808b3 \
+            --prerelease \
+            --title 'Liquid Chat — Liquid Glass Debug' \
+            --notes 'Verified debug build. Unit tests and assembleDebug passed in GitHub Actions run #183. Firebase remains Auth/Firestore/FCM; private media remains Appwrite.'
+
+      - name: Remove one-shot publisher
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/publish-final-debug-apk.yml
+          git commit -m 'Remove one-shot APK publisher'
+          git push origin HEAD:main
