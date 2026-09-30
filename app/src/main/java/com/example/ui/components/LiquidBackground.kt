@@ -36,24 +36,21 @@ fun LiquidBackground(
   val state = remember { HazeState() }
   val motion = rememberInfiniteTransition(label = "liquid_background")
   val driftX by motion.animateFloat(
-    initialValue = -0.06f,
-    targetValue = 0.07f,
-    animationSpec = infiniteRepeatable(tween(9000), RepeatMode.Reverse),
+    initialValue = -0.045f,
+    targetValue = 0.05f,
+    animationSpec = infiniteRepeatable(tween(12_000), RepeatMode.Reverse),
     label = "glass_drift_x"
   )
   val driftY by motion.animateFloat(
-    initialValue = 0.04f,
-    targetValue = -0.05f,
-    animationSpec = infiniteRepeatable(tween(11000), RepeatMode.Reverse),
+    initialValue = 0.035f,
+    targetValue = -0.04f,
+    animationSpec = infiniteRepeatable(tween(14_000), RepeatMode.Reverse),
     label = "glass_drift_y"
   )
 
+  val base = if (dark) Color(0xFF070B11) else Color(0xFFF3F7FC)
   CompositionLocalProvider(LocalGlassBackdrop provides if (config.isGlassEnabled) state else null) {
-    Box(
-      modifier
-        .fillMaxSize()
-        .background(if (dark) Color(0xFF090D14) else Color(0xFFF5F8FC))
-    ) {
+    Box(modifier.fillMaxSize().background(base)) {
       Canvas(
         Modifier
           .fillMaxSize()
@@ -62,74 +59,85 @@ fun LiquidBackground(
         val dx = if (config.isReducedMotion) 0f else driftX
         val dy = if (config.isReducedMotion) 0f else driftY
 
-        val glowA = Offset(size.width * (0.82f + dx), size.height * (0.16f + dy))
+        val blue = Offset(size.width * (.86f + dx), size.height * (.10f + dy))
         drawCircle(
           brush = Brush.radialGradient(
             listOf(
-              Color(0xFF6EA8FF).copy(alpha = if (dark) .16f else .25f),
-              Color(0xFF8DC7FF).copy(alpha = if (dark) .05f else .09f),
+              Color(0xFF6AA8FF).copy(alpha = if (dark) .18f else .22f),
+              Color(0xFFB9D9FF).copy(alpha = if (dark) .05f else .09f),
               Color.Transparent
             ),
-            center = glowA,
-            radius = size.width * .72f
+            center = blue,
+            radius = size.width * .78f
           ),
-          radius = size.width * .72f,
-          center = glowA
+          radius = size.width * .78f,
+          center = blue
         )
 
-        val glowB = Offset(size.width * (0.12f - dx * .7f), size.height * (0.72f - dy * .8f))
+        val violet = Offset(size.width * (.02f - dx * .6f), size.height * (.78f - dy * .7f))
         drawCircle(
           brush = Brush.radialGradient(
             listOf(
-              Color(0xFF8D7CFF).copy(alpha = if (dark) .10f else .15f),
+              Color(0xFF8E7CFF).copy(alpha = if (dark) .12f else .13f),
+              Color(0xFFC3B9FF).copy(alpha = if (dark) .025f else .045f),
               Color.Transparent
             ),
-            center = glowB,
-            radius = size.width * .64f
+            center = violet,
+            radius = size.width * .70f
           ),
-          radius = size.width * .64f,
-          center = glowB
+          radius = size.width * .70f,
+          center = violet
         )
 
-        val glowC = Offset(size.width * .58f, size.height * (1.02f + dy * .4f))
+        val aqua = Offset(size.width * .62f, size.height * (1.04f + dy * .35f))
         drawCircle(
           brush = Brush.radialGradient(
             listOf(
-              Color(0xFF68E1D4).copy(alpha = if (dark) .055f else .08f),
+              Color(0xFF61DED1).copy(alpha = if (dark) .065f else .075f),
               Color.Transparent
             ),
-            center = glowC,
-            radius = size.width * .75f
+            center = aqua,
+            radius = size.width * .82f
           ),
-          radius = size.width * .75f,
-          center = glowC
+          radius = size.width * .82f,
+          center = aqua
         )
 
         if (crystal) {
-          val tint = if (dark) Color(0xFF6D8BB4) else Color(0xFFC5DDF8)
-          for (i in 0..7) {
-            val x = size.width * (i % 4) / 3f
-            val y = size.height * i / 8f
+          val tint = if (dark) Color(0xFF7192BE) else Color(0xFFC6DDF6)
+          for (i in 0..5) {
+            val x = size.width * (i % 3) / 2f
+            val y = size.height * (i + 1) / 8f
             val path = Path().apply {
               moveTo(x, y)
-              lineTo(size.width * (1f - (i % 3) / 3f), y + size.height * .30f)
-              lineTo(size.width * .49f, size.height * .50f)
+              lineTo(size.width * (1f - (i % 2) * .22f), y + size.height * .25f)
+              lineTo(size.width * .50f, size.height * .50f)
               close()
             }
             drawPath(
               path,
               Brush.linearGradient(
                 listOf(
-                  tint.copy(alpha = if (dark) .11f else .16f),
+                  tint.copy(alpha = if (dark) .055f else .085f),
                   Color.Transparent,
-                  Color.White.copy(alpha = if (dark) .035f else .10f)
+                  Color.White.copy(alpha = if (dark) .016f else .045f)
                 ),
                 start = Offset(x, y),
-                end = Offset(size.width / 2, size.height / 2)
+                end = Offset(size.width / 2f, size.height / 2f)
               )
             )
           }
         }
+
+        drawRect(
+          Brush.verticalGradient(
+            listOf(
+              if (dark) Color.Black.copy(alpha = .10f) else Color.White.copy(alpha = .08f),
+              Color.Transparent,
+              if (dark) Color.Black.copy(alpha = .20f) else Color(0xFFBFD4EA).copy(alpha = .06f)
+            )
+          )
+        )
       }
       content()
     }
