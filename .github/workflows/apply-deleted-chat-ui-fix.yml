@@ -1,0 +1,36 @@
+name: Apply Deleted Chat UI Fix
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-deleted-chat-ui-fix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply patch
+        run: python scripts/apply_deleted_chat_ui_fix.py
+
+      - name: Commit source changes
+        run: |
+          git config user.name 'officialpritam007'
+          git config user.email 'officialpritam07@gmail.com'
+          git add app/src/main/java/com/example/data/repository/ChatRepository.kt \
+                  app/src/main/java/com/example/ui/screens/ConversationScreen.kt
+          if git diff --cached --quiet; then
+            echo 'No changes needed.'
+            exit 0
+          fi
+          git commit -m 'Prevent deleted chat resurrection and improve error UX'
+          git push origin HEAD:main
