@@ -14,5 +14,6 @@ sealed class Screen(val route: String) {
     fun createRoute(conversationId: String) = "camera/$conversationId"
   }
   object Appearance : Screen("appearance")
+  object Diagnostics : Screen("diagnostics")
   object Settings : Screen("settings")
 }
