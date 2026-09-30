@@ -15,11 +15,10 @@ import java.util.Date
 import java.util.UUID
 
 /**
- * Firebase snapshots are read-only message truth; the authenticated API serializes mutations.
- *
- * Firestore may still contain legacy documents written by older app versions. All snapshot
- * decoding is deliberately tolerant of Number/Timestamp/String variants so one old document
- * cannot crash the process during a cached-session startup.
+ * Firestore snapshots are read-only message truth; authenticated server actions serialize
+ * mutations. Snapshot decoding is deliberately tolerant of legacy Number/Timestamp/String data.
+ * Permanent deletion is server-backed: message hiddenFor, global tombstones and per-user
+ * deletedBefore cutoffs are all respected before anything reaches UI/search/cache.
  */
 class ChatRepository(
   private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -32,10 +31,19 @@ class ChatRepository(
   private val listeners = mutableListOf<ListenerRegistration>()
   private val messageListeners = mutableMapOf<String, ListenerRegistration>()
   private val presenceListeners = mutableMapOf<String, ListenerRegistration>()
+  private val limits = mutableMapOf<String, Long>()
+  private val deletedBefore = mutableMapOf<String, Long>()
+  private val failed = mutableSetOf<String>()
+  private val receipts = mutableSetOf<String>()
+  private val lastTyping = mutableMapOf<String, Long>()
+  private val sending = kotlinx.coroutines.sync.Mutex()
+
   private var heartbeat: Job? = null
   private var outboxJob: Job? = null
+  private var appearanceJob: Job? = null
+  private var uploadJob: Job? = null
+  private var retryUpload: (() -> Unit)? = null
   private var resumed = false
-  private val limits = mutableMapOf<String, Long>()
 
   private val _currentUser = MutableStateFlow(User())
   val currentUser = _currentUser.asStateFlow()
@@ -62,19 +70,12 @@ class ChatRepository(
   private val _upload = MutableStateFlow<Float?>(null)
   val upload = _upload.asStateFlow()
 
-  private var appearanceJob: Job? = null
-  private var uploadJob: Job? = null
-  private var retryUpload: (() -> Unit)? = null
-  private val failed = mutableSetOf<String>()
-  private val receipts = mutableSetOf<String>()
-  private val sending = kotlinx.coroutines.sync.Mutex()
-  private val lastTyping = mutableMapOf<String, Long>()
-
   init {
     if (isUserLoggedIn()) startSync() else _loading.value = false
   }
 
   fun clearError() { _error.value = null }
+  fun isUserLoggedIn() = auth.currentUser != null
 
   private fun reportSnapshotFailure(area: String, t: Throwable) {
     _error.value = "$area could not be loaded. ${t.message ?: "Invalid cached data"}"
@@ -124,8 +125,6 @@ class ChatRepository(
     }
   }
 
-  fun isUserLoggedIn() = auth.currentUser != null
-
   suspend fun registerWithEmail(
     email: String,
     pass: String,
@@ -134,10 +133,11 @@ class ChatRepository(
     phoneNumber: String
   ): Result<User> = runCatching {
     auth.createUserWithEmailAndPassword(email.trim(), pass).await()
-    LiquidApi.call(
-      "profile",
-      mapOf("displayName" to fullName, "username" to username, "phoneNumber" to phoneNumber)
-    )
+    LiquidApi.call("profile", mapOf(
+      "displayName" to fullName,
+      "username" to username,
+      "phoneNumber" to phoneNumber
+    ))
     auth.currentUser?.sendEmailVerification()?.await()
     startSync()
     _currentUser.value
@@ -162,9 +162,10 @@ class ChatRepository(
 
   fun logout() {
     setPresence(false)
+    val account = uid
     val tokenKey = prefs.getString("deviceId", "").orEmpty()
-    if (uid.isNotBlank() && tokenKey.isNotBlank()) {
-      db.document("users/$uid").update("tokens.$tokenKey", FieldValue.delete())
+    if (account.isNotBlank() && tokenKey.isNotBlank()) {
+      db.document("users/$account").update("tokens.$tokenKey", FieldValue.delete())
     }
     stopSync()
     appearanceJob?.cancel()
@@ -173,6 +174,7 @@ class ChatRepository(
     LiquidApi.clear()
     prefs.edit().clear().apply()
     auth.signOut()
+    deletedBefore.clear()
     _currentUser.value = User()
     _users.value = emptyList()
     _conversations.value = emptyList()
@@ -180,7 +182,9 @@ class ChatRepository(
     _blockedUserIds.value = emptySet()
     _appearance.value = AppearanceSettings()
     _privacy.value = PrivacySettings()
+    _notifications.value = NotificationSettings()
     _searchHistory.value = emptyList()
+    _loading.value = false
   }
 
   fun close() {
@@ -203,16 +207,13 @@ class ChatRepository(
 
   private fun startSync() {
     stopSync()
-    if (uid.isBlank()) {
+    val account = uid
+    if (account.isBlank()) {
       _loading.value = false
       return
     }
-    val account = uid
     _loading.value = true
     _currentUser.value = User(uid = account, email = auth.currentUser?.email.orEmpty())
-
-    // Profile repair is asynchronous, but snapshot parsing below is schema tolerant so legacy
-    // data can never kill the process while this request is in flight.
     runAction { LiquidApi.call("profile") }
 
     val device = prefs.getString("deviceId", null)
@@ -223,6 +224,7 @@ class ChatRepository(
     FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
       if (uid == account) {
         db.document("users/$account").update("tokens.$device", token)
+          .addOnFailureListener { runAction { LiquidApi.call("profile") } }
       }
     }
 
@@ -237,20 +239,19 @@ class ChatRepository(
         _blockedUserIds.value = (snapshot.get("blockedUserIds") as? List<*>)
           ?.filterIsInstance<String>()?.toSet().orEmpty()
 
-        val a = snapshot.get("appearance") as? Map<*, *>
-        if (a != null) {
+        (snapshot.get("appearance") as? Map<*, *>)?.let { a ->
           _appearance.value = AppearanceSettings(
             isDarkMode = anyBoolean(a["isDarkMode"], false),
-            glassIntensity = (a["glassIntensity"] as? Number)?.toFloat() ?: 0.7f,
-            blurAlpha = (a["blurAlpha"] as? Number)?.toFloat() ?: 0.7f,
-            cornerRadiusDp = (a["cornerRadiusDp"] as? Number)?.toFloat() ?: 26f,
-            borderStrength = (a["borderStrength"] as? Number)?.toFloat() ?: 0.65f,
+            glassIntensity = (a["glassIntensity"] as? Number)?.toFloat() ?: 0.85f,
+            blurAlpha = (a["blurAlpha"] as? Number)?.toFloat() ?: 0.70f,
+            cornerRadiusDp = (a["cornerRadiusDp"] as? Number)?.toFloat() ?: 32f,
+            borderStrength = (a["borderStrength"] as? Number)?.toFloat() ?: 0.70f,
+            accentColorHex = a["accentColorHex"] as? String ?: "#176BFF",
             isReducedMotion = anyBoolean(a["isReducedMotion"], false)
           )
         }
 
-        val p = snapshot.get("privacy") as? Map<*, *>
-        if (p != null) {
+        (snapshot.get("privacy") as? Map<*, *>)?.let { p ->
           _privacy.value = PrivacySettings(
             p["lastSeenVisibility"] as? String ?: "Everyone",
             p["onlineVisibility"] as? String ?: "Everyone",
@@ -259,8 +260,7 @@ class ChatRepository(
           )
         }
 
-        val n = snapshot.get("notifications") as? Map<*, *>
-        if (n != null) {
+        (snapshot.get("notifications") as? Map<*, *>)?.let { n ->
           _notifications.value = NotificationSettings(
             anyBoolean(n["messages"], true),
             anyBoolean(n["vibration"], true)
@@ -275,13 +275,10 @@ class ChatRepository(
         _error.value = error.message
         return@addSnapshotListener
       }
-      if (snapshot != null) {
-        guardSnapshot("Contacts") {
-          _users.value = snapshot.documents.mapNotNull { doc ->
-            runCatching { toUser(doc) }.getOrNull()
-          }.filter { it.uid != account }
-          refreshUsers()
-        }
+      if (snapshot != null) guardSnapshot("Contacts") {
+        _users.value = snapshot.documents.mapNotNull { runCatching { toUser(it) }.getOrNull() }
+          .filter { it.uid != account }
+        refreshUsers()
       }
     }
 
@@ -293,23 +290,22 @@ class ChatRepository(
           _error.value = error.message
           return@addSnapshotListener
         }
-        if (snapshot != null) {
-          guardSnapshot("Chats") {
-            if (snapshot.isEmpty && snapshot.metadata.isFromCache && _conversations.value.isNotEmpty()) {
-              return@guardSnapshot
-            }
-            _conversations.value = snapshot.documents
-              .mapNotNull { doc -> runCatching { toConversation(doc) }.getOrNull() }
-              .sortedByDescending { it.lastMessageTime }
-            val active = _conversations.value.map { it.id }.toSet()
-            messageListeners.keys.filter { it !in active }.toList().forEach {
-              messageListeners.remove(it)?.remove()
-              presenceListeners.remove(it)?.remove()
-            }
-            _conversations.value.forEach { conversation ->
-              observeConversation(conversation.id)
-              observePresence(conversation.id)
-            }
+        if (snapshot != null) guardSnapshot("Chats") {
+          if (snapshot.isEmpty && snapshot.metadata.isFromCache && _conversations.value.isNotEmpty()) {
+            return@guardSnapshot
+          }
+          val next = snapshot.documents.mapNotNull { runCatching { toConversation(it) }.getOrNull() }
+            .sortedByDescending { it.lastMessageTime }
+          _conversations.value = next
+          val active = next.map { it.id }.toSet()
+          messageListeners.keys.filter { it !in active }.toList().forEach {
+            messageListeners.remove(it)?.remove()
+            presenceListeners.remove(it)?.remove()
+          }
+          _messages.update { map -> map.filterKeys { it in active } }
+          next.forEach { conversation ->
+            observeConversation(conversation.id)
+            observePresence(conversation.id)
           }
         }
       }
@@ -347,8 +343,7 @@ class ChatRepository(
       phoneNumber = if (own) snapshot.safeString("phoneNumber") else "",
       photoUrl = pubPhoto,
       bio = snapshot.safeString("bio"),
-      isOnline = snapshot.safeBoolean("isOnline") &&
-        System.currentTimeMillis() - heartbeatAt < 45_000,
+      isOnline = snapshot.safeBoolean("isOnline") && System.currentTimeMillis() - heartbeatAt < 45_000,
       lastSeen = snapshot.safeLong("lastSeen"),
       lastActiveAt = heartbeatAt,
       onlineVisible = snapshot.safeBoolean("onlineVisible", true),
@@ -359,15 +354,24 @@ class ChatRepository(
   private fun toConversation(snapshot: DocumentSnapshot): Conversation? {
     val ids = (snapshot.get("participantIds") as? List<*>)?.filterIsInstance<String>().orEmpty()
     if (ids.size != 2) return null
+
+    val cutoffs = snapshot.get("deletedBefore") as? Map<*, *>
+    deletedBefore[snapshot.id] = anyLong(cutoffs?.get(uid), 0L)
+
     if ((snapshot.get("deletedFor") as? List<*>)?.contains(uid) == true) return null
     val other = ids.firstOrNull { it != uid } ?: return null
     val user = _users.value.find { it.uid == other } ?: User(uid = other, displayName = "Contact")
     fun flag(name: String) = (snapshot.get(name) as? List<*>)?.contains(uid) == true
+
+    val lastId = snapshot.safeString("lastMessageId")
+    val hiddenLast = (snapshot.get("hiddenLastFor") as? Map<*, *>)?.get(uid) as? String
+    val preview = if (lastId.isNotBlank() && hiddenLast == lastId) "" else snapshot.safeString("lastMessageText")
+
     return Conversation(
       id = snapshot.id,
       participantIds = ids,
       otherUser = user,
-      lastMessageText = snapshot.safeString("lastMessageText"),
+      lastMessageText = preview,
       lastMessageTime = snapshot.safeLong("lastMessageTime"),
       lastMessageSenderId = snapshot.safeString("lastMessageSenderId"),
       unreadCount = ((snapshot.get("unreadCounts") as? Map<*, *>)?.get(uid) as? Number)?.toInt() ?: 0,
@@ -405,10 +409,7 @@ class ChatRepository(
           val until = snapshot?.documents?.firstOrNull { it.id == other }?.safeLong("until") ?: 0L
           _conversations.update { conversations ->
             conversations.map {
-              if (it.id == cid) it.copy(
-                typingUntil = until,
-                isTyping = until > System.currentTimeMillis()
-              ) else it
+              if (it.id == cid) it.copy(typingUntil = until, isTyping = until > System.currentTimeMillis()) else it
             }
           }
         }
@@ -432,21 +433,16 @@ class ChatRepository(
           _error.value = error.message
           return@addSnapshotListener
         }
-        if (snapshot != null) {
-          guardSnapshot("Messages") {
-            val list = snapshot.documents
-              .mapNotNull { doc -> runCatching { toMessage(cid, doc) }.getOrNull() }
-              .sortedBy { it.createdAt }
-            val pending = _messages.value[cid].orEmpty().filter {
-              it.status == MessageDeliveryStatus.SENDING || it.status == MessageDeliveryStatus.FAILED
-            }
-            _messages.update {
-              it + (cid to (list + pending.filter { message -> list.none { saved -> saved.id == message.id } })
-                .sortedBy { message -> message.createdAt })
-            }
-            list.filter { it.senderId != uid && it.status == MessageDeliveryStatus.SENT }
-              .forEach { receipt(cid, it.id, "DELIVERED") }
-          }
+        if (snapshot != null) guardSnapshot("Messages") {
+          val list = snapshot.documents
+            .mapNotNull { doc -> runCatching { toMessage(cid, doc) }.getOrNull() }
+            .sortedBy { it.createdAt }
+          val pending = _messages.value[cid].orEmpty().filter {
+            it.status == MessageDeliveryStatus.SENDING || it.status == MessageDeliveryStatus.FAILED
+          }.filter { p -> list.none { saved -> saved.id == p.id } }
+          _messages.update { it + (cid to (list + pending).sortedBy { m -> m.createdAt }) }
+          list.filter { it.senderId != uid && it.status == MessageDeliveryStatus.SENT }
+            .forEach { receipt(cid, it.id, "DELIVERED") }
         }
       }
   }
@@ -458,10 +454,16 @@ class ChatRepository(
   }
 
   private fun toMessage(cid: String, snapshot: DocumentSnapshot): Message? {
+    if (snapshot.safeBoolean("deletedForEveryone")) return null
+    if ((snapshot.get("hiddenFor") as? List<*>)?.contains(uid) == true) return null
+
+    val createdAt = snapshot.safeLong("createdAt")
+    val cutoff = deletedBefore[cid] ?: 0L
+    if (cutoff > 0 && createdAt <= cutoff) return null
+
     val rawExpires = snapshot.get("expiresAt")
     val expires = if (rawExpires == null) null else anyLong(rawExpires, 0L).takeIf { it > 0L }
     if (expires != null && expires <= System.currentTimeMillis()) return null
-    if (prefs.getBoolean("hidden:$uid:${snapshot.id}", false)) return null
 
     return Message(
       id = snapshot.id,
@@ -469,12 +471,10 @@ class ChatRepository(
       senderId = snapshot.safeString("senderId"),
       senderName = snapshot.safeString("senderName"),
       text = snapshot.safeString("text"),
-      type = runCatching {
-        MessageType.valueOf(snapshot.safeString("type", "TEXT"))
-      }.getOrDefault(MessageType.TEXT),
+      type = runCatching { MessageType.valueOf(snapshot.safeString("type", "TEXT")) }.getOrDefault(MessageType.TEXT),
       mediaUrl = snapshot.safeString("mediaUrl"),
-      voiceDurationSeconds = snapshot.safeLong("voiceDurationSeconds").toInt(),
-      createdAt = snapshot.safeLong("createdAt"),
+      voiceDurationSeconds = snapshot.safeLong("voiceDurationSeconds").toInt().coerceAtLeast(0),
+      createdAt = createdAt,
       status = runCatching {
         MessageDeliveryStatus.valueOf(snapshot.safeString("status", "SENT"))
       }.getOrDefault(MessageDeliveryStatus.SENT),
@@ -545,7 +545,7 @@ class ChatRepository(
       replyToId = replyToId,
       replyToText = replyToText,
       replyToSender = replyToSender,
-      voiceDurationSeconds = voiceDurationSeconds,
+      voiceDurationSeconds = voiceDurationSeconds.coerceAtLeast(0),
       status = MessageDeliveryStatus.SENDING
     )
     _messages.update { it + (conversationId to (it[conversationId].orEmpty() + message)) }
@@ -554,22 +554,20 @@ class ChatRepository(
     setTyping(conversationId, false)
   }
 
-  private fun json(message: Message) = JSONObject(
-    mapOf(
-      "otherUid" to _conversations.value.find { it.id == message.conversationId }?.otherUser?.uid,
-      "id" to message.id,
-      "conversationId" to message.conversationId,
-      "senderId" to message.senderId,
-      "text" to message.text,
-      "type" to message.type.name,
-      "mediaUrl" to message.mediaUrl,
-      "voiceDurationSeconds" to message.voiceDurationSeconds,
-      "replyToId" to message.replyToId,
-      "replyToText" to message.replyToText,
-      "replyToSender" to message.replyToSender,
-      "createdAt" to message.createdAt
-    )
-  )
+  private fun json(message: Message) = JSONObject(mapOf(
+    "otherUid" to _conversations.value.find { it.id == message.conversationId }?.otherUser?.uid,
+    "id" to message.id,
+    "conversationId" to message.conversationId,
+    "senderId" to message.senderId,
+    "text" to message.text,
+    "type" to message.type.name,
+    "mediaUrl" to message.mediaUrl,
+    "voiceDurationSeconds" to message.voiceDurationSeconds,
+    "replyToId" to message.replyToId,
+    "replyToText" to message.replyToText,
+    "replyToSender" to message.replyToSender,
+    "createdAt" to message.createdAt
+  ))
 
   private fun persist(message: Message) {
     prefs.edit().putString("outbox:$uid:${message.id}", json(message).toString()).apply()
@@ -578,21 +576,22 @@ class ChatRepository(
   private fun restoreOutbox() {
     prefs.all.filterKeys { it.startsWith("outbox:$uid:") }.values.forEach { raw ->
       runCatching {
-        val json = JSONObject(raw as String)
+        val j = JSONObject(raw as String)
+        val cid = j.getString("conversationId")
+        if (_conversations.value.none { it.id == cid }) return@runCatching
         val message = Message(
-          id = json.getString("id"),
-          conversationId = json.getString("conversationId"),
+          id = j.getString("id"),
+          conversationId = cid,
           senderId = uid,
-          text = json.getString("text"),
-          type = MessageType.valueOf(json.getString("type")),
-          mediaUrl = json.optString("mediaUrl"),
-          voiceDurationSeconds = json.optInt("voiceDurationSeconds"),
-          createdAt = json.optLong("createdAt"),
+          text = j.getString("text"),
+          type = MessageType.valueOf(j.getString("type")),
+          mediaUrl = j.optString("mediaUrl"),
+          voiceDurationSeconds = j.optInt("voiceDurationSeconds"),
+          createdAt = j.optLong("createdAt"),
           status = MessageDeliveryStatus.SENDING
         )
         _messages.update {
-          it + (message.conversationId to
-            (it[message.conversationId].orEmpty().filterNot { saved -> saved.id == message.id } + message))
+          it + (cid to (it[cid].orEmpty().filterNot { saved -> saved.id == message.id } + message))
         }
       }
     }
@@ -604,17 +603,20 @@ class ChatRepository(
     try {
       for ((key, raw) in prefs.all.filterKeys { it.startsWith("outbox:$account:") }) {
         if (uid != account) break
-        val json = JSONObject(raw as String)
-        val id = json.getString("id")
+        val j = JSONObject(raw as String)
+        val id = j.getString("id")
         if (id in failed) continue
-        val cid = json.getString("conversationId")
-        val data = json.keys().asSequence().associateWith {
-          json.opt(it).takeUnless { value -> value == JSONObject.NULL }
-        }
-        try {
-          LiquidApi.call("send", data)
+        val cid = j.getString("conversationId")
+        if (_conversations.value.none { it.id == cid }) {
           prefs.edit().remove(key).apply()
-          updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.SENT) }
+          continue
+        }
+        val data = j.keys().asSequence().associateWith { j.opt(it).takeUnless { value -> value == JSONObject.NULL } }
+        try {
+          val response = LiquidApi.call("send", data)
+          prefs.edit().remove(key).apply()
+          if (response.optBoolean("tombstoned")) removeLocalMessage(cid, id)
+          else updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.SENT) }
         } catch (e: Exception) {
           if (e is CancellationException) throw e
           if (e !is java.io.IOException) {
@@ -636,9 +638,14 @@ class ChatRepository(
   }
 
   private fun updateLocal(cid: String, id: String, transform: (Message) -> Message) {
-    _messages.update { map ->
-      map + (cid to map[cid].orEmpty().map { if (it.id == id) transform(it) else it })
-    }
+    _messages.update { map -> map + (cid to map[cid].orEmpty().map { if (it.id == id) transform(it) else it }) }
+  }
+
+  private fun removeLocalMessage(cid: String, id: String) {
+    failed -= id
+    receipts.removeIf { it.contains(":$id:") }
+    prefs.edit().remove("outbox:$uid:$id").remove("star:$uid:$id").apply()
+    _messages.update { map -> map + (cid to map[cid].orEmpty().filterNot { it.id == id }) }
   }
 
   fun uploadChatMedia(
@@ -681,35 +688,38 @@ class ChatRepository(
   }
 
   fun forwardMedia(message: Message, target: String) = runAction {
-    LiquidApi.call(
-      "forward",
-      mapOf(
-        "conversationId" to message.conversationId,
-        "messageId" to message.id,
-        "targetId" to target,
-        "id" to UUID.randomUUID().toString()
-      )
-    )
+    LiquidApi.call("forward", mapOf(
+      "conversationId" to message.conversationId,
+      "messageId" to message.id,
+      "targetId" to target,
+      "id" to UUID.randomUUID().toString()
+    ))
   }
 
-  private fun action(
-    name: String,
-    cid: String,
-    id: String,
-    extra: Map<String, Any?> = emptyMap()
-  ) = runAction {
+  private fun action(name: String, cid: String, id: String, extra: Map<String, Any?> = emptyMap()) = runAction {
     LiquidApi.call(name, mapOf("conversationId" to cid, "messageId" to id) + extra)
   }
 
   fun addReaction(cid: String, id: String, emoji: String) = action("react", cid, id, mapOf("emoji" to emoji))
-  fun deleteMessage(cid: String, id: String) = action("delete", cid, id)
+
+  fun deleteMessageForMe(cid: String, id: String) = runAction {
+    prefs.edit().remove("outbox:$uid:$id").apply()
+    LiquidApi.call("deleteForMe", mapOf("conversationId" to cid, "messageId" to id))
+    removeLocalMessage(cid, id)
+  }
+
+  fun deleteMessageForEveryone(cid: String, id: String) = runAction {
+    prefs.edit().remove("outbox:$uid:$id").apply()
+    LiquidApi.call("deleteForEveryone", mapOf("conversationId" to cid, "messageId" to id))
+    removeLocalMessage(cid, id)
+  }
+
+  // Backward-compatible names used by older UI code.
+  fun deleteMessage(cid: String, id: String) = deleteMessageForEveryone(cid, id)
+  fun hideMessage(cid: String, id: String) = deleteMessageForMe(cid, id)
+
   fun editMessage(cid: String, id: String, text: String) = action("edit", cid, id, mapOf("text" to text))
   fun pinMessage(cid: String, id: String) = action("pin", cid, id)
-
-  fun hideMessage(cid: String, id: String) {
-    prefs.edit().putBoolean("hidden:$uid:$id", true).apply()
-    _messages.update { it + (cid to it[cid].orEmpty().filterNot { message -> message.id == id }) }
-  }
 
   fun starMessage(cid: String, id: String) {
     val next = !prefs.getBoolean("star:$uid:$id", false)
@@ -735,16 +745,32 @@ class ChatRepository(
   }
 
   private fun setting(cid: String, field: String, value: Any) = runAction {
-    LiquidApi.call(
-      "conversationSetting",
-      mapOf("conversationId" to cid, "field" to field, "value" to value)
-    )
+    LiquidApi.call("conversationSetting", mapOf("conversationId" to cid, "field" to field, "value" to value))
   }
 
   fun setConversationArchived(cid: String, value: Boolean) = setting(cid, "archivedFor", value)
   fun setConversationMuted(cid: String, value: Boolean) = setting(cid, "mutedFor", value)
   fun setFavorite(cid: String, value: Boolean) = setting(cid, "favoriteFor", value)
-  fun deleteChatForMe(cid: String) = setting(cid, "deletedFor", true)
+
+  fun deleteChatForMe(cid: String) = runAction {
+    val messageIds = _messages.value[cid].orEmpty().map { it.id }.toSet()
+    LiquidApi.call("deleteChat", mapOf("conversationId" to cid))
+    messageListeners.remove(cid)?.remove()
+    presenceListeners.remove(cid)?.remove()
+    deletedBefore[cid] = System.currentTimeMillis()
+    _conversations.update { list -> list.filterNot { it.id == cid } }
+    _messages.update { map -> map - cid }
+    val edit = prefs.edit().remove("draft:$uid:$cid").remove("wallpaper:$uid:$cid")
+    messageIds.forEach { id -> edit.remove("star:$uid:$id").remove("outbox:$uid:$id") }
+    prefs.all.filterKeys { it.startsWith("outbox:$uid:") }.forEach { (key, raw) ->
+      runCatching {
+        val j = JSONObject(raw as String)
+        if (j.optString("conversationId") == cid) edit.remove(key)
+      }
+    }
+    edit.apply()
+  }
+
   fun setDisappearingMessages(cid: String, seconds: Long) = setting(cid, "disappearingSeconds", seconds)
 
   fun setConversationWallpaper(cid: String, index: Int) {
@@ -761,7 +787,7 @@ class ChatRepository(
     lastTyping[cid] = if (value) now else 0
     db.document("conversations/$cid/typing/$uid")
       .set(mapOf("until" to if (value) now + 6_000 else 0L))
-      .addOnFailureListener { /* timeout clears stale typing state */ }
+      .addOnFailureListener { /* typing timeout naturally clears stale state */ }
   }
 
   fun setPresence(value: Boolean) {
@@ -780,22 +806,19 @@ class ChatRepository(
         "lastSeen" to if (_privacy.value.lastSeenVisibility != "Nobody") now else 0L
       ),
       SetOptions.merge()
-    )
+    ).addOnFailureListener { _error.value = it.message }
   }
 
   fun draft(cid: String) = prefs.getString("draft:$uid:$cid", "").orEmpty()
   fun saveDraft(cid: String, text: String) { prefs.edit().putString("draft:$uid:$cid", text).apply() }
 
   fun updateProfile(displayName: String, username: String, bio: String, phoneNumber: String) = runAction {
-    LiquidApi.call(
-      "profile",
-      mapOf(
-        "displayName" to displayName,
-        "username" to username,
-        "bio" to bio,
-        "phoneNumber" to phoneNumber
-      )
-    )
+    LiquidApi.call("profile", mapOf(
+      "displayName" to displayName,
+      "username" to username,
+      "bio" to bio,
+      "phoneNumber" to phoneNumber
+    ))
   }
 
   fun updateAppearance(settings: AppearanceSettings) {
@@ -803,31 +826,26 @@ class ChatRepository(
     appearanceJob?.cancel()
     appearanceJob = scope.launch {
       delay(500)
-      save(
-        "appearance",
-        mapOf(
-          "isDarkMode" to settings.isDarkMode,
-          "glassIntensity" to settings.glassIntensity,
-          "blurAlpha" to settings.blurAlpha,
-          "cornerRadiusDp" to settings.cornerRadiusDp,
-          "borderStrength" to settings.borderStrength,
-          "isReducedMotion" to settings.isReducedMotion
-        )
-      )
+      save("appearance", mapOf(
+        "isDarkMode" to settings.isDarkMode,
+        "glassIntensity" to settings.glassIntensity,
+        "blurAlpha" to settings.blurAlpha,
+        "cornerRadiusDp" to settings.cornerRadiusDp,
+        "borderStrength" to settings.borderStrength,
+        "accentColorHex" to settings.accentColorHex,
+        "isReducedMotion" to settings.isReducedMotion
+      ))
     }
   }
 
   fun updatePrivacy(settings: PrivacySettings) {
     _privacy.value = settings
-    save(
-      "privacy",
-      mapOf(
-        "lastSeenVisibility" to settings.lastSeenVisibility,
-        "onlineVisibility" to settings.onlineVisibility,
-        "profilePhotoVisibility" to settings.profilePhotoVisibility,
-        "readReceipts" to settings.readReceipts
-      )
-    )
+    save("privacy", mapOf(
+      "lastSeenVisibility" to settings.lastSeenVisibility,
+      "onlineVisibility" to settings.onlineVisibility,
+      "profilePhotoVisibility" to settings.profilePhotoVisibility,
+      "readReceipts" to settings.readReceipts
+    ))
     writePresence(resumed)
   }
 
