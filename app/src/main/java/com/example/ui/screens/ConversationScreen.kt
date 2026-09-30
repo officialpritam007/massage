@@ -226,7 +226,9 @@ fun ConversationScreen(
 
     val repo = viewModel.repository
     val conversation = conversations.find { it.id == conversationId }
-    val other = conversation?.otherUser ?: User(displayName = "Contact")
+    val other = conversation?.otherUser
+        ?: repo.peerForConversation(conversationId)
+        ?: User(displayName = "Contact")
     val allMessages = messageMap[conversationId].orEmpty()
 
     val config = LocalLiquidGlass.current

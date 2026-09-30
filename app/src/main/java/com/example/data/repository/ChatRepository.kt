@@ -38,6 +38,9 @@ class ChatRepository(
   private val receipts = mutableSetOf<String>()
   private val lastTyping = mutableMapOf<String, Long>()
   private val legacyDeleteMigrations = mutableSetOf<String>()
+  // Keeps enough peer identity to compose a fresh message without putting a
+  // server-deleted conversation back into the chats list before a new send.
+  private val pendingPeers = mutableMapOf<String, User>()
   private val sending = kotlinx.coroutines.sync.Mutex()
 
   private var heartbeat: Job? = null
@@ -79,8 +82,24 @@ class ChatRepository(
   fun clearError() { _error.value = null }
   fun isUserLoggedIn() = auth.currentUser != null
 
+  private fun friendlyError(t: Throwable, fallback: String = "Operation failed"): String {
+    val message = t.message.orEmpty()
+    return when {
+      message.contains("PERMISSION_DENIED", true) || message.contains("insufficient permissions", true) ->
+        "Sync permission denied. Publish the latest Firestore rules, then reopen Liquid Chat."
+      message.contains("UNAVAILABLE", true) || message.contains("network", true) || t is java.io.IOException ->
+        "Connection unavailable. Your pending messages will retry when the network returns."
+      message.contains("token", true) && message.contains("expired", true) ->
+        "Your session needs refreshing. Please sign in again."
+      message.contains("File not available", true) || message.contains("Media access denied", true) ->
+        "This media is no longer available."
+      message.isNotBlank() -> message
+      else -> fallback
+    }
+  }
+
   private fun reportSnapshotFailure(area: String, t: Throwable) {
-    _error.value = "$area could not be loaded. ${t.message ?: "Invalid cached data"}"
+    _error.value = "$area: ${friendlyError(t, "could not be loaded")}"
   }
 
   private inline fun guardSnapshot(area: String, block: () -> Unit) {
@@ -131,7 +150,7 @@ class ChatRepository(
   private fun runAction(block: suspend () -> Unit) {
     scope.launch {
       runCatching { block() }.onFailure {
-        if (it !is CancellationException) _error.value = it.message ?: "Operation failed"
+        if (it !is CancellationException) _error.value = friendlyError(it)
       }
     }
   }
@@ -187,6 +206,7 @@ class ChatRepository(
     auth.signOut()
     deletedBefore.clear()
     legacyDeleteMigrations.clear()
+    pendingPeers.clear()
     _currentUser.value = User()
     _users.value = emptyList()
     _conversations.value = emptyList()
@@ -242,7 +262,7 @@ class ChatRepository(
 
     listeners += db.document("users/$account").addSnapshotListener { snapshot, error ->
       if (error != null) {
-        _error.value = error.message
+        _error.value = friendlyError(error)
         return@addSnapshotListener
       }
       if (snapshot == null || !snapshot.exists()) return@addSnapshotListener
@@ -284,7 +304,7 @@ class ChatRepository(
 
     listeners += db.collection("directory").limit(200).addSnapshotListener { snapshot, error ->
       if (error != null) {
-        _error.value = error.message
+        _error.value = friendlyError(error)
         return@addSnapshotListener
       }
       if (snapshot != null) guardSnapshot("Contacts") {
@@ -299,7 +319,7 @@ class ChatRepository(
       .addSnapshotListener { snapshot, error ->
         _loading.value = false
         if (error != null) {
-          _error.value = error.message
+          _error.value = friendlyError(error)
           return@addSnapshotListener
         }
         if (snapshot != null) guardSnapshot("Chats") {
@@ -369,6 +389,7 @@ class ChatRepository(
     if ((snapshot.get("deletedFor") as? List<*>)?.contains(uid) == true) return null
     val other = ids.firstOrNull { it != uid } ?: return null
     val user = _users.value.find { it.uid == other } ?: User(uid = other, displayName = "Contact")
+    pendingPeers[snapshot.id] = user
     fun flag(name: String) = (snapshot.get(name) as? List<*>)?.contains(uid) == true
     val lastId = snapshot.safeString("lastMessageId")
     val hiddenLast = (snapshot.get("hiddenLastFor") as? Map<*, *>)?.get(uid) as? String
@@ -431,7 +452,7 @@ class ChatRepository(
       .limit(limit)
       .addSnapshotListener { snapshot, error ->
         if (error != null) {
-          _error.value = error.message
+          _error.value = friendlyError(error)
           return@addSnapshotListener
         }
         if (snapshot != null) guardSnapshot("Messages") {
@@ -516,15 +537,11 @@ class ChatRepository(
 
   fun getOrCreateConversationId(otherUid: String): String {
     val cid = listOf(uid, otherUid).sorted().joinToString("_")
-    if (_conversations.value.none { it.id == cid }) {
-      _conversations.update {
-        it + Conversation(
-          id = cid,
-          participantIds = listOf(uid, otherUid),
-          otherUser = _users.value.find { user -> user.uid == otherUid } ?: User(uid = otherUid, displayName = "Contact")
-        )
-      }
-    }
+    pendingPeers[cid] = _users.value.find { user -> user.uid == otherUid }
+      ?: User(uid = otherUid, displayName = "Contact")
+    // Do not optimistically insert a conversation into _conversations. If this chat
+    // was deleted for the current account, opening the contact must not resurrect
+    // the row/history. The authenticated send action will start a fresh chat.
     runAction {
       LiquidApi.call("conversation", mapOf("otherUid" to otherUid))
       observeConversation(cid)
@@ -532,6 +549,8 @@ class ChatRepository(
     }
     return cid
   }
+
+  fun peerForConversation(cid: String): User? = pendingPeers[cid]
 
   fun sendMessage(
     conversationId: String,
@@ -568,7 +587,10 @@ class ChatRepository(
   }
 
   private fun json(message: Message) = JSONObject(mapOf(
-    "otherUid" to _conversations.value.find { it.id == message.conversationId }?.otherUser?.uid,
+    "otherUid" to (
+      _conversations.value.find { it.id == message.conversationId }?.otherUser?.uid
+        ?: pendingPeers[message.conversationId]?.uid
+    ),
     "id" to message.id,
     "conversationId" to message.conversationId,
     "senderId" to message.senderId,
