@@ -6,6 +6,14 @@ service cloud.firestore {
     function participant(cid) {
       return signedIn() && request.auth.uid in get(/databases/$(database)/documents/conversations/$(cid)).data.participantIds;
     }
+    function validPresence() {
+      return request.resource.data.isOnline is bool
+        && request.resource.data.onlineVisible is bool
+        && request.resource.data.lastSeenVisible is bool
+        && request.resource.data.heartbeatAt is int
+        && request.resource.data.lastSeen is int;
+    }
+
     match /users/{uid} {
       allow read: if owner(uid);
       // Identity, usernames and account deletion are handled only by the authenticated API.
@@ -13,24 +21,37 @@ service cloud.firestore {
         .hasOnly(['appearance', 'privacy', 'notifications', 'blockedUserIds', 'tokens']);
       allow create, delete: if false;
     }
+
     match /directory/{uid} {
       allow read: if signedIn();
-      allow update: if owner(uid) && request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'])
-        && request.resource.data.isOnline is bool
-        && request.resource.data.onlineVisible is bool
-        && request.resource.data.lastSeenVisible is bool
-        && request.resource.data.heartbeatAt is int
-        && request.resource.data.lastSeen is int;
-      allow create, delete: if false;
+
+      // Presence may race the server-side profile repair on a fresh/legacy account.
+      // Permit the owner to create ONLY the five presence fields; public identity fields
+      // continue to be created by the authenticated server API.
+      allow create: if owner(uid)
+        && request.resource.data.keys().hasOnly([
+          'isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'
+        ])
+        && validPresence();
+
+      allow update: if owner(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'
+        ])
+        && validPresence();
+
+      allow delete: if false;
     }
+
     match /conversations/{cid} {
       allow read: if signedIn() && request.auth.uid in resource.data.participantIds;
       allow write: if false;
+
       match /messages/{mid} {
         allow read: if participant(cid);
         allow write: if false;
       }
+
       match /typing/{uid} {
         allow read: if participant(cid);
         allow create, update: if owner(uid) && participant(cid)
@@ -40,6 +61,9 @@ service cloud.firestore {
         allow delete: if owner(uid) && participant(cid);
       }
     }
+
+    // Internal server collections (media, rate limits, sessions, tombstones, usernames,
+    // reports) are Admin-SDK only and are deliberately unreachable from Android clients.
     match /{document=**} { allow read, write: if false; }
   }
 }
