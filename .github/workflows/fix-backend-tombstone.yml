@@ -1,4 +1,4 @@
-name: Fix Backend Tombstone Wiring
+name: Apply Confirmed Messaging Hardening
 
 on:
   push:
@@ -10,57 +10,307 @@ permissions:
   contents: write
 
 jobs:
-  fix:
+  harden:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Correct tombstone visibility wiring
+
+      - name: Apply confirmed hardening
+        shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          p=Path('appwrite-functions/liquid-api/src/main.js')
-          s=p.read_text()
-          bad="""          waveform: sanitizeWaveform(source.waveform),
+
+          def replace_once(text, old, new, label):
+              if old not in text:
+                  raise SystemExit(f'{label}: expected source block not found')
+              return text.replace(old, new, 1)
+
+          # ---------- Authenticated backend ----------
+          p = Path('appwrite-functions/liquid-api/src/main.js')
+          s = p.read_text()
+
+          s = replace_once(s, """        } else {
+          t.update(ref, {deletedFor: FieldValue.arrayRemove(uid)});
+        }
+""", """        }
+""", 'keep deleted chat hidden until a new message is sent')
+
+          s = replace_once(s, """        ready: false,
+        forwardedTo: [],
+        revokedFrom: []
+""", """        ready: false,
+        forwardedTo: [],
+        revokedFrom: [],
+        revokedForUsers: [],
+        authorizedAtByConversation: p.conversationId ? {[p.conversationId]: now} : {}
+""", 'media authorization metadata')
+
+          s = replace_once(s, """        const revoked = new Set(meta.revokedFrom || []);
+        for (const cid of [meta.conversationId, ...(meta.forwardedTo || [])]) {
+          if (revoked.has(cid)) continue;
+          try {
+            await allowed(db, cid, uid);
+            ok = true;
+            break;
+          } catch {}
+        }
+""", """        const revoked = new Set(meta.revokedFrom || []);
+        const revokedForUsers = new Set(meta.revokedForUsers || []);
+        for (const cid of [meta.conversationId, ...(meta.forwardedTo || [])]) {
+          if (!cid || revoked.has(cid) || revokedForUsers.has(`${cid}:${uid}`)) continue;
+          try {
+            const conversationSnap = await db.doc('conversations/' + cid).get();
+            if (!conversationSnap.exists) continue;
+            const conversation = conversationSnap.data();
+            assertPair(conversation.participantIds, uid);
+            const cutoff = Number(conversation.deletedBefore?.[uid] || 0);
+            const authorizedAt = Number(
+              (meta.authorizedAtByConversation || {})[cid]
+              || (meta.conversationId === cid ? meta.createdAt : 0)
+            );
+            if (cutoff && (!authorizedAt || cutoff >= authorizedAt)) continue;
+            await allowed(db, cid, uid);
+            ok = true;
+            break;
+          } catch {}
+        }
+""", 'media access respects delete-for-me and deleted-chat cutoffs')
+
+          s = replace_once(s, """        await mr.update({forwardedTo: FieldValue.arrayUnion(p.targetId)});
+""", """        await mr.update({
+          forwardedTo: FieldValue.arrayUnion(p.targetId),
+          [`authorizedAtByConversation.${p.targetId}`]: now,
+          revokedForUsers: FieldValue.arrayRemove(
+            `${p.targetId}:${uid}`,
+            `${p.targetId}:${target.other}`
+          )
+        });
+""", 'forward media authorization refresh')
+
+          s = replace_once(s, """          waveform: sanitizeWaveform(source.waveform),
           createdAt: now,
           status: 'SENT',
           isDeleted: false,
           deletedForEveryone: false,
           hiddenFor,
-          isEdited: false,"""
-          good="""          waveform: sanitizeWaveform(source.waveform),
+          isEdited: false,
+""", """          waveform: sanitizeWaveform(source.waveform),
           createdAt: now,
           status: 'SENT',
           isDeleted: false,
           deletedForEveryone: false,
           hiddenFor: [],
-          isEdited: false,"""
-          if bad not in s: raise SystemExit('forward block not found')
-          s=s.replace(bad,good,1)
-          old="""          waveform: p.type === 'VOICE' ? sanitizeWaveform(p.waveform) : [],
+          isEdited: false,
+""", 'forward hiddenFor initialization')
+
+          s = replace_once(s, """      if (p.mediaUrl) {
+        const mm = (await db.doc('media/' + String(p.mediaUrl).replace('appwrite:', '')).get()).data();
+        if (!mm?.ready || mm.owner !== uid || mm.conversationId !== p.conversationId) throw new Error('Invalid media attachment');
+        const prefix = expectedMimePrefix(p.type);
+        const mime = String(mm.mimeType || '').toLowerCase();
+        if (prefix && !mime.startsWith(prefix)) throw new Error(`Attachment type does not match ${p.type.toLowerCase()} message`);
+        if (p.type === 'FILE' && !mime) throw new Error('Unknown attachment type');
+      }
+""", """      if (p.mediaUrl) {
+        const mediaId = String(p.mediaUrl).replace('appwrite:', '');
+        const mediaRef = db.doc('media/' + mediaId);
+        const mm = (await mediaRef.get()).data();
+        if (!mm?.ready || mm.owner !== uid || mm.conversationId !== p.conversationId) throw new Error('Invalid media attachment');
+        const prefix = expectedMimePrefix(p.type);
+        const mime = String(mm.mimeType || '').toLowerCase();
+        if (prefix && !mime.startsWith(prefix)) throw new Error(`Attachment type does not match ${p.type.toLowerCase()} message`);
+        if (p.type === 'FILE' && !mime) throw new Error('Unknown attachment type');
+        await mediaRef.update({
+          [`authorizedAtByConversation.${p.conversationId}`]: now,
+          revokedForUsers: FieldValue.arrayRemove(
+            `${p.conversationId}:${uid}`,
+            `${p.conversationId}:${other}`
+          )
+        });
+      }
+""", 'send media authorization refresh')
+
+          s = replace_once(s, """          waveform: p.type === 'VOICE' ? sanitizeWaveform(p.waveform) : [],
           createdAt: now,
           status: 'SENT',
           isDeleted: false,
           deletedForEveryone: false,
           hiddenFor: [],
-          isEdited: false,"""
-          new="""          waveform: p.type === 'VOICE' ? sanitizeWaveform(p.waveform) : [],
+          isEdited: false,
+""", """          waveform: p.type === 'VOICE' ? sanitizeWaveform(p.waveform) : [],
           createdAt: now,
           status: 'SENT',
           isDeleted: false,
           deletedForEveryone: false,
           hiddenFor,
-          isEdited: false,"""
-          if old not in s: raise SystemExit('send block not found')
-          s=s.replace(old,new,1)
+          isEdited: false,
+""", 'send tombstone visibility wiring')
+
+          old_delete_for_me = """    if (p.action === 'deleteForMe') {
+      const hiddenTomb = db.doc(`messageHiddenTombstones/${p.conversationId}_${p.messageId}_${uid}`);
+      await db.runTransaction(async t => {
+        const snap = await t.get(mref);
+        const current = await t.get(ref);
+        t.set(hiddenTomb, {
+          conversationId: p.conversationId,
+          messageId: String(p.messageId),
+          uid,
+          deletedAt: now
+        }, {merge: true});
+        if (snap.exists) t.update(mref, {hiddenFor: FieldValue.arrayUnion(uid)});
+        if (current.data()?.lastMessageId === String(p.messageId)) {
+          t.update(ref, {[`hiddenLastFor.${uid}`]: String(p.messageId)});
+        }
+      });
+      return res.json({ok: true});
+    }
+"""
+          new_delete_for_me = """    if (p.action === 'deleteForMe') {
+      const hiddenTomb = db.doc(`messageHiddenTombstones/${p.conversationId}_${p.messageId}_${uid}`);
+      let hiddenMediaUrl = '';
+      await db.runTransaction(async t => {
+        const snap = await t.get(mref);
+        const current = await t.get(ref);
+        t.set(hiddenTomb, {
+          conversationId: p.conversationId,
+          messageId: String(p.messageId),
+          uid,
+          deletedAt: now
+        }, {merge: true});
+        if (snap.exists) {
+          hiddenMediaUrl = snap.data()?.mediaUrl || '';
+          t.update(mref, {hiddenFor: FieldValue.arrayUnion(uid)});
+        }
+        if (current.data()?.lastMessageId === String(p.messageId)) {
+          t.update(ref, {[`hiddenLastFor.${uid}`]: String(p.messageId)});
+        }
+      });
+      if (String(hiddenMediaUrl).startsWith('appwrite:')) {
+        await db.doc('media/' + String(hiddenMediaUrl).slice(9)).update({
+          revokedForUsers: FieldValue.arrayUnion(`${p.conversationId}:${uid}`)
+        }).catch(() => {});
+      }
+      return res.json({ok: true});
+    }
+"""
+          s = replace_once(s, old_delete_for_me, new_delete_for_me, 'delete-for-me media revocation')
+
+          s = replace_once(s, """  await mr.update({
+    forwardedTo: forwards,
+    revokedFrom: FieldValue.arrayUnion(cid)
+  });
+""", """  await mr.update({
+    forwardedTo: forwards,
+    revokedFrom: FieldValue.arrayUnion(cid),
+    [`authorizedAtByConversation.${cid}`]: FieldValue.delete(),
+    revokedForUsers: (meta.revokedForUsers || []).filter(x => !String(x).startsWith(`${cid}:`))
+  });
+""", 'delete-for-everyone media authorization cleanup')
+
           p.write_text(s)
+
+          # ---------- Android media cache + deletion ----------
+          p = Path('app/src/main/java/com/example/data/network/LiquidApi.kt')
+          s = p.read_text()
+          s = replace_once(s, """  fun invalidateMedia(url: String) {
+    if (url.startsWith("appwrite:")) resolvedMedia.remove(url.removePrefix("appwrite:"))
+  }
+""", """  fun invalidateMedia(url: String, purgeCaches: Boolean = true) {
+    if (url.startsWith("appwrite:")) resolvedMedia.remove(url.removePrefix("appwrite:"))
+    if (purgeCaches && ::context.isInitialized) {
+      // Deletion must win over any already-resolved five-minute URL or Coil cache entry.
+      coil.Coil.imageLoader(context).memoryCache?.clear()
+      coil.Coil.imageLoader(context).diskCache?.clear()
+    }
+  }
+""", 'Android deleted-media cache purge')
+          p.write_text(s)
+
+          p = Path('app/src/main/java/com/example/data/repository/ChatRepository.kt')
+          s = p.read_text()
+          s = replace_once(s, """  fun deleteMessageForMe(cid: String, id: String) = runAction {
+    prefs.edit().remove("outbox:$uid:$id").apply()
+    LiquidApi.call("deleteForMe", mapOf("conversationId" to cid, "messageId" to id))
+    removeLocalMessage(cid, id)
+  }
+""", """  fun deleteMessageForMe(cid: String, id: String) = runAction {
+    val mediaUrl = _messages.value[cid].orEmpty().firstOrNull { it.id == id }?.mediaUrl.orEmpty()
+    prefs.edit().remove("outbox:$uid:$id").apply()
+    LiquidApi.call("deleteForMe", mapOf("conversationId" to cid, "messageId" to id))
+    if (mediaUrl.isNotBlank()) LiquidApi.invalidateMedia(mediaUrl)
+    removeLocalMessage(cid, id)
+  }
+""", 'client delete-for-me cache purge')
+
+          s = replace_once(s, """  fun deleteMessageForEveryone(cid: String, id: String) = runAction {
+    prefs.edit().remove("outbox:$uid:$id").apply()
+    LiquidApi.call("deleteForEveryone", mapOf("conversationId" to cid, "messageId" to id))
+    removeLocalMessage(cid, id)
+  }
+""", """  fun deleteMessageForEveryone(cid: String, id: String) = runAction {
+    val mediaUrl = _messages.value[cid].orEmpty().firstOrNull { it.id == id }?.mediaUrl.orEmpty()
+    prefs.edit().remove("outbox:$uid:$id").apply()
+    LiquidApi.call("deleteForEveryone", mapOf("conversationId" to cid, "messageId" to id))
+    if (mediaUrl.isNotBlank()) LiquidApi.invalidateMedia(mediaUrl)
+    removeLocalMessage(cid, id)
+  }
+""", 'client delete-for-everyone cache purge')
+
+          s = replace_once(s, """  fun deleteChatForMe(cid: String) = runAction {
+    val messageIds = _messages.value[cid].orEmpty().map { it.id }.toSet()
+    LiquidApi.call("deleteChat", mapOf("conversationId" to cid))
+""", """  fun deleteChatForMe(cid: String) = runAction {
+    val currentMessages = _messages.value[cid].orEmpty()
+    val messageIds = currentMessages.map { it.id }.toSet()
+    val mediaUrls = currentMessages.map { it.mediaUrl }.filter { it.isNotBlank() }.distinct()
+    LiquidApi.call("deleteChat", mapOf("conversationId" to cid))
+    mediaUrls.forEach { LiquidApi.invalidateMedia(it) }
+""", 'client deleted-chat media cache purge')
+          p.write_text(s)
+
+          # ---------- UI wording ----------
+          p = Path('app/src/main/java/com/example/ui/screens/ChatsHomeScreen.kt')
+          s = p.read_text()
+          s = replace_once(s, """                Text("This hides the conversation from your inbox. A new message can bring it back.")
+""", """                Text("This permanently removes the current history from your account. It will not return after restart, sign-in, reinstall or sync. A later new message may start a fresh chat without restoring deleted history.")
+""", 'permanent delete-chat explanation')
+          p.write_text(s)
+
+          # ---------- Developer/contact consistency ----------
+          for file in [Path('README.md'), Path('app/src/main/java/com/example/ui/screens/SettingsScreen.kt')]:
+              text = file.read_text()
+              text = text.replace('officialpritam@gmail.com', 'officialpritam07@gmail.com')
+              file.write_text(text)
           PY
+
           node --check appwrite-functions/liquid-api/src/main.js
-      - name: Commit
+
+          # Guard the two tombstone assignments so this workflow cannot silently regress them.
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('appwrite-functions/liquid-api/src/main.js').read_text()
+          assert "waveform: sanitizeWaveform(source.waveform)" in s and "hiddenFor: []" in s
+          assert "waveform: p.type === 'VOICE' ? sanitizeWaveform(p.waveform) : []" in s and "hiddenFor," in s
+          assert "revokedForUsers" in s and "authorizedAtByConversation" in s
+          print('Hardening assertions passed')
+          PY
+
+      - name: Commit source hardening
         run: |
           git config user.name 'officialpritam007'
           git config user.email 'officialpritam07@gmail.com'
-          git add appwrite-functions/liquid-api/src/main.js
-          git commit -m 'Correct backend deletion tombstone visibility wiring'
+          git add appwrite-functions/liquid-api/src/main.js \
+                  app/src/main/java/com/example/data/network/LiquidApi.kt \
+                  app/src/main/java/com/example/data/repository/ChatRepository.kt \
+                  app/src/main/java/com/example/ui/screens/ChatsHomeScreen.kt \
+                  app/src/main/java/com/example/ui/screens/SettingsScreen.kt \
+                  README.md
+          if git diff --cached --quiet; then
+            echo 'No source changes needed.'
+            exit 0
+          fi
+          git commit -m 'Harden permanent deletion and media revocation'
           git push origin HEAD:main
