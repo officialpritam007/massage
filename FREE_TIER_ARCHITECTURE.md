@@ -19,14 +19,19 @@ Liquid Chat uses Firebase and Appwrite for different responsibilities so the sam
 
 ## Free-tier guardrails
 
-1. Only the open conversation should keep a message + typing listener active. The chat list itself relies on the conversation summary listener.
-2. Initial message history is intentionally bounded and older messages are loaded incrementally.
-3. Presence writes are heartbeat-based while foregrounded; moving to background writes offline immediately.
+1. Only the open conversation keeps the heavy message + typing realtime streams active. The chat list itself relies on the lightweight conversation summary listener.
+2. Initial message history is bounded to 60 messages and older messages are loaded in 60-message increments.
+3. Presence writes use a 60-second foreground heartbeat; moving to background still writes offline immediately. The freshness timeout exists only as a stale-session/crash fallback, not as a background grace period.
 4. Typing writes stay throttled and expire automatically.
 5. Large binary payloads never go into Firestore. Firestore stores metadata and Appwrite media identifiers/URLs only.
-6. Do not add Firebase Storage or Firebase Functions dependencies unless the architecture is deliberately changed.
-7. Server secrets (Firebase Admin service account and Appwrite API key) must never be committed to the Android app or public repository.
+6. Firebase token registration uses merge-safe writes so legacy/missing private user documents do not require an update-only write.
+7. Do not add Firebase Storage or Firebase Functions dependencies unless the architecture is deliberately changed.
+8. Server secrets (Firebase Admin service account and Appwrite API key) must never be committed to the Android app or public repository.
 
 ## Security boundary
 
 Android reads permitted Firestore data under `firestore.rules`. Conversation/message mutations go through the authenticated Appwrite API, which verifies the Firebase ID token and participant authorization. Appwrite credentials and Firebase Admin credentials remain server-side.
+
+## Current optimization
+
+The free-tier realtime optimization is applied on `main`. CI must remain green before an APK from this revision is treated as verified.
