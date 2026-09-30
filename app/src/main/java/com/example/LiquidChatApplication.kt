@@ -11,14 +11,27 @@ import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderF
 class LiquidChatApplication : Application() {
   override fun onCreate() {
     super.onCreate()
+    StartupCrashStore.install(this)
+    StartupCrashStore.beginLaunch(this)
     LiquidApi.context = applicationContext
-    FirebaseApp.initializeApp(this)
 
-    runCatching {
-      FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
-        if (BuildConfig.DEBUG) DebugAppCheckProviderFactory.getInstance()
-        else PlayIntegrityAppCheckProviderFactory.getInstance()
-      )
+    val firebaseReady = runCatching {
+      FirebaseApp.getApps(this).isNotEmpty() || FirebaseApp.initializeApp(this) != null
+    }.getOrElse {
+      StartupCrashStore.record(this, "firebase_initialize", it)
+      false
+    }
+
+    if (firebaseReady) {
+      StartupCrashStore.markStage(this, "firebase_ready")
+      runCatching {
+        FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
+          if (BuildConfig.DEBUG) DebugAppCheckProviderFactory.getInstance()
+          else PlayIntegrityAppCheckProviderFactory.getInstance()
+        )
+      }
+    } else {
+      StartupCrashStore.markStage(this, "firebase_unavailable")
     }
     // App Check initialization must never make the process unlaunchable. Enforcement is enabled
     // in Firebase Console only after the provider is configured for the installed build.
