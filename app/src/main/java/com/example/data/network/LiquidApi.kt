@@ -56,29 +56,36 @@ object LiquidApi {
       response = requestWith(token)
     }
     response.use { r ->
-      val json = JSONObject(r.body?.string().orEmpty().ifBlank { "{}" })
+      val raw = r.body?.string().orEmpty()
+      val json = runCatching { JSONObject(raw.ifBlank { "{}" }) }.getOrElse {
+        JSONObject().put("error", "Invalid backend response (${r.code})")
+      }
       check(r.isSuccessful) { json.optString("error", "Request failed (${r.code})") }
       json
     }
   }
 
   private suspend fun session(): String {
-    if (System.currentTimeMillis() >= jwtUntil) {
+    if (System.currentTimeMillis() >= jwtUntil || jwt.isBlank()) {
       jwt = call("session").getString("jwt")
       jwtUntil = System.currentTimeMillis() + 8 * 60_000
     }
     return jwt
   }
 
-  fun clear() {
-    jwt = ""
-    jwtUntil = 0
+  fun clearMediaCachesOnly() {
     resolvedMedia.clear()
     if (::context.isInitialized) {
       File(context.cacheDir, "private-media").deleteRecursively()
       coil.Coil.imageLoader(context).memoryCache?.clear()
       coil.Coil.imageLoader(context).diskCache?.clear()
     }
+  }
+
+  fun clear() {
+    jwt = ""
+    jwtUntil = 0L
+    clearMediaCachesOnly()
   }
 
   fun invalidateMedia(url: String, purgeCaches: Boolean = true) {
@@ -203,6 +210,7 @@ object LiquidApi {
             if (n < 0) break
             read += n
           }
+          require(read > 0) { "Upload stream ended unexpectedly" }
           val body = MultipartBody.Builder().setType(MultipartBody.FORM)
             .addFormDataPart("fileId", id)
             .addFormDataPart("permissions[]", "read(\"user:$owner\")")

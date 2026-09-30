@@ -1,36 +1,19 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    function signedIn() { return request.auth != null; }
-    function owner(uid) { return signedIn() && request.auth.uid == uid; }
-    function participant(conversationId) {
-      return signedIn() && request.auth.uid in firestore.get(
-        /databases/(default)/documents/conversations/$(conversationId)
-      ).data.participantIds;
+    function signedIn() {
+      return request.auth != null;
     }
 
-    match /users/{userId}/profile.jpg {
-      allow read: if signedIn();
-      allow write: if owner(userId)
-        && request.resource.size < 5 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
+    function owner(uid) {
+      return signedIn() && request.auth.uid == uid;
     }
 
-    match /chats/{conversationId}/{fileName} {
-      allow read: if participant(conversationId);
-      allow write: if participant(conversationId)
-        && request.resource.size < 50 * 1024 * 1024;
-    }
-
-    match /statuses/{userId}/{statusMediaId} {
-      allow read: if signedIn();
-      allow write: if owner(userId) && request.resource.size < 20 * 1024 * 1024;
-      allow delete: if owner(userId);
-    }
-
-    match /groups/{groupId}/photo.jpg {
-      allow read: if signedIn();
-      allow write: if signedIn() && request.resource.size < 5 * 1024 * 1024;
+    // Liquid Chat media is stored in Appwrite and is exposed only through short-lived,
+    // server-authorized URLs. Firebase Storage remains locked down to prevent legacy paths
+    // from bypassing Appwrite ownership, participant validation or deletion revocation.
+    match /{allPaths=**} {
+      allow read, write: if false;
     }
   }
 }

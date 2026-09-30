@@ -1,6 +1,6 @@
 {
   "name": "Liquid Chat",
-  "description": "Production real-time messaging application with Liquid Glass UI system, voice notes, media, groups, updates, calls, and business card.",
+  "description": "Android-native 1-to-1 real-time messaging with a Liquid Glass design system, private media, voice notes, presence, notifications and server-backed permanent deletion.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

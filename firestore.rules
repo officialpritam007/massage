@@ -1,33 +1,65 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
-    function owner(id) { return signedIn() && request.auth.uid == id; }
-    function participant(cid) {
-      return signedIn() && request.auth.uid in get(/databases/$(database)/documents/conversations/$(cid)).data.participantIds;
+    function signedIn() {
+      return request.auth != null;
     }
+
+    function owner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function conversationExists(cid) {
+      return exists(/databases/$(database)/documents/conversations/$(cid));
+    }
+
+    function participant(cid) {
+      return signedIn()
+        && conversationExists(cid)
+        && get(/databases/$(database)/documents/conversations/$(cid)).data.participantIds is list
+        && get(/databases/$(database)/documents/conversations/$(cid)).data.participantIds.size() == 2
+        && request.auth.uid in get(/databases/$(database)/documents/conversations/$(cid)).data.participantIds;
+    }
+
+    function validPrivateSettingsCreate() {
+      return request.resource.data.keys().hasOnly([
+        'appearance', 'privacy', 'notifications', 'blockedUserIds', 'tokens'
+      ]);
+    }
+
+    function validPrivateSettingsUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'appearance', 'privacy', 'notifications', 'blockedUserIds', 'tokens'
+      ]);
+    }
+
     function validPresence() {
       return request.resource.data.isOnline is bool
         && request.resource.data.onlineVisible is bool
         && request.resource.data.lastSeenVisible is bool
         && request.resource.data.heartbeatAt is int
-        && request.resource.data.lastSeen is int;
+        && request.resource.data.lastSeen is int
+        && request.resource.data.heartbeatAt <= request.time.toMillis() + 60000
+        && request.resource.data.lastSeen <= request.time.toMillis() + 60000;
     }
 
     match /users/{uid} {
+      // A private user document is readable only by its owner. Public contact data lives in /directory.
       allow read: if owner(uid);
-      // Identity, usernames and account deletion are handled only by the authenticated API.
-      allow update: if owner(uid) && request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['appearance', 'privacy', 'notifications', 'blockedUserIds', 'tokens']);
-      allow create, delete: if false;
+
+      // Fresh/legacy accounts may race the authenticated profile bootstrap. Permit the owner to
+      // create only client-owned private settings; identity fields remain server-authoritative.
+      allow create: if owner(uid) && validPrivateSettingsCreate();
+      allow update: if owner(uid) && validPrivateSettingsUpdate();
+      allow delete: if false;
     }
 
     match /directory/{uid} {
+      // Directory contains public identity plus privacy-filtered presence only.
       allow read: if signedIn();
 
-      // Presence may race the server-side profile repair on a fresh/legacy account.
-      // Permit the owner to create ONLY the five presence fields; public identity fields
-      // continue to be created by the authenticated server API.
+      // Presence can race server-side profile repair. On create the Android client may create only
+      // the five presence fields. Identity/profile fields are written by the authenticated API.
       allow create: if owner(uid)
         && request.resource.data.keys().hasOnly([
           'isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'
@@ -44,26 +76,34 @@ service cloud.firestore {
     }
 
     match /conversations/{cid} {
-      allow read: if signedIn() && request.auth.uid in resource.data.participantIds;
-      allow write: if false;
+      allow read: if signedIn()
+        && resource.data.participantIds is list
+        && resource.data.participantIds.size() == 2
+        && request.auth.uid in resource.data.participantIds;
+      // Conversation/message mutation is server-authoritative via the authenticated API.
+      allow create, update, delete: if false;
 
       match /messages/{mid} {
         allow read: if participant(cid);
-        allow write: if false;
+        allow create, update, delete: if false;
       }
 
       match /typing/{uid} {
         allow read: if participant(cid);
-        allow create, update: if owner(uid) && participant(cid)
+        allow create, update: if owner(uid)
+          && participant(cid)
           && request.resource.data.keys().hasOnly(['until'])
           && request.resource.data.until is int
+          && request.resource.data.until >= 0
           && request.resource.data.until <= request.time.toMillis() + 15000;
         allow delete: if owner(uid) && participant(cid);
       }
     }
 
-    // Internal server collections (media, rate limits, sessions, tombstones, usernames,
-    // reports) are Admin-SDK only and are deliberately unreachable from Android clients.
-    match /{document=**} { allow read, write: if false; }
+    // Admin-SDK / authenticated-server-only collections: media metadata, rate limits, sessions,
+    // tombstones, usernames and reports. Android clients must never read or mutate these directly.
+    match /{document=**} {
+      allow read, write: if false;
+    }
   }
 }
