@@ -51,20 +51,37 @@ fun VoiceWaveformPlayer(
 ) {
   val context = LocalContext.current
   var isPlaying by remember(mediaUrl) { mutableStateOf(false) }
+  var isPrepared by remember(mediaUrl) { mutableStateOf(false) }
+  var resolvedDurationSeconds by remember(mediaUrl, durationSeconds) {
+    mutableStateOf(durationSeconds.coerceAtLeast(1))
+  }
   val mediaPlayer = remember(mediaUrl) { if (mediaUrl.isBlank()) null else MediaPlayer() }
 
   DisposableEffect(mediaPlayer, mediaUrl) {
     if (mediaPlayer != null && mediaUrl.isNotBlank()) {
       runCatching {
         mediaPlayer.setDataSource(context, Uri.parse(mediaUrl))
-        mediaPlayer.setOnPreparedListener { if (isPlaying) it.start() }
+        mediaPlayer.setOnPreparedListener { player ->
+          isPrepared = true
+          val actualSeconds = (player.duration / 1000f).toInt().coerceAtLeast(1)
+          resolvedDurationSeconds = actualSeconds
+          if (isPlaying) {
+            runCatching { player.start() }.onFailure { isPlaying = false }
+          }
+        }
         mediaPlayer.setOnCompletionListener {
           isPlaying = false
           runCatching { it.seekTo(0) }
         }
+        mediaPlayer.setOnErrorListener { _, _, _ ->
+          isPlaying = false
+          isPrepared = false
+          true
+        }
         mediaPlayer.prepareAsync()
       }.onFailure {
         isPlaying = false
+        isPrepared = false
         runCatching { mediaPlayer.release() }
       }
     }
@@ -72,6 +89,7 @@ fun VoiceWaveformPlayer(
       runCatching { mediaPlayer?.stop() }
       runCatching { mediaPlayer?.release() }
       isPlaying = false
+      isPrepared = false
     }
   }
 
@@ -102,11 +120,15 @@ fun VoiceWaveformPlayer(
         .clickable(enabled = mediaPlayer != null) {
           if (mediaPlayer != null) {
             if (isPlaying) {
-              runCatching { mediaPlayer.pause() }
+              runCatching { if (isPrepared) mediaPlayer.pause() }
               isPlaying = false
             } else {
-              runCatching { mediaPlayer.start() }
+              // If preparation is still in progress, mark playback as requested;
+              // the prepared listener will start it as soon as the stream is ready.
               isPlaying = true
+              if (isPrepared) {
+                runCatching { mediaPlayer.start() }.onFailure { isPlaying = false }
+              }
             }
           }
         },
@@ -144,8 +166,8 @@ fun VoiceWaveformPlayer(
     }
 
     Spacer(modifier = Modifier.width(8.dp))
-    val minutes = durationSeconds / 60
-    val seconds = durationSeconds % 60
+    val minutes = resolvedDurationSeconds / 60
+    val seconds = resolvedDurationSeconds % 60
     Text(
       text = String.format("%d:%02d", minutes, seconds),
       fontSize = 11.sp,
