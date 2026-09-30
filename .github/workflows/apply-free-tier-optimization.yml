@@ -41,8 +41,6 @@ jobs:
                'System.currentTimeMillis() - heartbeatAt < 90_000'),
               ('System.currentTimeMillis() - user.lastActiveAt < 45_000',
                'System.currentTimeMillis() - user.lastActiveAt < 90_000'),
-              ('val online = user.isOnline && System.currentTimeMillis() - user.lastActiveAt < 45_000',
-               'val online = user.isOnline && System.currentTimeMillis() - user.lastActiveAt < 90_000'),
               (
                   '''  fun observeConversation(cid: String) {\n    if (messageListeners.containsKey(cid)) return\n    val limit = limits.getOrPut(cid) { 100 }''',
                   '''  fun observeConversation(cid: String) {\n    // Keep at most one heavy message/typing realtime stream active. Conversation summaries\n    // remain realtime through the lightweight chat-list listener.\n    messageListeners.keys.filter { it != cid }.toList().forEach { key ->\n      messageListeners.remove(key)?.remove()\n    }\n    presenceListeners.keys.filter { it != cid }.toList().forEach { key ->\n      presenceListeners.remove(key)?.remove()\n    }\n    observePresence(cid)\n    if (messageListeners.containsKey(cid)) return\n    val limit = limits.getOrPut(cid) { 60 }'''
