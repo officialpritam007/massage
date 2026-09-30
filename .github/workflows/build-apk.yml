@@ -10,6 +10,11 @@ jobs:
   build:
     name: Build Debug APK
     runs-on: ubuntu-latest
+    env:
+      LIQUID_API_URL: ${{ vars.LIQUID_API_URL }}
+      APPWRITE_ENDPOINT: ${{ vars.APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1' }}
+      APPWRITE_PROJECT_ID: ${{ vars.APPWRITE_PROJECT_ID || '6abae44b0030a4b3c0b4' }}
+      APPWRITE_BUCKET_ID: ${{ vars.APPWRITE_BUCKET_ID || '6abae4e300352b37c209' }}
 
     steps:
       - name: Checkout source code
@@ -21,10 +26,23 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Validate backend configuration
+        shell: bash
+        run: |
+          if [[ -z "$LIQUID_API_URL" ]]; then
+            echo "::error::Missing repository variable LIQUID_API_URL. Deploy appwrite-functions/liquid-api and set its HTTPS function domain in Settings > Secrets and variables > Actions > Variables."
+            exit 1
+          fi
+          if [[ "$LIQUID_API_URL" != https://* ]]; then
+            echo "::error::LIQUID_API_URL must start with https://"
+            exit 1
+          fi
+          echo "Backend configuration is present."
+
       - name: Create environment files
         run: |
-          printf '%s\n' '# Environment variables' > .env.example
-          printf '%s\n' '# Environment variables' > .env
+          printf '%s\n' '# Environment variables are supplied by GitHub Actions env' > .env.example
+          printf '%s\n' '# Environment variables are supplied by GitHub Actions env' > .env
 
       - name: Create local.properties
         run: |
