@@ -80,7 +80,8 @@ data class AppearanceSettings(
   val cornerRadiusDp: Float = 32f,
   val borderStrength: Float = 0.70f,
   val accentColorHex: String = "#176BFF",
-  val isReducedMotion: Boolean = false
+  val isReducedMotion: Boolean = false,
+  val glassStyle: String = "Regular"
 )
 
 data class NotificationSettings(

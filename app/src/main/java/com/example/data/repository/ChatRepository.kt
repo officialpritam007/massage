@@ -280,7 +280,8 @@ class ChatRepository(
             cornerRadiusDp = (a["cornerRadiusDp"] as? Number)?.toFloat() ?: 32f,
             borderStrength = (a["borderStrength"] as? Number)?.toFloat() ?: 0.70f,
             accentColorHex = a["accentColorHex"] as? String ?: "#176BFF",
-            isReducedMotion = anyBoolean(a["isReducedMotion"], false)
+            isReducedMotion = anyBoolean(a["isReducedMotion"], false),
+            glassStyle = a["glassStyle"] as? String ?: "Regular"
           )
         }
 
@@ -908,7 +909,8 @@ class ChatRepository(
         "cornerRadiusDp" to settings.cornerRadiusDp,
         "borderStrength" to settings.borderStrength,
         "accentColorHex" to settings.accentColorHex,
-        "isReducedMotion" to settings.isReducedMotion
+        "isReducedMotion" to settings.isReducedMotion,
+        "glassStyle" to settings.glassStyle
       ))
     }
   }

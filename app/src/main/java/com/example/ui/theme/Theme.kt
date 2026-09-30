@@ -9,6 +9,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
 
+/** iOS 26 inspired glass material styles. */
+enum class GlassStyle { Clear, Regular }
+
 /** Shared design tokens for the app-wide Liquid Glass material. */
 data class LiquidGlassConfig(
   val glassIntensity: Float = 0.85f,
@@ -16,10 +19,13 @@ data class LiquidGlassConfig(
   val cornerRadiusDp: Float = 32f,
   val borderStrength: Float = 0.70f,
   val accentColor: Color = CyanAccent,
+  val glassStyle: GlassStyle = GlassStyle.Regular,
   val isGlassEnabled: Boolean = true,
   val isReducedMotion: Boolean = false,
   val isDark: Boolean = false
-)
+) {
+  val isClear: Boolean get() = glassStyle == GlassStyle.Clear
+}
 
 val LocalLiquidGlass = compositionLocalOf { LiquidGlassConfig() }
 
@@ -82,5 +88,5 @@ fun MyApplicationTheme(
   darkTheme: Boolean = isSystemInDarkTheme(),
   content: @Composable () -> Unit
 ) {
-  LiquidChatTheme(darkTheme = darkTheme, content = content)
+  LiquidChatTheme(darkTheme = darkTheme, glassConfig = LiquidGlassConfig(isDark = darkTheme, glassStyle = GlassStyle.Clear), content = content)
 }

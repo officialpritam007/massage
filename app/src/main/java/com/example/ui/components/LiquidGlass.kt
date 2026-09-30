@@ -18,9 +18,9 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -56,28 +56,36 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import com.example.ui.theme.AzureBlue
 import com.example.ui.theme.CyanAccent
-import com.example.ui.theme.ElectricBlue
 import com.example.ui.theme.EmeraldOnline
 import com.example.ui.theme.GlassBorderStrokeDark
 import com.example.ui.theme.GlassBorderStrokeLight
 import com.example.ui.theme.GlassHighlight
 import com.example.ui.theme.LocalLiquidGlass
-import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextPrimaryLight
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.TextSecondaryLight
 
+/**
+ * iOS 26 Liquid Glass surface.
+ *
+ * Two materials, shared behaviour:
+ * - Clear   : barely-there tint, thin blur, strong specular lens edge — content behind stays readable through it.
+ * - Regular : frosted milk tint, heavier blur, softer edge — best for dense UI chrome.
+ *
+ * Every card gets a lens edge (specular rim), an optional wet highlight and press physics.
+ */
 @Composable
 fun GlassCard(
   modifier: Modifier = Modifier,
   shape: Shape? = null,
   backgroundColor: Color? = null,
+  overlayBrush: Brush? = null,
   borderColor: Color? = null,
   elevation: Dp = 3.dp,
+  lensing: Boolean = true,
   onClick: (() -> Unit)? = null,
   content: @Composable () -> Unit
 ) {
@@ -89,17 +97,29 @@ fun GlassCard(
     animationSpec = spring(dampingRatio = 0.7f, stiffness = 450f),
     label = "glass_card_press"
   )
-  val surface = if (config.isDark) {
-    Color(0xFFB7D9FF).copy(alpha = (0.035f + config.blurAlpha * 0.085f + config.glassIntensity * 0.025f).coerceIn(0.06f, 0.18f))
-  } else {
-    Color.White.copy(alpha = (0.36f + config.blurAlpha * 0.14f + config.glassIntensity * 0.06f).coerceIn(0.38f, 0.64f))
+
+  val clear = config.isClear
+  val surface = when {
+    backgroundColor != null -> backgroundColor
+    clear && config.isDark -> Color(0xFF0E1B29).copy(alpha = 0.20f + config.glassIntensity * 0.10f)
+    clear -> Color.White.copy(alpha = 0.16f + config.glassIntensity * 0.10f)
+    config.isDark -> Color(0xFFB7D9FF).copy(alpha = (0.035f + config.blurAlpha * 0.085f + config.glassIntensity * 0.025f).coerceIn(0.06f, 0.18f))
+    else -> Color.White.copy(alpha = (0.36f + config.blurAlpha * 0.14f + config.glassIntensity * 0.06f).coerceIn(0.38f, 0.64f))
   }
   val glassBackground = backgroundColor ?: surface
   val backdrop = LocalGlassBackdrop.current
-  val border = borderColor ?: if (config.isDark) GlassBorderStrokeDark else Color.White.copy(alpha = 0.38f)
+  val border = borderColor
+    ?: if (config.isDark) GlassBorderStrokeDark else Color.White.copy(alpha = if (clear) 0.62f else 0.38f)
   val resolvedShape: Shape = shape ?: RoundedCornerShape(config.cornerRadiusDp.coerceIn(16f, 32f).dp)
   val topHighlight = if (config.isDark) GlassHighlight.copy(alpha = 0.30f) else Color.White.copy(alpha = 0.95f)
   val shadow = if (config.isDark) Color.Black.copy(alpha = 0.42f) else Color.Black.copy(alpha = 0.10f)
+  // Clear style keeps a thin blur so content behind stays legible; Regular gets the full frost.
+  val blurRadius = when {
+    !config.isGlassEnabled -> 0f
+    clear -> (4f + config.glassIntensity * 8f) * (0.45f + config.blurAlpha * 0.55f)
+    else -> 12f + config.blurAlpha * 20f
+  }
+  val noise = if (clear) 0f else 0.025f
 
   Box(
     modifier = modifier
@@ -109,14 +129,28 @@ fun GlassCard(
       .then(
         if (backdrop != null && config.isGlassEnabled) {
           Modifier.hazeEffect(backdrop) {
-            blurRadius = (12f + config.blurAlpha * 20f).dp
-            noiseFactor = 0.025f
+            blurRadius = blurRadius.dp
+            noiseFactor = noise
             this.backgroundColor = glassBackground
           }
         } else Modifier
       )
       .background(glassBackground)
-      .border(BorderStroke(1.dp, Brush.verticalGradient(listOf(topHighlight, border.copy(alpha = (border.alpha * config.borderStrength).coerceIn(0.06f, 1f))))), resolvedShape)
+      .then(if (overlayBrush != null) Modifier.background(overlayBrush) else Modifier)
+      .then(if (lensing) Modifier.lensHighlight(dark = config.isDark, strength = if (clear) 1.15f else 0.85f) else Modifier)
+      .border(
+        BorderStroke(
+          1.dp,
+          Brush.verticalGradient(
+            listOf(
+              topHighlight.copy(alpha = if (clear) topHighlight.alpha.coerceAtLeast(0.75f) else topHighlight.alpha),
+              border.copy(alpha = (border.alpha * config.borderStrength).coerceIn(0.06f, 1f))
+            )
+          )
+        ),
+        resolvedShape
+      )
+      .then(if (lensing) Modifier.lensEdge(resolvedShape, dark = config.isDark, strength = if (clear) 1.1f else 0.75f) else Modifier)
       .then(
         if (onClick != null) Modifier.clickable(
           interactionSource = interactionSource,
@@ -125,13 +159,6 @@ fun GlassCard(
         ) else Modifier
       )
   ) {
-    // Fine top sheen: gives the glass a physical edge without a heavy gradient.
-    Box(
-      Modifier
-        .fillMaxWidth()
-        .height(1.dp)
-        .background(topHighlight.copy(alpha = if (config.isDark) 0.38f else 0.70f))
-    )
     CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides androidx.compose.material3.MaterialTheme.colorScheme.onSurface) { content() }
   }
 }
@@ -153,6 +180,7 @@ fun GlassButton(
   testTag: String = "glass_button"
 ) {
   val config = LocalLiquidGlass.current
+  val haptics = rememberLiquidHaptics()
   val pressedSource = remember { MutableInteractionSource() }
   val pressed by pressedSource.collectIsPressedAsState()
   val accent by animateColorAsState(
@@ -169,9 +197,15 @@ fun GlassButton(
       .graphicsLayer { scaleX = buttonScale; scaleY = buttonScale }
       .defaultMinSize(minHeight = 50.dp)
       .clip(resolvedShape)
-      .background(accent.copy(alpha = if (isPrimary) 0.78f else 1f))
-      .border(1.dp, if (config.isDark) GlassHighlight.copy(alpha = 0.32f) else GlassBorderStrokeLight, resolvedShape)
-      .clickable(enabled = enabled && !isLoading, interactionSource = pressedSource, indication = null, onClick = onClick)
+      .background(accent.copy(alpha = if (isPrimary) 0.82f else 1f))
+      .lensHighlight(dark = true, strength = 1.3f)
+      .liquidSheen(enabled = isPrimary && !config.isReducedMotion, dark = true)
+      .border(1.dp, GlassHighlight.copy(alpha = 0.42f), resolvedShape)
+      .lensEdge(resolvedShape, dark = true, strength = 1f)
+      .clickable(enabled = enabled && !isLoading, interactionSource = pressedSource, indication = null) {
+        haptics.tap()
+        onClick()
+      }
       .padding(horizontal = 22.dp, vertical = 14.dp)
       .testTag(testTag),
     contentAlignment = Alignment.Center
@@ -200,7 +234,13 @@ fun GlassIconButton(
   testTag: String = "glass_icon_button"
 ) {
   val config = LocalLiquidGlass.current
-  val bg = backgroundColor ?: if (config.isDark) Color.White.copy(alpha = 0.065f) else Color.White.copy(alpha = 0.54f)
+  val haptics = rememberLiquidHaptics()
+  val bg = backgroundColor
+    ?: if (config.isDark) {
+      Color.White.copy(alpha = if (config.isClear) 0.10f else 0.065f)
+    } else {
+      Color.White.copy(alpha = if (config.isClear) 0.62f else 0.54f)
+    }
   val iconTint = if (tint == TextPrimary && !config.isDark) TextPrimaryLight else tint
   val interactions = remember { MutableInteractionSource() }
   val pressed by interactions.collectIsPressedAsState()
@@ -212,7 +252,11 @@ fun GlassIconButton(
       .clip(CircleShape)
       .background(bg)
       .border(1.dp, if (config.isDark) GlassBorderStrokeDark else GlassBorderStrokeLight, CircleShape)
-      .clickable(interactionSource = interactions, indication = null, onClick = onClick)
+      .lensEdge(CircleShape, dark = config.isDark, strength = 0.9f)
+      .clickable(interactionSource = interactions, indication = null) {
+        haptics.tap()
+        onClick()
+      }
       .testTag(testTag),
     contentAlignment = Alignment.Center
   ) {
@@ -240,12 +284,18 @@ fun GlassTextField(
   val primaryText = if (config.isDark) TextPrimary else TextPrimaryLight
   val secondaryText = if (config.isDark) Color(0xFFB7CBE2) else TextSecondaryLight
   val resolvedShape = shape ?: RoundedCornerShape(config.cornerRadiusDp.coerceIn(0f, 64f).dp)
+  val fieldBg = if (config.isDark) {
+    Color.White.copy(alpha = if (config.isClear) 0.075f else 0.055f)
+  } else {
+    Color.White.copy(alpha = if (config.isClear) 0.55f else 0.48f)
+  }
   Box(
     modifier = modifier
       .defaultMinSize(minHeight = 48.dp)
       .clip(resolvedShape)
-      .background(if (config.isDark) Color.White.copy(alpha = 0.055f) else Color.White.copy(alpha = 0.48f))
+      .background(fieldBg)
       .border(1.dp, if (config.isDark) GlassBorderStrokeDark else GlassBorderStrokeLight, resolvedShape)
+      .lensEdge(resolvedShape, dark = config.isDark, strength = 0.6f)
       .padding(horizontal = 14.dp, vertical = 10.dp)
       .testTag(testTag),
     contentAlignment = Alignment.CenterStart
@@ -312,14 +362,13 @@ fun GlassAvatar(
 @Composable
 fun GlassBadge(count: Int, modifier: Modifier = Modifier, color: Color = CyanAccent) {
   if (count <= 0) return
-  val config = LocalLiquidGlass.current
   Box(
     modifier = modifier.defaultMinSize(minWidth = 20.dp, minHeight = 20.dp).clip(RoundedCornerShape(10.dp))
       .background(color.copy(alpha = 0.82f)).border(1.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
       .padding(horizontal = 6.dp, vertical = 2.dp),
     contentAlignment = Alignment.Center
   ) {
-    Text(if (count > 99) "99+" else count.toString(), style = TextStyle(color = if (config.isDark) Color.Black else Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center))
+    Text(if (count > 99) "99+" else count.toString(), style = TextStyle(color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center))
   }
 }
 

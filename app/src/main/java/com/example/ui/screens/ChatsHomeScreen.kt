@@ -1,10 +1,13 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -62,6 +65,10 @@ import com.example.ui.components.GlassCard
 import com.example.ui.components.GlassDialog
 import com.example.ui.components.GlassIconButton
 import com.example.ui.components.LiquidBackground
+import com.example.ui.components.frostEdges
+import com.example.ui.components.lensEdge
+import com.example.ui.components.lensHighlight
+import com.example.ui.components.rememberLiquidHaptics
 import com.example.ui.theme.EmeraldOnline
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
@@ -85,6 +92,7 @@ fun ChatsHomeScreen(
     val loading by viewModel.loading.collectAsState()
     val current by viewModel.currentUser.collectAsState()
     val glass = LocalLiquidGlass.current
+    val haptics = rememberLiquidHaptics()
 
     var tab by rememberSaveable { mutableStateOf(initialTab) }
     var menu by remember { mutableStateOf<Conversation?>(null) }
@@ -101,6 +109,11 @@ fun ChatsHomeScreen(
     }
 
     LiquidBackground(modifier, crystal = true) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .frostEdges(dark = glass.isDark)
+        ) {
         Scaffold(
             containerColor = Color.Transparent,
             bottomBar = {
@@ -318,8 +331,6 @@ fun ChatsHomeScreen(
                     }
                 }
             }
-        }
-
         menu?.let { conversation ->
             GlassDialog("Chat actions", { menu = null }) {
                 Text(conversation.otherUser.displayName.ifBlank { "Contact" }, fontWeight = FontWeight.SemiBold)
@@ -351,6 +362,7 @@ fun ChatsHomeScreen(
                 }) { Text("Delete for me", color = MaterialTheme.colorScheme.error) }
             }
         }
+        }
     }
 }
 
@@ -377,6 +389,7 @@ fun GlassBottomBar(
     )
     val index = items.indexOfFirst { it.first == selectedRoute }.coerceAtLeast(0)
     val config = LocalLiquidGlass.current
+    val haptics = rememberLiquidHaptics()
 
     Box(
         modifier
@@ -386,8 +399,8 @@ fun GlassBottomBar(
         GlassCard(
             Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(32.dp),
-            backgroundColor = if (config.isDark) Color(0xFF0C1620).copy(alpha = .72f) else Color.White.copy(alpha = .60f),
-            elevation = 10.dp
+            backgroundColor = if (config.isDark) Color(0xFF0C1620).copy(alpha = .74f) else Color.White.copy(alpha = .62f),
+            elevation = 12.dp
         ) {
             BoxWithConstraints(Modifier.fillMaxWidth().padding(5.dp)) {
                 val itemWidth = maxWidth / 4
@@ -397,28 +410,47 @@ fun GlassBottomBar(
                     label = "tab_glass_pill"
                 )
 
+                // Lensing selection pill: glossy capsule with a specular edge that glides between tabs.
                 Box(
                     Modifier
                         .offset(x = x)
                         .width(itemWidth)
                         .height(52.dp)
+                        .shadow(4.dp, RoundedCornerShape(26.dp), ambientColor = Color.Black, spotColor = Color.Black.copy(alpha = .35f))
                         .clip(RoundedCornerShape(26.dp))
-                        .background(config.accentColor.copy(alpha = if (config.isDark) .18f else .14f))
+                        .background(config.accentColor.copy(alpha = if (config.isDark) .20f else .16f))
+                        .lensHighlight(dark = config.isDark, strength = 1.2f)
+                        .lensEdge(RoundedCornerShape(26.dp), dark = config.isDark, strength = .9f)
                 )
 
                 Row(Modifier.fillMaxWidth()) {
                     items.forEachIndexed { itemIndex, item ->
+                        val selected = index == itemIndex
+                        val iconScale by animateFloatAsState(
+                            targetValue = if (selected && !config.isReducedMotion) 1.12f else 1f,
+                            animationSpec = spring(dampingRatio = .48f, stiffness = 620f),
+                            label = "tab_icon_bounce"
+                        )
                         Column(
                             Modifier
                                 .weight(1f)
                                 .height(52.dp)
                                 .clip(RoundedCornerShape(26.dp))
-                                .clickable(onClick = clicks[itemIndex]),
+                                .clickable {
+                                    if (!selected) haptics.toggle()
+                                    clicks[itemIndex]()
+                                },
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center
                         ) {
-                            val color = if (index == itemIndex) config.accentColor else MaterialTheme.colorScheme.onSurfaceVariant
-                            Icon(item.third, item.second, tint = color, modifier = Modifier.size(22.dp))
+                            val color = if (selected) config.accentColor else MaterialTheme.colorScheme.onSurfaceVariant
+                            Icon(
+                                item.third, item.second,
+                                tint = color,
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .graphicsLayer { scaleX = iconScale; scaleY = iconScale }
+                            )
                             Spacer(Modifier.height(2.dp))
                             Text(item.second, fontSize = 10.sp, color = color, maxLines = 1)
                         }

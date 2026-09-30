@@ -24,6 +24,7 @@ import com.example.ui.components.GlassDialog
 import com.example.ui.components.NetworkStatusBanner
 import com.example.ui.navigation.Screen
 import com.example.ui.screens.*
+import com.example.ui.theme.GlassStyle
 import com.example.ui.theme.LiquidChatTheme
 import com.example.ui.theme.LiquidGlassConfig
 import com.example.ui.viewmodel.LiquidChatViewModel
@@ -60,6 +61,7 @@ fun LiquidChatApp(
     } catch (_: Exception) {
       Color(0xFF176BFF)
     },
+    glassStyle = if (appearance.glassStyle == "Clear") GlassStyle.Clear else GlassStyle.Regular,
     isReducedMotion = appearance.isReducedMotion,
     isDark = appearance.isDarkMode
   )

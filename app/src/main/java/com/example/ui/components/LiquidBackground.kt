@@ -19,12 +19,18 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.rotate
 import com.example.ui.theme.LocalLiquidGlass
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 
 val LocalGlassBackdrop = staticCompositionLocalOf<HazeState?> { null }
 
+/**
+ * Liquid Background v2 — organic drifting colour fields.
+ * Three independent drift axes (x, y, rotation) make the blobs feel like light in water
+ * instead of rectangles sliding around. Clear glass reads almost invisible on top of it.
+ */
 @Composable
 fun LiquidBackground(
   modifier: Modifier = Modifier,
@@ -38,14 +44,21 @@ fun LiquidBackground(
   val driftX by motion.animateFloat(
     initialValue = -0.045f,
     targetValue = 0.05f,
-    animationSpec = infiniteRepeatable(tween(12_000), RepeatMode.Reverse),
+    animationSpec = infiniteRepeatable(tween(13_000), RepeatMode.Reverse),
     label = "glass_drift_x"
   )
   val driftY by motion.animateFloat(
     initialValue = 0.035f,
     targetValue = -0.04f,
-    animationSpec = infiniteRepeatable(tween(14_000), RepeatMode.Reverse),
+    animationSpec = infiniteRepeatable(tween(15_500), RepeatMode.Reverse),
     label = "glass_drift_y"
+  )
+  // Slow "light in water" rotation that keeps the fields organic.
+  val sway by motion.animateFloat(
+    initialValue = -7f,
+    targetValue = 7f,
+    animationSpec = infiniteRepeatable(tween(21_000), RepeatMode.Reverse),
+    label = "glass_sway"
   )
 
   val base = if (dark) Color(0xFF070B11) else Color(0xFFF3F7FC)
@@ -58,50 +71,71 @@ fun LiquidBackground(
       ) {
         val dx = if (config.isReducedMotion) 0f else driftX
         val dy = if (config.isReducedMotion) 0f else driftY
+        val rot = if (config.isReducedMotion) 0f else sway
 
+        // Primary light field — top right.
         val blue = Offset(size.width * (.86f + dx), size.height * (.10f + dy))
         drawCircle(
           brush = Brush.radialGradient(
             listOf(
-              Color(0xFF6AA8FF).copy(alpha = if (dark) .18f else .22f),
+              Color(0xFF6AA8FF).copy(alpha = if (dark) .20f else .24f),
               Color(0xFFB9D9FF).copy(alpha = if (dark) .05f else .09f),
               Color.Transparent
             ),
             center = blue,
-            radius = size.width * .78f
+            radius = size.width * .80f
           ),
-          radius = size.width * .78f,
+          radius = size.width * .80f,
           center = blue
         )
 
+        // Secondary field — bottom left, counter-drifting.
         val violet = Offset(size.width * (.02f - dx * .6f), size.height * (.78f - dy * .7f))
         drawCircle(
           brush = Brush.radialGradient(
             listOf(
-              Color(0xFF8E7CFF).copy(alpha = if (dark) .12f else .13f),
+              Color(0xFF8E7CFF).copy(alpha = if (dark) .13f else .14f),
               Color(0xFFC3B9FF).copy(alpha = if (dark) .025f else .045f),
               Color.Transparent
             ),
             center = violet,
-            radius = size.width * .70f
+            radius = size.width * .72f
           ),
-          radius = size.width * .70f,
+          radius = size.width * .72f,
           center = violet
         )
 
-        val aqua = Offset(size.width * .62f, size.height * (1.04f + dy * .35f))
+        // Tertiary field — bottom right aqua glow.
+        val aqua = Offset(size.width * (.62f + dy * .4f), size.height * (1.04f + dx * .3f))
         drawCircle(
           brush = Brush.radialGradient(
             listOf(
-              Color(0xFF61DED1).copy(alpha = if (dark) .065f else .075f),
+              Color(0xFF61DED1).copy(alpha = if (dark) .07f else .08f),
               Color.Transparent
             ),
             center = aqua,
-            radius = size.width * .82f
+            radius = size.width * .84f
           ),
-          radius = size.width * .82f,
+          radius = size.width * .84f,
           center = aqua
         )
+
+        // Rotated mid-screen accent — gives the water a slow current.
+        rotate(degrees = rot, pivot = Offset(size.width * .5f, size.height * .42f)) {
+          val rose = Offset(size.width * (.28f + dx * .5f), size.height * (.42f + dy * .5f))
+          drawCircle(
+            brush = Brush.radialGradient(
+              listOf(
+                Color(0xFFFF9EC7).copy(alpha = if (dark) .045f else .06f),
+                Color.Transparent
+              ),
+              center = rose,
+              radius = size.width * .55f
+            ),
+            radius = size.width * .55f,
+            center = rose
+          )
+        }
 
         if (crystal) {
           val tint = if (dark) Color(0xFF7192BE) else Color(0xFFC6DDF6)

@@ -96,7 +96,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -125,6 +128,10 @@ import com.example.ui.components.LiquidBackground
 import com.example.ui.components.PrivateImage
 import com.example.ui.components.PrivateVideoThumbnail
 import com.example.ui.components.VoiceWaveformPlayer
+import com.example.ui.components.frostEdges
+import com.example.ui.components.lensEdge
+import com.example.ui.components.lensHighlight
+import com.example.ui.components.rememberLiquidHaptics
 import com.example.ui.theme.EmeraldOnline
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
@@ -246,6 +253,7 @@ fun ConversationScreen(
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val haptic = LocalHapticFeedback.current
+    val haptics = rememberLiquidHaptics()
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
@@ -495,6 +503,7 @@ fun ConversationScreen(
         modifier = modifier,
         crystal = conversation?.wallpaperIndex != 1
     ) {
+        Box(Modifier.fillMaxSize().frostEdges(dark = config.isDark)) {
         Scaffold(
             containerColor = Color.Transparent,
             topBar = {
@@ -704,8 +713,8 @@ fun ConversationScreen(
                     GlassCard(
                         Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(30.dp),
-                        backgroundColor = if (config.isDark) Color(0xFF0C1620).copy(alpha = .74f) else Color.White.copy(alpha = .60f),
-                        elevation = 10.dp
+                        backgroundColor = if (config.isDark) Color(0xFF0C1620).copy(alpha = .76f) else Color.White.copy(alpha = .62f),
+                        elevation = 12.dp
                     ) {
                         Row(
                             Modifier.padding(4.dp),
@@ -784,26 +793,47 @@ fun ConversationScreen(
                                     Icon(Icons.Default.Mic, "Hold to record", modifier = Modifier.size(21.dp))
                                 }
                             } else {
-                                GlassIconButton(
-                                    Icons.Default.Send,
-                                    "Send",
-                                    onClick = {
-                                        if (text.isNotBlank() && other.uid !in blocked) {
-                                            viewModel.sendMessage(
-                                                conversationId,
-                                                text.trim(),
-                                                replyToId = reply?.id,
-                                                replyToText = reply?.text,
-                                                replyToSender = reply?.senderName
-                                            )
-                                            text = ""
-                                            reply = null
-                                        }
-                                    },
-                                    tint = Color.White,
-                                    backgroundColor = config.accentColor.copy(alpha = .88f),
-                                    size = 40.dp
+                                val sendScale by animateFloatAsState(
+                                    targetValue = if (text.isNotBlank() && !config.isReducedMotion) 1f else 0.86f,
+                                    animationSpec = spring(dampingRatio = .45f, stiffness = 480f),
+                                    label = "send_morph"
                                 )
+                                Box(
+                                    Modifier
+                                        .graphicsLayer { scaleX = sendScale; scaleY = sendScale }
+                                        .size(40.dp)
+                                        .shadow(4.dp, CircleShape, ambientColor = Color.Black, spotColor = config.accentColor.copy(alpha = .55f))
+                                        .clip(CircleShape)
+                                        .background(
+                                            Brush.linearGradient(
+                                                listOf(config.accentColor, config.accentColor.copy(alpha = .72f))
+                                            )
+                                        )
+                                        .lensHighlight(dark = true, strength = 1.5f)
+                                        .lensEdge(CircleShape, dark = true, strength = 1f)
+                                        .clickable {
+                                            if (text.isNotBlank() && other.uid !in blocked) {
+                                                haptics.confirm()
+                                                viewModel.sendMessage(
+                                                    conversationId,
+                                                    text.trim(),
+                                                    replyToId = reply?.id,
+                                                    replyToText = reply?.text,
+                                                    replyToSender = reply?.senderName
+                                                )
+                                                text = ""
+                                                reply = null
+                                            }
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Default.Send,
+                                        "Send",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -902,6 +932,7 @@ fun ConversationScreen(
                     }
                 }
             }
+        }
         }
 
         if (attachmentSheet) {
@@ -1140,12 +1171,21 @@ private fun MorphingTypingBubble(
 ) {
     val config = LocalLiquidGlass.current
     val shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp, bottomStart = 7.dp, bottomEnd = 22.dp)
+    // Liquid wobble: the bubble breathes with a soft spring pulse while typing is active.
+    val wobble by rememberInfiniteTransition(label = "typing_wobble").animateFloat(
+        initialValue = 1f,
+        targetValue = 1.025f,
+        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
+        label = "wobble_scale"
+    )
     Box(
         Modifier
             .widthIn(min = 54.dp, max = 320.dp)
+            .graphicsLayer { scaleX = if (message == null && !reduced) wobble else 1f; scaleY = if (message == null && !reduced) wobble else 1f }
             .clip(shape)
             .background(if (config.isDark) Color.White.copy(alpha = .065f) else Color.White.copy(alpha = .58f))
             .border(1.dp, Color.White.copy(alpha = if (config.isDark) .10f else .58f), shape)
+            .lensEdge(shape, dark = config.isDark, strength = .7f)
             .animateContentSize(if (reduced) tween(0) else spring(dampingRatio = .72f, stiffness = 360f))
             .combinedClickable(onClick = {}, onLongClick = onLongClick)
             .padding(horizontal = 14.dp, vertical = 10.dp)
@@ -1218,6 +1258,7 @@ fun MessageBubble(
 ) {
     val config = LocalLiquidGlass.current
     val reduced = config.isReducedMotion
+    val haptics = rememberLiquidHaptics()
     var drag by remember { mutableFloatStateOf(0f) }
     val offset by animateFloatAsState(
         targetValue = drag,
@@ -1242,9 +1283,10 @@ fun MessageBubble(
     }
 
     val bubbleColor = if (isMe) {
-        config.accentColor.copy(alpha = if (config.isDark) .54f else .78f)
+        // Gradient outgoing bubble (iOS 26 tinted glass feel) — accent core fading darker toward the tail.
+        config.accentColor.copy(alpha = if (config.isDark) .58f else .80f)
     } else {
-        if (config.isDark) Color.White.copy(alpha = .065f) else Color.White.copy(alpha = .58f)
+        if (config.isDark) Color.White.copy(alpha = if (config.isClear) .08f else .065f) else Color.White.copy(alpha = .58f)
     }
     val contentColor = if (isMe) Color.White else MaterialTheme.colorScheme.onSurface
     val metadataColor = if (isMe) Color.White.copy(alpha = .76f) else MaterialTheme.colorScheme.onSurfaceVariant
@@ -1261,7 +1303,10 @@ fun MessageBubble(
                     detectHorizontalDragGestures(
                         onDragEnd = {
                             val triggered = if (isMe) drag < -58f else drag > 58f
-                            if (triggered) onReply()
+                            if (triggered) {
+                                haptics.tap()
+                                onReply()
+                            }
                             drag = 0f
                         },
                         onDragCancel = { drag = 0f },
@@ -1274,14 +1319,27 @@ fun MessageBubble(
                 }
                 .combinedClickable(
                     onClick = { if (message.mediaUrl.isNotBlank()) onMedia() },
-                    onLongClick = onLongClick
+                    onLongClick = {
+                        haptics.confirm()
+                        onLongClick()
+                    }
                 )
         ) {
             GlassCard(
                 shape = bubbleShape,
                 backgroundColor = bubbleColor,
+                overlayBrush = if (isMe) {
+                    Brush.verticalGradient(
+                        listOf(
+                            Color.White.copy(alpha = .30f),
+                            Color.Transparent,
+                            Color.Black.copy(alpha = .12f)
+                        )
+                    )
+                } else null,
                 borderColor = if (isMe) Color.White.copy(alpha = .34f) else null,
-                elevation = if (groupWithPrevious || groupWithNext) 0.dp else 1.dp
+                elevation = if (groupWithPrevious || groupWithNext) 0.dp else 1.dp,
+                lensing = !isMe
             ) {
                 Column(
                     Modifier
