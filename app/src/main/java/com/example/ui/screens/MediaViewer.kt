@@ -24,13 +24,11 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -76,30 +74,10 @@ private suspend fun savePrivateMediaToDevice(context: Context, message: Message)
         val source: File = LiquidApi.cachedPrivateMedia(message.mediaUrl)
         val now = System.currentTimeMillis()
         val (collection, mime, folder, extension) = when (message.type) {
-            MessageType.IMAGE -> Quad(
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                "image/jpeg",
-                "Pictures/Liquid Chat",
-                "jpg"
-            )
-            MessageType.VIDEO -> Quad(
-                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-                "video/mp4",
-                "Movies/Liquid Chat",
-                "mp4"
-            )
-            MessageType.VOICE -> Quad(
-                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                "audio/mp4",
-                "Download/Liquid Chat",
-                "m4a"
-            )
-            else -> Quad(
-                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                "application/octet-stream",
-                "Download/Liquid Chat",
-                "bin"
-            )
+            MessageType.IMAGE -> Quad(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/jpeg", "Pictures/Liquid Chat", "jpg")
+            MessageType.VIDEO -> Quad(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, "video/mp4", "Movies/Liquid Chat", "mp4")
+            MessageType.VOICE -> Quad(MediaStore.Downloads.EXTERNAL_CONTENT_URI, "audio/mp4", "Download/Liquid Chat", "m4a")
+            else -> Quad(MediaStore.Downloads.EXTERNAL_CONTENT_URI, "application/octet-stream", "Download/Liquid Chat", "bin")
         }
 
         val displayName = "LiquidChat_${now}.${extension}"
@@ -110,9 +88,7 @@ private suspend fun savePrivateMediaToDevice(context: Context, message: Message)
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
         val resolver = context.contentResolver
-        val destination = requireNotNull(resolver.insert(collection, values)) {
-            "Unable to create media file"
-        }
+        val destination = requireNotNull(resolver.insert(collection, values)) { "Unable to create media file" }
         try {
             resolver.openOutputStream(destination)?.use { output ->
                 source.inputStream().use { input -> input.copyTo(output) }
@@ -168,11 +144,7 @@ fun MediaViewer(message: Message, onClose: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    GlassIconButton(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        "Close media viewer",
-                        onClose
-                    )
+                    GlassIconButton(Icons.AutoMirrored.Filled.ArrowBack, "Close media viewer", onClose)
                     GlassCard(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(28.dp)
@@ -199,15 +171,9 @@ fun MediaViewer(message: Message, onClose: () -> Unit) {
                                 saving = true
                                 scope.launch {
                                     savePrivateMediaToDevice(context, message)
-                                        .onSuccess {
-                                            Toast.makeText(context, "Saved to device", Toast.LENGTH_SHORT).show()
-                                        }
+                                        .onSuccess { Toast.makeText(context, "Saved to device", Toast.LENGTH_SHORT).show() }
                                         .onFailure {
-                                            Toast.makeText(
-                                                context,
-                                                it.message ?: "Save failed",
-                                                Toast.LENGTH_LONG
-                                            ).show()
+                                            Toast.makeText(context, it.message ?: "Save failed", Toast.LENGTH_LONG).show()
                                         }
                                     saving = false
                                 }
@@ -225,35 +191,22 @@ fun MediaViewer(message: Message, onClose: () -> Unit) {
                 ) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         when {
-                            error != null -> {
-                                Text(
-                                    error.orEmpty(),
-                                    color = Color.White,
-                                    modifier = Modifier.padding(24.dp)
-                                )
-                            }
+                            error != null -> Text(error.orEmpty(), color = Color.White, modifier = Modifier.padding(24.dp))
                             url == null -> CircularProgressIndicator()
                             message.type == MessageType.IMAGE -> {
                                 val state = rememberTransformableState { zoom, pan, _ ->
                                     scale = (scale * zoom).coerceIn(1f, 5f)
-                                    offset = if (scale == 1f) {
-                                        androidx.compose.ui.geometry.Offset.Zero
-                                    } else {
-                                        offset + pan
-                                    }
+                                    offset = if (scale == 1f) androidx.compose.ui.geometry.Offset.Zero else offset + pan
                                 }
                                 AsyncImage(
                                     model = url,
                                     contentDescription = "Photo",
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .transformable(state)
-                                        .graphicsLayer {
-                                            scaleX = scale
-                                            scaleY = scale
-                                            translationX = offset.x
-                                            translationY = offset.y
-                                        },
+                                    modifier = Modifier.fillMaxSize().transformable(state).graphicsLayer {
+                                        scaleX = scale
+                                        scaleY = scale
+                                        translationX = offset.x
+                                        translationY = offset.y
+                                    },
                                     contentScale = ContentScale.Fit
                                 )
                             }
@@ -280,11 +233,8 @@ fun MediaViewer(message: Message, onClose: () -> Unit) {
                             else -> GlassButton(
                                 "Open attachment",
                                 onClick = {
-                                    runCatching {
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                                    }.onFailure {
-                                        error = "No app available to open this attachment"
-                                    }
+                                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                                        .onFailure { error = "No app available to open this attachment" }
                                 }
                             )
                         }
