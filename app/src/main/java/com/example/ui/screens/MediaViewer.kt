@@ -34,7 +34,7 @@ fun MediaViewer(message:Message,onClose:()->Unit){
     else when(message.type){
      MessageType.IMAGE->{val state=rememberTransformableState{zoom,pan,_->scale=(scale*zoom).coerceIn(1f,5f);offset=if(scale==1f)androidx.compose.ui.geometry.Offset.Zero else offset+pan};AsyncImage(url,"Photo",Modifier.fillMaxSize().transformable(state).graphicsLayer{scaleX=scale;scaleY=scale;translationX=offset.x;translationY=offset.y},contentScale=ContentScale.Fit)}
      MessageType.VIDEO->AndroidView(factory={ctx->VideoView(ctx).apply{video=this;setVideoURI(Uri.parse(url));setMediaController(MediaController(ctx).also{it.setAnchorView(this)});setOnPreparedListener{start()};setOnErrorListener{_,_,_->error="Video playback failed";true}}},modifier=Modifier.fillMaxSize())
-     MessageType.VOICE->com.example.ui.components.VoiceWaveformPlayer(message.voiceDurationSeconds,message.mediaUrl)
+     MessageType.VOICE->com.example.ui.components.VoiceWaveformPlayer(message.voiceDurationSeconds,message.mediaUrl,waveform=message.waveform)
      else->Button(onClick={runCatching{context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))}.onFailure{error="No app available to open this attachment"}}){Text("Open document")}
     }
    }

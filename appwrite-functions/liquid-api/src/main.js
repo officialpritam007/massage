@@ -55,6 +55,18 @@ async function allowed(db, cid, uid) {
   return {ref, c, other};
 }
 
+function sanitizeWaveform(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map(Number).filter(Number.isFinite).map(x => Math.max(0.05, Math.min(1, x))).slice(0, 80);
+}
+
+function expectedMimePrefix(type) {
+  if (type === 'IMAGE') return 'image/';
+  if (type === 'VIDEO') return 'video/';
+  if (type === 'VOICE') return 'audio/';
+  return '';
+}
+
 function previewFor(m) {
   if (!m) return '';
   if (m.type === 'TEXT') return String(m.text || '').slice(0, 500);
@@ -389,11 +401,12 @@ export default async ({req, res, error}) => {
           type: source.type,
           mediaUrl: source.mediaUrl || '',
           voiceDurationSeconds: source.voiceDurationSeconds || 0,
+          waveform: sanitizeWaveform(source.waveform),
           createdAt: now,
           status: 'SENT',
           isDeleted: false,
           deletedForEveryone: false,
-          hiddenFor: [],
+          hiddenFor,
           isEdited: false,
           isPinned: false,
           reactions: [],
@@ -418,6 +431,10 @@ export default async ({req, res, error}) => {
       if (p.mediaUrl) {
         const mm = (await db.doc('media/' + String(p.mediaUrl).replace('appwrite:', '')).get()).data();
         if (!mm?.ready || mm.owner !== uid || mm.conversationId !== p.conversationId) throw new Error('Invalid media attachment');
+        const prefix = expectedMimePrefix(p.type);
+        const mime = String(mm.mimeType || '').toLowerCase();
+        if (prefix && !mime.startsWith(prefix)) throw new Error(`Attachment type does not match ${p.type.toLowerCase()} message`);
+        if (p.type === 'FILE' && !mime) throw new Error('Unknown attachment type');
       }
       if (p.type !== 'TEXT' && !p.mediaUrl) throw new Error('Upload media first');
       const u = (await own.get()).data();
@@ -431,6 +448,11 @@ export default async ({req, res, error}) => {
           if (existing.data().senderId !== uid) throw new Error('Invalid message ID');
           return;
         }
+        const hiddenFor = [];
+        for (const participant of c.participantIds) {
+          const hidden = await t.get(db.doc(`messageHiddenTombstones/${p.conversationId}_${p.id}_${participant}`));
+          if (hidden.exists) hiddenFor.push(participant);
+        }
         const sec = current.data().disappearingSeconds || 0;
         const m = {
           senderId: uid,
@@ -439,6 +461,7 @@ export default async ({req, res, error}) => {
           type: p.type,
           mediaUrl: p.mediaUrl || '',
           voiceDurationSeconds: Math.min(600, Math.max(0, Number(p.voiceDurationSeconds) || 0)),
+          waveform: p.type === 'VOICE' ? sanitizeWaveform(p.waveform) : [],
           createdAt: now,
           status: 'SENT',
           isDeleted: false,
@@ -477,13 +500,17 @@ export default async ({req, res, error}) => {
     const mref = ref.collection('messages').doc(String(p.messageId));
 
     if (p.action === 'deleteForMe') {
-      const s = await mref.get();
-      if (!s.exists) return res.json({ok: true});
+      const hiddenTomb = db.doc(`messageHiddenTombstones/${p.conversationId}_${p.messageId}_${uid}`);
       await db.runTransaction(async t => {
         const snap = await t.get(mref);
-        if (!snap.exists) return;
-        t.update(mref, {hiddenFor: FieldValue.arrayUnion(uid)});
         const current = await t.get(ref);
+        t.set(hiddenTomb, {
+          conversationId: p.conversationId,
+          messageId: String(p.messageId),
+          uid,
+          deletedAt: now
+        }, {merge: true});
+        if (snap.exists) t.update(mref, {hiddenFor: FieldValue.arrayUnion(uid)});
         if (current.data()?.lastMessageId === String(p.messageId)) {
           t.update(ref, {[`hiddenLastFor.${uid}`]: String(p.messageId)});
         }
@@ -496,20 +523,19 @@ export default async ({req, res, error}) => {
       await db.runTransaction(async t => {
         const s = await t.get(mref);
         const m = s.data();
-        if (!m) return;
-        if (m.senderId !== uid) throw new Error('Only the sender can do this');
-        mediaUrl = m.mediaUrl || '';
+        if (m && m.senderId !== uid) throw new Error('Only the sender can do this');
+        mediaUrl = m?.mediaUrl || '';
         const tomb = db.doc(`messageTombstones/${p.conversationId}_${p.messageId}`);
         t.set(tomb, {
           conversationId: p.conversationId,
           messageId: String(p.messageId),
-          senderId: m.senderId,
+          senderId: m?.senderId || uid,
           deletedBy: uid,
           deletedAt: now,
-          type: m.type || 'TEXT',
+          type: m?.type || 'TEXT',
           mediaRef: mediaUrl || ''
         }, {merge: true});
-        t.delete(mref);
+        if (s.exists) t.delete(mref);
       });
       await revokeMediaFromConversation(db, mediaUrl, p.conversationId);
       await refreshConversationSummary(ref);

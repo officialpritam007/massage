@@ -50,6 +50,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -64,6 +65,8 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Send
@@ -93,11 +96,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
@@ -116,6 +122,7 @@ import com.example.ui.components.GlassIconButton
 import com.example.ui.components.GlassTextField
 import com.example.ui.components.LiquidBackground
 import com.example.ui.components.PrivateImage
+import com.example.ui.components.PrivateVideoThumbnail
 import com.example.ui.components.VoiceWaveformPlayer
 import com.example.ui.theme.EmeraldOnline
 import com.example.ui.theme.LocalLiquidGlass
@@ -128,6 +135,7 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 fun presenceLabel(u: User): String {
     if (u.onlineVisible && u.isOnline) return "Online"
@@ -148,6 +156,56 @@ fun presenceLabel(u: User): String {
         yesterday -> "yesterday at $time"
         else -> SimpleDateFormat("d MMM yyyy 'at' h:mm a", Locale.getDefault())
             .format(Date(u.lastSeen))
+    }
+}
+
+private data class VoiceDraft(val file: File, val seconds: Int, val waveform: List<Float>)
+
+private fun appendWaveform(existing: List<Float>, value: Float): List<Float> {
+    var next = existing + value.coerceIn(.05f, 1f)
+    while (next.size > 80) {
+        next = next.chunked(2).map { chunk -> chunk.average().toFloat() }
+    }
+    return next
+}
+
+private fun sameDay(a: Long, b: Long): Boolean {
+    val ca = Calendar.getInstance().apply { timeInMillis = a }
+    val cb = Calendar.getInstance().apply { timeInMillis = b }
+    return ca.get(Calendar.YEAR) == cb.get(Calendar.YEAR) && ca.get(Calendar.DAY_OF_YEAR) == cb.get(Calendar.DAY_OF_YEAR)
+}
+
+private fun dayLabel(time: Long): String {
+    val now = Calendar.getInstance()
+    val day = Calendar.getInstance().apply { timeInMillis = time }
+    if (now.get(Calendar.YEAR) == day.get(Calendar.YEAR) && now.get(Calendar.DAY_OF_YEAR) == day.get(Calendar.DAY_OF_YEAR)) return "Today"
+    now.add(Calendar.DAY_OF_YEAR, -1)
+    if (now.get(Calendar.YEAR) == day.get(Calendar.YEAR) && now.get(Calendar.DAY_OF_YEAR) == day.get(Calendar.DAY_OF_YEAR)) return "Yesterday"
+    return SimpleDateFormat("d MMM yyyy", Locale.getDefault()).format(Date(time))
+}
+
+@Composable
+private fun DateSeparator(time: Long, unread: Boolean = false) {
+    Box(Modifier.fillMaxWidth().padding(vertical = 5.dp), contentAlignment = Alignment.Center) {
+        GlassCard(shape = RoundedCornerShape(999.dp)) {
+            Text(if (unread) "Unread messages" else dayLabel(time), Modifier.padding(horizontal = 12.dp, vertical = 5.dp), style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
+private fun LiveRecordingWaveform(values: List<Float>, modifier: Modifier = Modifier) {
+    val waveformColor = MaterialTheme.colorScheme.error
+    androidx.compose.foundation.Canvas(modifier.height(30.dp)) {
+        val bars = values.takeLast(32)
+        if (bars.isEmpty()) return@Canvas
+        val gap = 3.dp.toPx()
+        val width = ((size.width - gap * (bars.size - 1)) / bars.size).coerceAtLeast(2.dp.toPx())
+        bars.forEachIndexed { index, amp ->
+            val h = size.height * amp.coerceIn(.08f, 1f)
+            val x = index * (width + gap) + width / 2
+            drawLine(waveformColor, Offset(x, (size.height - h) / 2), Offset(x, (size.height + h) / 2), width)
+        }
     }
 }
 
@@ -175,6 +233,8 @@ fun ConversationScreen(
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val haptic = LocalHapticFeedback.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
@@ -186,6 +246,7 @@ fun ConversationScreen(
     var forward by remember { mutableStateOf<Message?>(null) }
     var viewer by remember { mutableStateOf<Message?>(null) }
     var deleteForEveryone by remember { mutableStateOf<Message?>(null) }
+    var deleteChatConfirm by remember { mutableStateOf(false) }
 
     var attachmentSheet by remember { mutableStateOf(false) }
     var conversationSettings by remember { mutableStateOf(false) }
@@ -203,32 +264,29 @@ fun ConversationScreen(
     var elapsed by remember { mutableIntStateOf(0) }
     var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
     var voiceFile by remember { mutableStateOf<File?>(null) }
+    var paused by remember { mutableStateOf(false) }
+    var voiceWaveform by remember { mutableStateOf<List<Float>>(emptyList()) }
+    var voiceDraft by remember { mutableStateOf<VoiceDraft?>(null) }
+    var initialUnread by rememberSaveable(conversationId) { mutableIntStateOf(conversation?.unreadCount ?: 0) }
 
     fun stopRecording(send: Boolean) {
         val activeRecorder = recorder
         recorder = null
         val file = voiceFile
         voiceFile = null
-        val seconds = elapsed
+        val seconds = elapsed.coerceAtLeast(1)
+        val captured = voiceWaveform
 
         val stoppedCleanly = runCatching { activeRecorder?.stop() }.isSuccess
         runCatching { activeRecorder?.release() }
         recording = false
+        paused = false
         locked = false
+        focusManager.clearFocus()
 
         if (send && stoppedCleanly && file != null && file.length() > 0) {
-            repo.uploadChatMedia(conversationId, Uri.fromFile(file), MessageType.VOICE) { result ->
-                result.onSuccess { url ->
-                    viewModel.sendMessage(
-                        conversationId,
-                        "Voice message",
-                        MessageType.VOICE,
-                        url,
-                        voiceDurationSeconds = seconds.coerceAtLeast(1)
-                    )
-                    file.delete()
-                }
-            }
+            voiceDraft?.file?.delete()
+            voiceDraft = VoiceDraft(file, seconds, captured)
         } else {
             file?.delete()
         }
@@ -254,6 +312,8 @@ fun ConversationScreen(
             recorder = activeRecorder
             voiceFile = file
             recording = true
+            paused = false
+            voiceWaveform = emptyList()
             elapsed = 0
         }.onFailure {
             android.widget.Toast.makeText(context, it.message, android.widget.Toast.LENGTH_LONG).show()
@@ -269,6 +329,8 @@ fun ConversationScreen(
     ) { granted ->
         if (granted) {
             locked = true
+            keyboard?.hide()
+            focusManager.clearFocus()
             startRecording()
         }
     }
@@ -310,12 +372,28 @@ fun ConversationScreen(
         uri?.let { uploadFile(it, MessageType.FILE) }
     }
 
-    LaunchedEffect(recording) {
+    LaunchedEffect(recording, paused) {
         while (recording) {
             delay(1000)
-            elapsed++
+            if (!paused) elapsed++
             if (elapsed >= 600) stopRecording(true)
         }
+    }
+
+    LaunchedEffect(recording, paused) {
+        while (recording) {
+            if (!paused) {
+                val amp = runCatching { recorder?.maxAmplitude ?: 0 }.getOrDefault(0)
+                val level = sqrt((amp / 32767f).coerceIn(0f, 1f)).coerceAtLeast(.05f)
+                voiceWaveform = appendWaveform(voiceWaveform, level)
+            }
+            delay(120)
+        }
+    }
+
+    LaunchedEffect(conversation?.unreadCount) {
+        val count = conversation?.unreadCount ?: 0
+        if (initialUnread == 0 && count > 0) initialUnread = count
     }
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -331,6 +409,7 @@ fun ConversationScreen(
             lifecycleOwner.lifecycle.removeObserver(observer)
             runCatching { recorder?.release() }
             voiceFile?.delete()
+            voiceDraft?.file?.delete()
             repo.setTyping(conversationId, false)
         }
     }
@@ -534,11 +613,22 @@ fun ConversationScreen(
                                 Modifier.padding(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    "● ${elapsed / 60}:${(elapsed % 60).toString().padStart(2, '0')} ${if (locked) "Locked" else "↑ lock  ← cancel"}",
-                                    Modifier.weight(1f),
-                                    color = MaterialTheme.colorScheme.error
-                                )
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        "● ${elapsed / 60}:${(elapsed % 60).toString().padStart(2, '0')} ${if (paused) "Paused" else if (locked) "Locked" else "↑ lock  ← cancel"}",
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                    LiveRecordingWaveform(voiceWaveform, Modifier.fillMaxWidth())
+                                }
+                                if (locked) {
+                                    IconButton(onClick = {
+                                        val active = recorder
+                                        runCatching { if (paused) active?.resume() else active?.pause() }
+                                            .onSuccess { paused = !paused }
+                                    }) {
+                                        Icon(if (paused) Icons.Default.PlayArrow else Icons.Default.Pause, if (paused) "Resume" else "Pause")
+                                    }
+                                }
                                 IconButton(onClick = { stopRecording(false) }) {
                                     Icon(Icons.Default.Delete, "Cancel recording")
                                 }
@@ -617,6 +707,8 @@ fun ConversationScreen(
                                                     }
                                                     if (dy < -100f && recordingCurrent) {
                                                         locked = true
+                                                        keyboard?.hide()
+                                                        focusManager.clearFocus()
                                                     }
                                                 }
                                             )
@@ -624,6 +716,8 @@ fun ConversationScreen(
                                         .clickable {
                                             if (!recording) {
                                                 locked = true
+                                                keyboard?.hide()
+                                                focusManager.clearFocus()
                                                 requestRecording()
                                             }
                                         },
@@ -681,17 +775,29 @@ fun ConversationScreen(
                         }
                     }
 
-                    items(
-                        visibleMessages.filterNot { it.id == morphMessage?.id },
-                        key = { it.id }
-                    ) { message ->
+                    val rows = visibleMessages.filterNot { it.id == morphMessage?.id }
+                    itemsIndexed(rows, key = { _, item -> item.id }) { index, message ->
+                        if (index == 0 || !sameDay(rows[index - 1].createdAt, message.createdAt)) {
+                            DateSeparator(message.createdAt)
+                        }
+                        val unreadStart = (rows.size - initialUnread).coerceAtLeast(0)
+                        if (initialUnread > 0 && index == unreadStart) {
+                            DateSeparator(message.createdAt, unread = true)
+                        }
                         MessageBubble(
                             message = message,
                             isMe = message.senderId == me.uid,
-                            onLongClick = { actions = message },
+                            onLongClick = {
+                                actions = message
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            },
                             onReply = {
                                 reply = message
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            },
+                            onReplyPreviewClick = { replyId ->
+                                val target = rows.indexOfFirst { it.id == replyId }
+                                if (target >= 0) scope.launch { listState.animateScrollToItem(target + 1) }
                             },
                             onMedia = { viewer = message },
                             onReactionClick = { emoji ->
@@ -801,6 +907,10 @@ fun ConversationScreen(
                     )
                     conversationSettings = false
                 }) { Text("Toggle crystal / plain wallpaper") }
+                TextButton(onClick = {
+                    conversationSettings = false
+                    deleteChatConfirm = true
+                }) { Text("Delete chat", color = MaterialTheme.colorScheme.error) }
             }
         }
 
@@ -848,7 +958,7 @@ fun ConversationScreen(
                     }) { Text("Edit") }
                 }
                 TextButton(onClick = {
-                    repo.hideMessage(conversationId, message.id)
+                    viewModel.deleteMessageForMe(conversationId, message.id)
                     actions = null
                 }) { Text("Delete for me") }
                 if (message.senderId == me.uid) {
@@ -866,7 +976,7 @@ fun ConversationScreen(
             GlassDialog("Delete for everyone?", { deleteForEveryone = null }) {
                 Text("This message will be removed for both people.")
                 GlassButton("Delete", {
-                    viewModel.deleteMessage(conversationId, message.id)
+                    viewModel.deleteMessageForEveryone(conversationId, message.id)
                     deleteForEveryone = null
                 })
             }
@@ -904,6 +1014,54 @@ fun ConversationScreen(
                 if (conversations.size < 2) {
                     Text("Start another conversation first")
                 }
+            }
+        }
+
+        voiceDraft?.let { draft ->
+            GlassDialog("Voice preview", {
+                draft.file.delete()
+                voiceDraft = null
+            }) {
+                VoiceWaveformPlayer(
+                    draft.seconds,
+                    Uri.fromFile(draft.file).toString(),
+                    waveform = draft.waveform,
+                    isOutgoing = true
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GlassButton("Discard", {
+                        draft.file.delete()
+                        voiceDraft = null
+                    }, Modifier.weight(1f), isPrimary = false)
+                    GlassButton("Send", {
+                        val localDraft = draft
+                        voiceDraft = null
+                        repo.uploadChatMedia(conversationId, Uri.fromFile(localDraft.file), MessageType.VOICE) { result ->
+                            result.onSuccess { url ->
+                                viewModel.sendMessage(
+                                    conversationId,
+                                    "Voice message",
+                                    MessageType.VOICE,
+                                    url,
+                                    voiceDurationSeconds = localDraft.seconds,
+                                    waveform = localDraft.waveform
+                                )
+                                localDraft.file.delete()
+                            }.onFailure { localDraft.file.delete() }
+                        }
+                    }, Modifier.weight(1f))
+                }
+            }
+        }
+
+        if (deleteChatConfirm) {
+            GlassDialog("Delete chat?", { deleteChatConfirm = false }) {
+                Text("This permanently removes the existing conversation from your account. It will not return after restart, sign-in, reinstall or sync. A future new message can create a fresh chat without restoring the deleted history.")
+                GlassButton("Delete chat", {
+                    viewModel.deleteChatForMe(conversationId)
+                    deleteChatConfirm = false
+                    onBackClick()
+                }, Modifier.fillMaxWidth())
             }
         }
 
@@ -1000,6 +1158,7 @@ fun MessageBubble(
     isMe: Boolean,
     onLongClick: () -> Unit,
     onReply: () -> Unit,
+    onReplyPreviewClick: (String) -> Unit,
     onMedia: () -> Unit,
     onReactionClick: (String) -> Unit,
     onRetry: () -> Unit
@@ -1059,7 +1218,8 @@ fun MessageBubble(
                             "${message.replyToSender}: ${message.replyToText}",
                             fontSize = 11.sp,
                             maxLines = 2,
-                            color = MaterialTheme.colorScheme.primary
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.clickable { message.replyToId?.let(onReplyPreviewClick) }
                         )
                     }
 
@@ -1073,10 +1233,11 @@ fun MessageBubble(
                                     .height(165.dp)
                                     .clip(RoundedCornerShape(14.dp))
                             )
-                            MessageType.VIDEO -> Text("▶ Video • Tap to play", Modifier.padding(20.dp))
+                            MessageType.VIDEO -> PrivateVideoThumbnail(message.mediaUrl, Modifier.fillMaxWidth().height(165.dp))
                             MessageType.VOICE -> VoiceWaveformPlayer(
                                 message.voiceDurationSeconds,
                                 message.mediaUrl,
+                                waveform = message.waveform,
                                 isOutgoing = isMe
                             )
                             MessageType.FILE -> Text("▤ Document • Tap to open", Modifier.padding(12.dp))
