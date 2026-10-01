@@ -695,7 +695,7 @@ class ChatRepository(
           if (e is CancellationException) throw e
           if (e !is java.io.IOException) {
             failed += id
-            updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.FAILED) }
+            updateLocal(cid, id) { if (it.status in setOf(MessageDeliveryStatus.READ, MessageDeliveryStatus.DELIVERED)) it else it.copy(status = MessageDeliveryStatus.FAILED) }
             _error.value = friendlyError(e)
           }
         }

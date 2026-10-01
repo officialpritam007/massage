@@ -521,11 +521,13 @@ fun ConversationScreen(
     val currentRows by rememberUpdatedState(rows)
     LaunchedEffect(conversationId, resumed) {
         if (!resumed) return@LaunchedEffect
-        snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.key.toString() } }
-            .collectLatest { keys ->
-                delay(250)
-                repo.markVisibleRead(conversationId, currentRows.filter { it.key in keys }.mapNotNull { it.message?.id })
-            }
+        snapshotFlow {
+            val keys = listState.layoutInfo.visibleItemsInfo.map { it.key.toString() }
+            currentRows.filter { it.key in keys }.mapNotNull { it.message?.id }
+        }.collectLatest { ids ->
+            delay(250)
+            repo.markVisibleRead(conversationId, ids)
+        }
     }
 
     LiquidBackground(
@@ -888,7 +890,7 @@ fun ConversationScreen(
                         val next = rows.getOrNull(index + 1)?.message
                         if (!typing && (previous == null || !sameDay(previous.createdAt, message.createdAt))) DateSeparator(message.createdAt)
                         if (!typing && message.id == unreadAnchor) DateSeparator(message.createdAt, unread = true)
-                        DustDelete("message:${message.id}", Modifier.animateItem()) {
+                        DustDelete("message:${message.id}", if (config.isReducedMotion) Modifier else Modifier.animateItem()) {
                             MessageBubble(
                                 message = message, typing = typing,
                                 isMe = !typing && message.senderId == me.uid,
@@ -1448,8 +1450,8 @@ fun MessageBubble(
 }
 
 
-private data class BubbleRow(val key: String, val message: Message?)
-private class BubbleRowIdentity {
+internal data class BubbleRow(val key: String, val message: Message?)
+internal class BubbleRowIdentity {
     private val keys = mutableMapOf<String, String>()
     private val known = mutableSetOf<String>()
     private var first = true
@@ -1472,7 +1474,7 @@ private class BubbleRowIdentity {
 private fun ExpandableMessageText(id: String, text: String, modifier: Modifier = Modifier, color: Color) {
     var expanded by rememberSaveable(id, text) { mutableStateOf(false) }
     var overflow by remember(id, text) { mutableStateOf(false) }
-    Column(modifier.animateContentSize()) {
+    Column(modifier.animateContentSize(if (LocalLiquidGlass.current.isReducedMotion) tween(0) else spring())) {
         Text(text, color = color, style = MaterialTheme.typography.bodyMedium,
             maxLines = if (expanded) Int.MAX_VALUE else 6, overflow = TextOverflow.Ellipsis,
             onTextLayout = { if (!expanded) overflow = it.hasVisualOverflow })

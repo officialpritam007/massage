@@ -23,7 +23,7 @@ object VoiceDraftStore {
       .put("seconds", draft.seconds).put("waveform", JSONArray(draft.waveform)).toString()).apply()
   }
   fun clear(context: Context, cid: String, deleteFile: Boolean = true) {
-    if (deleteFile) read(context, cid)?.file?.delete()
+    if (deleteFile) read(context, cid)?.file?.let { check(!it.exists() || it.delete()) { "Recording could not be deleted" } }
     prefs(context).edit().remove(key(cid)).apply()
   }
 }
