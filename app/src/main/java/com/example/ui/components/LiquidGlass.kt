@@ -39,7 +39,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -117,6 +119,13 @@ fun GlassCard(
       )
       .background(glassBackground)
       .border(BorderStroke(1.dp, Brush.verticalGradient(listOf(topHighlight, border.copy(alpha = (border.alpha * config.borderStrength).coerceIn(0.06f, 1f))))), resolvedShape)
+      .drawWithContent {
+        drawContent()
+        drawRect(
+          color = topHighlight.copy(alpha = if (config.isDark) 0.38f else 0.70f),
+          size = Size(size.width, 1.dp.toPx())
+        )
+      }
       .then(
         if (onClick != null) Modifier.clickable(
           interactionSource = interactionSource,
@@ -125,13 +134,8 @@ fun GlassCard(
         ) else Modifier
       )
   ) {
-    // Fine top sheen: gives the glass a physical edge without a heavy gradient.
-    Box(
-      Modifier
-        .fillMaxWidth()
-        .height(1.dp)
-        .background(topHighlight.copy(alpha = if (config.isDark) 0.38f else 0.70f))
-    )
+    // The highlight is drawn by the parent modifier so decorative glass never
+    // participates in measurement. Compact content therefore stays compact.
     CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides androidx.compose.material3.MaterialTheme.colorScheme.onSurface) { content() }
   }
 }
