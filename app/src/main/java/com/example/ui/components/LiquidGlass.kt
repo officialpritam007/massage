@@ -99,12 +99,14 @@ fun GlassCard(
   )
 
   val clear = config.isClear
+  // Kept deliberately translucent: the wallpaper and the layers below must stay visible
+  // through every card, so the material reads as stacked glass rather than an opaque panel.
   val surface = when {
     backgroundColor != null -> backgroundColor
-    clear && config.isDark -> Color(0xFF0E1B29).copy(alpha = 0.20f + config.glassIntensity * 0.10f)
-    clear -> Color.White.copy(alpha = 0.16f + config.glassIntensity * 0.10f)
-    config.isDark -> Color(0xFFB7D9FF).copy(alpha = (0.035f + config.blurAlpha * 0.085f + config.glassIntensity * 0.025f).coerceIn(0.06f, 0.18f))
-    else -> Color.White.copy(alpha = (0.36f + config.blurAlpha * 0.14f + config.glassIntensity * 0.06f).coerceIn(0.38f, 0.64f))
+    clear && config.isDark -> Color(0xFF0E1B29).copy(alpha = 0.16f + config.glassIntensity * 0.09f)
+    clear -> Color.White.copy(alpha = 0.13f + config.glassIntensity * 0.09f)
+    config.isDark -> Color(0xFFB7D9FF).copy(alpha = (0.02f + config.blurAlpha * 0.055f + config.glassIntensity * 0.02f).coerceIn(0.045f, 0.13f))
+    else -> Color.White.copy(alpha = (0.18f + config.blurAlpha * 0.11f + config.glassIntensity * 0.05f).coerceIn(0.20f, 0.42f))
   }
   val glassBackground = backgroundColor ?: surface
   val backdrop = LocalGlassBackdrop.current
@@ -119,7 +121,8 @@ fun GlassCard(
     clear -> (4f + config.glassIntensity * 8f) * (0.45f + config.blurAlpha * 0.55f)
     else -> 12f + config.blurAlpha * 20f
   }
-  val noise = if (clear) 0f else 0.025f
+  // A whisper of noise reads as micro-refraction on real glass instead of a flat sheet.
+  val noise = if (clear) 0.012f else 0.03f
 
   Box(
     modifier = modifier

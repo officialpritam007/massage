@@ -20,6 +20,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.rotate
+import com.example.ui.theme.ChatVeilDark
+import com.example.ui.theme.ChatVeilLight
 import com.example.ui.theme.LocalLiquidGlass
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
@@ -30,11 +32,15 @@ val LocalGlassBackdrop = staticCompositionLocalOf<HazeState?> { null }
  * Liquid Background v2 — organic drifting colour fields.
  * Three independent drift axes (x, y, rotation) make the blobs feel like light in water
  * instead of rectangles sliding around. Clear glass reads almost invisible on top of it.
+ *
+ * [scrim] paints a readability veil between the wallpaper and the content so text stays
+ * legible on any wallpaper while the colours remain visible underneath.
  */
 @Composable
 fun LiquidBackground(
   modifier: Modifier = Modifier,
   crystal: Boolean = false,
+  scrim: Boolean = false,
   content: @Composable () -> Unit
 ) {
   val config = LocalLiquidGlass.current
@@ -172,6 +178,21 @@ fun LiquidBackground(
             )
           )
         )
+
+        if (scrim) {
+          // Adaptive readability veil: stronger where chrome and text sit,
+          // nearly transparent through the middle so the wallpaper still reads.
+          val veil = if (dark) ChatVeilDark else ChatVeilLight
+          drawRect(veil.copy(alpha = veil.alpha * .55f))
+          drawRect(
+            brush = Brush.verticalGradient(
+              0f to veil,
+              .28f to Color.Transparent,
+              .72f to Color.Transparent,
+              1f to veil.copy(alpha = veil.alpha * .8f)
+            )
+          )
+        }
       }
       content()
     }

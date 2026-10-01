@@ -12,9 +12,11 @@ import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -24,7 +26,12 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -57,20 +64,35 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -89,10 +111,12 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -104,25 +128,34 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.example.data.media.saveMediaToGallery
 import com.example.data.model.Message
 import com.example.data.model.MessageDeliveryStatus
 import com.example.data.model.MessageType
 import com.example.data.model.User
+import com.example.ui.components.GlassActionRow
 import com.example.ui.components.GlassAvatar
 import com.example.ui.components.GlassButton
 import com.example.ui.components.GlassCard
 import com.example.ui.components.GlassDialog
 import com.example.ui.components.GlassIconButton
+import com.example.ui.components.GlassSheet
 import com.example.ui.components.GlassTextField
 import com.example.ui.components.LiquidBackground
 import com.example.ui.components.PrivateImage
@@ -132,8 +165,13 @@ import com.example.ui.components.frostEdges
 import com.example.ui.components.lensEdge
 import com.example.ui.components.lensHighlight
 import com.example.ui.components.rememberLiquidHaptics
+import com.example.ui.theme.BubbleIncomingTintDark
+import com.example.ui.theme.BubbleIncomingTintLight
+import com.example.ui.theme.BubbleMetaTextStyle
 import com.example.ui.theme.EmeraldOnline
 import com.example.ui.theme.LocalLiquidGlass
+import com.example.ui.theme.MetaOnBubbleLight
+import com.example.ui.theme.MetaOnAccent
 import com.example.ui.viewmodel.LiquidChatViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -195,15 +233,22 @@ private fun dayLabel(time: Long): String {
 @Composable
 private fun DateSeparator(time: Long, unread: Boolean = false) {
     val config = LocalLiquidGlass.current
-    Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
         GlassCard(
             shape = RoundedCornerShape(999.dp),
-            backgroundColor = if (config.isDark) Color.White.copy(alpha = .045f) else Color.White.copy(alpha = .46f),
-            elevation = 0.dp
+            backgroundColor = if (unread) {
+                config.accentColor.copy(alpha = if (config.isDark) .18f else .14f)
+            } else if (config.isDark) {
+                Color.White.copy(alpha = .05f)
+            } else {
+                Color.White.copy(alpha = .42f)
+            },
+            elevation = 0.dp,
+            lensing = false
         ) {
             Text(
-                if (unread) "Unread messages" else dayLabel(time),
-                Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                if (unread) "New messages" else dayLabel(time),
+                Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                 style = MaterialTheme.typography.labelSmall,
                 color = if (unread) config.accentColor else MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -241,6 +286,7 @@ fun ConversationScreen(
     val me by viewModel.currentUser.collectAsState()
     val upload by viewModel.upload.collectAsState()
     val blocked by viewModel.blockedUserIds.collectAsState()
+    val privacySettings by viewModel.privacy.collectAsState()
 
     val repo = viewModel.repository
     val conversation = conversations.find { it.id == conversationId }
@@ -259,6 +305,20 @@ fun ConversationScreen(
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
+    // 6.7"-friendly bubble ceiling: never wider than ~78% of the viewport.
+    val maxBubbleWidth = (LocalConfiguration.current.screenWidthDp * 0.78f).dp
+    val compactHeader by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex > 1 || listState.firstVisibleItemScrollOffset > 72
+        }
+    }
+    val avatarSize by animateDpAsState(
+        targetValue = if (compactHeader) 27.dp else 35.dp,
+        animationSpec = spring(dampingRatio = .82f, stiffness = 420f),
+        label = "header_avatar"
+    )
+
+    var autoSaved by remember(conversationId) { mutableStateOf<Set<String>>(emptySet()) }
     var text by rememberSaveable(conversationId) { mutableStateOf(repo.draft(conversationId)) }
     var reply by remember { mutableStateOf<Message?>(null) }
     var actions by remember { mutableStateOf<Message?>(null) }
@@ -494,6 +554,20 @@ fun ConversationScreen(
         }
     }
 
+    // Optional gallery auto-save for received photos and videos — off unless the user opts in.
+    LaunchedEffect(allMessages.size, allMessages.lastOrNull()?.id, privacySettings.autoSaveReceivedMedia) {
+        if (!privacySettings.autoSaveReceivedMedia) return@LaunchedEffect
+        val pending = allMessages.filter {
+            it.senderId != me.uid &&
+                (it.type == MessageType.IMAGE || it.type == MessageType.VIDEO) &&
+                it.mediaUrl.isNotBlank() &&
+                it.id !in autoSaved
+        }.takeLast(2)
+        if (pending.isEmpty()) return@LaunchedEffect
+        autoSaved = autoSaved + pending.map { it.id }
+        pending.forEach { message -> runCatching { saveMediaToGallery(context, message) } }
+    }
+
     val visibleMessages = allMessages.filter {
         (!starsOnly || it.isStarred) && (query.isBlank() || it.text.contains(query, true))
     }
@@ -501,7 +575,8 @@ fun ConversationScreen(
 
     LiquidBackground(
         modifier = modifier,
-        crystal = conversation?.wallpaperIndex != 1
+        crystal = conversation?.wallpaperIndex != 1,
+        scrim = true
     ) {
         Box(Modifier.fillMaxSize().frostEdges(dark = config.isDark)) {
         Scaffold(
@@ -512,40 +587,42 @@ fun ConversationScreen(
                         .statusBarsPadding()
                         .padding(horizontal = 10.dp, vertical = 6.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(7.dp)
+                    // One balanced floating nav: back, identity and menu share a single glass surface.
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(if (compactHeader) 22.dp else 28.dp),
+                        backgroundColor = if (config.isDark) Color(0xFF0C1620).copy(alpha = .70f) else Color.White.copy(alpha = .58f),
+                        elevation = if (compactHeader) 5.dp else 9.dp
                     ) {
-                        GlassIconButton(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            "Back",
-                            onBackClick,
-                            size = 44.dp
-                        )
-                        GlassCard(
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(28.dp),
-                            backgroundColor = if (config.isDark) Color(0xFF0D1723).copy(alpha = .62f) else Color.White.copy(alpha = .55f),
-                            elevation = 6.dp,
-                            onClick = { onNavigateToProfile(other.uid) }
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 5.dp, vertical = if (compactHeader) 4.dp else 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
+                            NavGlyph(Icons.AutoMirrored.Filled.ArrowBack, "Back", onBackClick)
                             Row(
-                                Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                                Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .clickable { onNavigateToProfile(other.uid) }
+                                    .padding(horizontal = 6.dp, vertical = 3.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 GlassAvatar(
                                     other.photoUrl,
                                     other.displayName.ifBlank { "Contact" },
-                                    34.dp,
+                                    avatarSize,
                                     conversation?.isOnline == true && other.onlineVisible
                                 )
                                 Spacer(Modifier.width(9.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(
                                         other.displayName.ifBlank { "Contact" },
-                                        style = MaterialTheme.typography.titleMedium,
+                                        style = if (compactHeader) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.SemiBold,
-                                        maxLines = 1
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                     val label = presenceLabel(other)
                                     if (label.isNotBlank()) {
@@ -553,18 +630,14 @@ fun ConversationScreen(
                                             label,
                                             style = MaterialTheme.typography.labelSmall,
                                             color = if (other.isOnline) EmeraldOnline else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
                             }
+                            NavGlyph(Icons.Default.MoreHoriz, "Chat menu") { conversationSettings = true }
                         }
-                        GlassIconButton(
-                            Icons.Default.MoreHoriz,
-                            "Chat menu",
-                            { conversationSettings = true },
-                            size = 44.dp
-                        )
                     }
 
                     AnimatedVisibility(search) {
@@ -648,20 +721,29 @@ fun ConversationScreen(
                     upload?.let { progress ->
                         GlassCard(
                             Modifier.fillMaxWidth().padding(bottom = 6.dp),
-                            shape = RoundedCornerShape(20.dp),
-                            backgroundColor = config.accentColor.copy(alpha = .08f),
+                            shape = RoundedCornerShape(18.dp),
+                            backgroundColor = config.accentColor.copy(alpha = .10f),
                             elevation = 0.dp
                         ) {
-                            Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column {
+                                Row(
+                                    Modifier.padding(start = 12.dp, end = 6.dp, top = 6.dp, bottom = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
                                     Text(
                                         "Uploading ${(progress * 100).toInt()}%",
                                         style = MaterialTheme.typography.labelMedium,
                                         modifier = Modifier.weight(1f)
                                     )
-                                    TextButton(onClick = { repo.cancelUpload() }) { Text("Cancel") }
+                                    TextButton(
+                                        onClick = { repo.cancelUpload() },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                    ) { Text("Cancel", style = MaterialTheme.typography.labelMedium) }
                                 }
-                                LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                                LinearProgressIndicator(
+                                    progress = { progress },
+                                    modifier = Modifier.fillMaxWidth().height(2.dp)
+                                )
                             }
                         }
                     }
@@ -669,64 +751,74 @@ fun ConversationScreen(
                     if (recording) {
                         GlassCard(
                             Modifier.fillMaxWidth().padding(bottom = 6.dp),
-                            shape = RoundedCornerShape(22.dp),
-                            backgroundColor = MaterialTheme.colorScheme.error.copy(alpha = .08f),
-                            elevation = 0.dp
+                            shape = RoundedCornerShape(24.dp),
+                            backgroundColor = MaterialTheme.colorScheme.error.copy(alpha = .11f),
+                            elevation = 4.dp
                         ) {
-                            Row(
-                                Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(Modifier.weight(1f)) {
+                            Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        "● ${elapsed / 60}:${(elapsed % 60).toString().padStart(2, '0')}  ${if (paused) "Paused" else if (locked) "Locked" else "Swipe up to lock • left to cancel"}",
+                                        "● ${elapsed / 60}:${(elapsed % 60).toString().padStart(2, '0')}",
                                         color = MaterialTheme.colorScheme.error,
-                                        style = MaterialTheme.typography.labelMedium
+                                        style = MaterialTheme.typography.titleSmall
                                     )
-                                    LiveRecordingWaveform(voiceWaveform, Modifier.fillMaxWidth())
-                                }
-                                if (locked) {
+                                    Spacer(Modifier.width(9.dp))
+                                    Text(
+                                        if (paused) "Paused" else if (locked) "Locked • ready to send" else "Swipe up to lock • left to cancel",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (locked) {
+                                        GlassIconButton(
+                                            if (paused) Icons.Default.PlayArrow else Icons.Default.Pause,
+                                            if (paused) "Resume recording" else "Pause recording",
+                                            {
+                                                val active = recorder
+                                                runCatching { if (paused) active?.resume() else active?.pause() }
+                                                    .onSuccess {
+                                                        paused = !paused
+                                                        haptics.toggle()
+                                                    }
+                                            },
+                                            size = 36.dp
+                                        )
+                                    }
+                                    GlassIconButton(Icons.Default.Delete, "Cancel recording", { stopRecording(false) }, size = 36.dp)
                                     GlassIconButton(
-                                        if (paused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                                        if (paused) "Resume" else "Pause",
-                                        {
-                                            val active = recorder
-                                            runCatching { if (paused) active?.resume() else active?.pause() }
-                                                .onSuccess { paused = !paused }
-                                        },
-                                        size = 38.dp
+                                        Icons.Default.Send,
+                                        "Send voice message",
+                                        { stopRecording(true) },
+                                        tint = Color.White,
+                                        backgroundColor = config.accentColor.copy(alpha = .88f),
+                                        size = 36.dp
                                     )
                                 }
-                                GlassIconButton(Icons.Default.Delete, "Cancel recording", { stopRecording(false) }, size = 38.dp)
-                                GlassIconButton(
-                                    Icons.Default.Send,
-                                    "Send voice message",
-                                    { stopRecording(true) },
-                                    tint = Color.White,
-                                    backgroundColor = config.accentColor.copy(alpha = .86f),
-                                    size = 38.dp
-                                )
+                                Spacer(Modifier.height(3.dp))
+                                LiveRecordingWaveform(voiceWaveform, Modifier.fillMaxWidth())
                             }
                         }
                     }
 
                     GlassCard(
                         Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(30.dp),
-                        backgroundColor = if (config.isDark) Color(0xFF0C1620).copy(alpha = .76f) else Color.White.copy(alpha = .62f),
-                        elevation = 12.dp
+                        shape = RoundedCornerShape(26.dp),
+                        backgroundColor = if (config.isDark) Color(0xFF0C1620).copy(alpha = .78f) else Color.White.copy(alpha = .64f),
+                        elevation = 10.dp
                     ) {
                         Row(
-                            Modifier.padding(4.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            Modifier.padding(horizontal = 5.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.Bottom
                         ) {
                             GlassIconButton(
                                 Icons.Default.Add,
                                 "Attach",
                                 { attachmentSheet = true },
-                                size = 40.dp
+                                size = 38.dp
                             )
-                            Spacer(Modifier.width(4.dp))
+                            Spacer(Modifier.width(3.dp))
                             GlassTextField(
                                 text,
                                 { if (it.length <= 8000) text = it },
@@ -734,104 +826,57 @@ fun ConversationScreen(
                                 modifier = Modifier.weight(1f),
                                 singleLine = false,
                                 maxLines = 5,
-                                shape = RoundedCornerShape(24.dp)
+                                shape = RoundedCornerShape(22.dp)
                             )
                             Spacer(Modifier.width(3.dp))
 
-                            if (text.isBlank()) {
-                                GlassIconButton(
-                                    Icons.Default.PhotoCamera,
-                                    "Camera",
-                                    onNavigateToCamera,
-                                    size = 40.dp
-                                )
-
-                                var dx by remember { mutableFloatStateOf(0f) }
-                                var dy by remember { mutableFloatStateOf(0f) }
-                                Box(
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(CircleShape)
-                                        .background(if (config.isDark) Color.White.copy(alpha = .07f) else Color.White.copy(alpha = .48f))
-                                        .pointerInput(Unit) {
-                                            detectDragGesturesAfterLongPress(
-                                                onDragStart = {
-                                                    dx = 0f
-                                                    dy = 0f
-                                                    locked = false
-                                                    requestCurrent()
-                                                },
-                                                onDragEnd = {
-                                                    if (recordingCurrent && !lockedCurrent) stopCurrent(true)
-                                                },
-                                                onDragCancel = {
-                                                    if (recordingCurrent && !lockedCurrent) stopCurrent(false)
-                                                },
-                                                onDrag = { change, dragAmount ->
-                                                    change.consume()
-                                                    dx += dragAmount.x
-                                                    dy += dragAmount.y
-                                                    if (dx < -100f && recordingCurrent) stopCurrent(false)
-                                                    if (dy < -100f && recordingCurrent) {
-                                                        locked = true
-                                                        keyboard?.hide()
-                                                        focusManager.clearFocus()
-                                                    }
-                                                }
-                                            )
-                                        }
-                                        .clickable {
-                                            if (!recording) {
+                            // Mic glides into a send orb as soon as there is text to send.
+                            AnimatedContent(
+                                targetState = text.isBlank(),
+                                transitionSpec = {
+                                    (fadeIn(tween(150)) + scaleIn(initialScale = .82f)) togetherWith
+                                        (fadeOut(tween(110)) + scaleOut(targetScale = .82f))
+                                },
+                                label = "composer_morph"
+                            ) { empty ->
+                                if (empty) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        GlassIconButton(
+                                            Icons.Default.PhotoCamera,
+                                            "Camera",
+                                            onNavigateToCamera,
+                                            size = 38.dp
+                                        )
+                                        Spacer(Modifier.width(2.dp))
+                                        MicButton(
+                                            recording = recordingCurrent,
+                                            locked = lockedCurrent,
+                                            onStart = { requestCurrent() },
+                                            onStop = { send -> stopCurrent(send) },
+                                            onLock = {
                                                 locked = true
                                                 keyboard?.hide()
                                                 focusManager.clearFocus()
-                                                requestRecording()
                                             }
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(Icons.Default.Mic, "Hold to record", modifier = Modifier.size(21.dp))
-                                }
-                            } else {
-                                val sendScale by animateFloatAsState(
-                                    targetValue = if (text.isNotBlank() && !config.isReducedMotion) 1f else 0.86f,
-                                    animationSpec = spring(dampingRatio = .45f, stiffness = 480f),
-                                    label = "send_morph"
-                                )
-                                Box(
-                                    Modifier
-                                        .graphicsLayer { scaleX = sendScale; scaleY = sendScale }
-                                        .size(40.dp)
-                                        .shadow(4.dp, CircleShape, ambientColor = Color.Black, spotColor = config.accentColor.copy(alpha = .55f))
-                                        .clip(CircleShape)
-                                        .background(
-                                            Brush.linearGradient(
-                                                listOf(config.accentColor, config.accentColor.copy(alpha = .72f))
-                                            )
                                         )
-                                        .lensHighlight(dark = true, strength = 1.5f)
-                                        .lensEdge(CircleShape, dark = true, strength = 1f)
-                                        .clickable {
-                                            if (text.isNotBlank() && other.uid !in blocked) {
-                                                haptics.confirm()
-                                                viewModel.sendMessage(
-                                                    conversationId,
-                                                    text.trim(),
-                                                    replyToId = reply?.id,
-                                                    replyToText = reply?.text,
-                                                    replyToSender = reply?.senderName
-                                                )
-                                                text = ""
-                                                reply = null
-                                            }
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        Icons.Default.Send,
-                                        "Send",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(20.dp)
+                                    }
+                                } else {
+                                    SendOrb(
+                                        enabled = other.uid !in blocked,
+                                        accent = config.accentColor,
+                                        reduced = config.isReducedMotion,
+                                        onSend = {
+                                            haptics.confirm()
+                                            viewModel.sendMessage(
+                                                conversationId,
+                                                text.trim(),
+                                                replyToId = reply?.id,
+                                                replyToText = reply?.text,
+                                                replyToSender = reply?.senderName
+                                            )
+                                            text = ""
+                                            reply = null
+                                        }
                                     )
                                 }
                             }
@@ -869,22 +914,30 @@ fun ConversationScreen(
                         }
                         val previousMessage = rows.getOrNull(index - 1)
                         val nextMessage = rows.getOrNull(index + 1)
-                        val groupWithPrevious = previousMessage?.senderId == message.senderId &&
-                            previousMessage?.let { sameDay(it.createdAt, message.createdAt) } == true
-                        val groupWithNext = nextMessage?.senderId == message.senderId &&
-                            nextMessage?.let { sameDay(it.createdAt, message.createdAt) } == true
+                        // Group only messages from the same sender inside a short window so the
+                        // stack stays tight instead of every bubble claiming full height.
+                        val grouped = { other: Message? ->
+                            other != null &&
+                                other.senderId == message.senderId &&
+                                sameDay(other.createdAt, message.createdAt) &&
+                                kotlin.math.abs(other.createdAt - message.createdAt) < 4 * 60 * 1000L
+                        }
                         MessageBubble(
                             message = message,
                             isMe = message.senderId == me.uid,
-                            groupWithPrevious = groupWithPrevious,
-                            groupWithNext = groupWithNext,
+                            groupWithPrevious = grouped(previousMessage),
+                            groupWithNext = grouped(nextMessage),
+                            maxWidth = maxBubbleWidth,
+                            animateIn = index == rows.lastIndex && !initial && !config.isReducedMotion,
+                            hideMediaPreview = privacySettings.hideMediaPreview && message.senderId != me.uid,
+                            replyPreview = rows.find { it.id == message.replyToId },
                             onLongClick = {
                                 actions = message
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                haptics.confirm()
                             },
                             onReply = {
                                 reply = message
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                haptics.tap()
                             },
                             onReplyPreviewClick = { replyId ->
                                 val target = rows.indexOfFirst { it.id == replyId }
@@ -892,9 +945,10 @@ fun ConversationScreen(
                             },
                             onMedia = { viewer = message },
                             onReactionClick = { emoji ->
+                                haptics.toggle()
                                 viewModel.addReaction(conversationId, message.id, emoji)
                             },
-                            onRetry = { repo.retryMessage(conversationId, message.id) }
+                            onRetry = { haptics.tap(); repo.retryMessage(conversationId, message.id) }
                         )
                     }
 
@@ -936,129 +990,157 @@ fun ConversationScreen(
         }
 
         if (attachmentSheet) {
-            GlassDialog("Share content", { attachmentSheet = false }) {
-                TextButton(onClick = {
-                    attachmentSheet = false
-                    onNavigateToCamera()
-                }) { Text("Camera") }
-                TextButton(onClick = {
-                    attachmentSheet = false
-                    imagePicker.launch("image/*")
-                }) { Text("Photo gallery") }
-                TextButton(onClick = {
-                    attachmentSheet = false
-                    videoPicker.launch("video/*")
-                }) { Text("Video gallery") }
-                TextButton(onClick = {
-                    attachmentSheet = false
-                    filePicker.launch("*/*")
-                }) { Text("Document") }
+            GlassSheet("Share something", { attachmentSheet = false }) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    AttachTile(Icons.Default.PhotoLibrary, "Photo", Modifier.weight(1f)) {
+                        attachmentSheet = false
+                        imagePicker.launch("image/*")
+                    }
+                    AttachTile(Icons.Default.PhotoCamera, "Camera", Modifier.weight(1f)) {
+                        attachmentSheet = false
+                        onNavigateToCamera()
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    AttachTile(Icons.Default.Videocam, "Video", Modifier.weight(1f)) {
+                        attachmentSheet = false
+                        videoPicker.launch("video/*")
+                    }
+                    AttachTile(Icons.Default.InsertDriveFile, "File", Modifier.weight(1f)) {
+                        attachmentSheet = false
+                        filePicker.launch("*/*")
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Uploads go to private Appwrite storage — never to Firebase Storage — and stay private until you save or share them.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
             }
         }
 
         if (conversationSettings) {
-            GlassDialog("Conversation", { conversationSettings = false }) {
-                TextButton(onClick = {
+            GlassSheet("Conversation", { conversationSettings = false }) {
+                GlassActionRow(Icons.Default.Search, "Search messages") {
                     search = !search
                     query = ""
                     conversationSettings = false
-                }) { Text("Search messages") }
-                TextButton(onClick = {
+                }
+                GlassActionRow(Icons.Default.Star, if (starsOnly) "Show all messages" else "Starred messages") {
                     starsOnly = !starsOnly
                     conversationSettings = false
-                }) { Text(if (starsOnly) "Show all messages" else "Starred messages") }
-                TextButton(onClick = {
+                }
+                GlassActionRow(Icons.Default.Star, if (conversation?.isPinned == true) "Remove favorite" else "Add favorite") {
                     repo.setFavorite(conversationId, conversation?.isPinned != true)
                     conversationSettings = false
-                }) {
-                    Text(if (conversation?.isPinned == true) "Remove favorite" else "Add favorite")
                 }
-                TextButton(onClick = {
+                GlassActionRow(Icons.Default.MoreHoriz, if (conversation?.isMuted == true) "Unmute" else "Mute") {
                     viewModel.setConversationMuted(conversationId, conversation?.isMuted != true)
                     conversationSettings = false
-                }) {
-                    Text(if (conversation?.isMuted == true) "Unmute" else "Mute")
                 }
-                Text("Disappearing messages")
-                Row {
-                    listOf(
-                        "Off" to 0L,
-                        "24h" to 86400L,
-                        "7 days" to 604800L
-                    ).forEach { (label, seconds) ->
-                        TextButton(onClick = {
-                            viewModel.setDisappearingMessages(conversationId, seconds)
-                            conversationSettings = false
-                        }) { Text(label) }
+                GlassActionRow(Icons.Default.Schedule, "Disappearing messages: ${disappearingLabel(conversation?.disappearingSeconds ?: 0L)}") {
+                    val next = when (conversation?.disappearingSeconds ?: 0L) {
+                        0L -> 86400L
+                        86400L -> 604800L
+                        else -> 0L
                     }
+                    viewModel.setDisappearingMessages(conversationId, next)
+                    haptics.toggle()
                 }
-                TextButton(onClick = {
+                GlassActionRow(Icons.Default.Palette, "Toggle crystal / plain wallpaper") {
                     viewModel.setConversationWallpaper(
                         conversationId,
                         if (conversation?.wallpaperIndex == 1) 0 else 1
                     )
                     conversationSettings = false
-                }) { Text("Toggle crystal / plain wallpaper") }
-                TextButton(onClick = {
+                }
+                GlassActionRow(Icons.Default.Delete, "Delete chat", destructive = true) {
                     conversationSettings = false
                     deleteChatConfirm = true
-                }) { Text("Delete chat", color = MaterialTheme.colorScheme.error) }
+                }
             }
         }
 
         actions?.let { message ->
-            GlassDialog("Message", { actions = null }) {
-                Row {
+            GlassSheet("Message", { actions = null }) {
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
                     listOf("❤️", "👍", "😂", "😮", "😢", "🙏").forEach { emoji ->
-                        Text(
-                            emoji,
+                        Box(
                             Modifier
+                                .size(42.dp)
+                                .clip(CircleShape)
+                                .background(if (config.isDark) Color.White.copy(alpha = .08f) else Color.White.copy(alpha = .60f))
                                 .clickable {
+                                    haptics.toggle()
                                     viewModel.addReaction(conversationId, message.id, emoji)
                                     actions = null
-                                }
-                                .padding(6.dp),
-                            fontSize = 23.sp
-                        )
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(emoji, fontSize = 20.sp)
+                        }
                     }
                 }
-                TextButton(onClick = {
+                Spacer(Modifier.height(6.dp))
+                GlassActionRow(Icons.AutoMirrored.Filled.Reply, "Reply") {
                     reply = message
                     actions = null
-                }) { Text("Reply") }
-                TextButton(onClick = {
-                    clipboard.setText(AnnotatedString(message.text))
-                    actions = null
-                }) { Text("Copy") }
-                TextButton(onClick = {
+                }
+                if (message.type == MessageType.TEXT && !message.isDeleted) {
+                    GlassActionRow(Icons.Default.ContentCopy, "Copy text") {
+                        clipboard.setText(AnnotatedString(message.text))
+                        actions = null
+                    }
+                }
+                if ((message.type == MessageType.IMAGE || message.type == MessageType.VIDEO) && !message.isDeleted) {
+                    GlassActionRow(Icons.Default.Download, "Save to gallery") {
+                        haptics.confirm()
+                        val target = message
+                        actions = null
+                        scope.launch {
+                            saveMediaToGallery(context, target)
+                                .onSuccess {
+                                    android.widget.Toast.makeText(context, "Saved to gallery", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                                .onFailure {
+                                    android.widget.Toast.makeText(context, it.message ?: "Save failed", android.widget.Toast.LENGTH_LONG).show()
+                                }
+                        }
+                    }
+                }
+                GlassActionRow(Icons.Default.Star, if (message.isStarred) "Unstar" else "Star") {
                     repo.starMessage(conversationId, message.id)
                     actions = null
-                }) { Text(if (message.isStarred) "Unstar" else "Star") }
-                TextButton(onClick = {
+                }
+                GlassActionRow(Icons.Default.PushPin, if (message.isPinned) "Unpin" else "Pin") {
                     viewModel.pinMessage(conversationId, message.id)
                     actions = null
-                }) { Text(if (message.isPinned) "Unpin" else "Pin") }
-                TextButton(onClick = {
+                }
+                GlassActionRow(Icons.Default.Share, "Forward") {
                     forward = message
                     actions = null
-                }) { Text("Forward") }
+                }
                 if (message.senderId == me.uid && message.type == MessageType.TEXT && !message.isDeleted) {
-                    TextButton(onClick = {
+                    GlassActionRow(Icons.Default.Edit, "Edit") {
                         editing = message
                         editText = message.text
                         actions = null
-                    }) { Text("Edit") }
+                    }
                 }
-                TextButton(onClick = {
+                GlassActionRow(Icons.Default.Delete, "Delete for me") {
                     viewModel.deleteMessageForMe(conversationId, message.id)
                     actions = null
-                }) { Text("Delete for me") }
+                }
                 if (message.senderId == me.uid) {
-                    TextButton(onClick = {
+                    GlassActionRow(Icons.Default.Delete, "Delete for everyone", destructive = true) {
                         deleteForEveryone = message
                         actions = null
-                    }) {
-                        Text("Delete for everyone", color = MaterialTheme.colorScheme.error)
                     }
                 }
             }
@@ -1170,20 +1252,20 @@ private fun MorphingTypingBubble(
     onLongClick: () -> Unit
 ) {
     val config = LocalLiquidGlass.current
-    val shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp, bottomStart = 7.dp, bottomEnd = 22.dp)
+    val shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 5.dp, bottomEnd = 20.dp)
     // Liquid wobble: the bubble breathes with a soft spring pulse while typing is active.
     val wobble by rememberInfiniteTransition(label = "typing_wobble").animateFloat(
         initialValue = 1f,
-        targetValue = 1.025f,
-        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
+        targetValue = 1.018f,
+        animationSpec = infiniteRepeatable(tween(1150), RepeatMode.Reverse),
         label = "wobble_scale"
     )
     Box(
         Modifier
-            .widthIn(min = 54.dp, max = 320.dp)
+            .widthIn(min = 58.dp, max = 320.dp)
             .graphicsLayer { scaleX = if (message == null && !reduced) wobble else 1f; scaleY = if (message == null && !reduced) wobble else 1f }
             .clip(shape)
-            .background(if (config.isDark) Color.White.copy(alpha = .065f) else Color.White.copy(alpha = .58f))
+            .background(if (config.isDark) BubbleIncomingTintDark else BubbleIncomingTintLight)
             .border(1.dp, Color.White.copy(alpha = if (config.isDark) .10f else .58f), shape)
             .lensEdge(shape, dark = config.isDark, strength = .7f)
             .animateContentSize(if (reduced) tween(0) else spring(dampingRatio = .72f, stiffness = 360f))
@@ -1193,22 +1275,34 @@ private fun MorphingTypingBubble(
         if (message == null) {
             TypingDots(reduced)
         } else {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(
-                    if (message.type == MessageType.TEXT) message.text else when (message.type) {
-                        MessageType.IMAGE -> "Photo"
-                        MessageType.VIDEO -> "Video"
+                    when (message.type) {
+                        MessageType.TEXT -> message.text
                         MessageType.VOICE -> "Voice message"
-                        else -> "Document"
+                        else -> message.text.ifBlank { "Attachment" }
                     },
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.5.sp, lineHeight = 21.sp),
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(message.createdAt)),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.align(Alignment.End)
-                )
+                Row(
+                    Modifier.align(Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(message.createdAt)),
+                        style = BubbleMetaTextStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Icon(
+                        Icons.Default.Done,
+                        "Sent",
+                        Modifier.size(13.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
@@ -1249,6 +1343,10 @@ fun MessageBubble(
     isMe: Boolean,
     groupWithPrevious: Boolean = false,
     groupWithNext: Boolean = false,
+    maxWidth: Dp = 330.dp,
+    animateIn: Boolean = false,
+    hideMediaPreview: Boolean = false,
+    replyPreview: Message? = null,
     onLongClick: () -> Unit,
     onReply: () -> Unit,
     onReplyPreviewClick: (String) -> Unit,
@@ -1265,39 +1363,55 @@ fun MessageBubble(
         animationSpec = if (reduced) tween(0) else spring(dampingRatio = .72f, stiffness = 430f),
         label = "swipe_reply"
     )
+    // Newest message springs in from the composer direction; earlier ones are already settled.
+    var entered by remember(message.id) { mutableStateOf(!animateIn) }
+    val entrance by animateFloatAsState(
+        targetValue = if (entered) 1f else 0f,
+        animationSpec = spring(dampingRatio = .68f, stiffness = 340f),
+        label = "bubble_entrance"
+    )
+    LaunchedEffect(message.id) { entered = true }
 
     val bubbleShape = if (isMe) {
         RoundedCornerShape(
-            topStart = 22.dp,
-            topEnd = if (groupWithPrevious) 8.dp else 22.dp,
-            bottomStart = 22.dp,
-            bottomEnd = if (groupWithNext) 8.dp else 6.dp
+            topStart = 20.dp,
+            topEnd = if (groupWithPrevious) 7.dp else 20.dp,
+            bottomStart = 20.dp,
+            bottomEnd = if (groupWithNext) 7.dp else 5.dp
         )
     } else {
         RoundedCornerShape(
-            topStart = if (groupWithPrevious) 8.dp else 22.dp,
-            topEnd = 22.dp,
-            bottomStart = if (groupWithNext) 8.dp else 6.dp,
-            bottomEnd = 22.dp
+            topStart = if (groupWithPrevious) 7.dp else 20.dp,
+            topEnd = 20.dp,
+            bottomStart = if (groupWithNext) 7.dp else 5.dp,
+            bottomEnd = 20.dp
         )
     }
 
+    // Sent bubbles carry the accent tint; received bubbles stay a quiet neutral glass.
     val bubbleColor = if (isMe) {
-        // Gradient outgoing bubble (iOS 26 tinted glass feel) — accent core fading darker toward the tail.
-        config.accentColor.copy(alpha = if (config.isDark) .58f else .80f)
+        config.accentColor.copy(alpha = if (config.isDark) .62f else .86f)
     } else {
-        if (config.isDark) Color.White.copy(alpha = if (config.isClear) .08f else .065f) else Color.White.copy(alpha = .58f)
+        if (config.isDark) BubbleIncomingTintDark else BubbleIncomingTintLight
     }
     val contentColor = if (isMe) Color.White else MaterialTheme.colorScheme.onSurface
-    val metadataColor = if (isMe) Color.White.copy(alpha = .76f) else MaterialTheme.colorScheme.onSurfaceVariant
+    val metadataColor = if (isMe) MetaOnAccent else if (config.isDark) MaterialTheme.colorScheme.onSurfaceVariant else MetaOnBubbleLight
     val genericMediaLabels = setOf("Photo", "Video", "Voice message", "Document")
     val caption = message.text.trim().takeUnless { it in genericMediaLabels }.orEmpty()
     val isMedia = message.type == MessageType.IMAGE || message.type == MessageType.VIDEO
+    var mediaRatio by remember(message.id) { mutableFloatStateOf(0f) }
+    var revealed by remember(message.id) { mutableStateOf(false) }
 
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start) {
         Column(
             Modifier
-                .widthIn(max = 330.dp)
+                .widthIn(max = maxWidth)
+                .graphicsLayer {
+                    alpha = entrance
+                    scaleX = 0.94f + entrance * 0.06f
+                    scaleY = 0.94f + entrance * 0.06f
+                    translationY = (1f - entrance) * 26f
+                }
                 .offset { IntOffset(offset.roundToInt(), 0) }
                 .pointerInput(message.id, isMe) {
                     detectHorizontalDragGestures(
@@ -1344,73 +1458,104 @@ fun MessageBubble(
                 Column(
                     Modifier
                         .animateContentSize(if (reduced) tween(0) else spring(dampingRatio = .78f, stiffness = 420f))
-                        .padding(if (isMedia && !message.isDeleted) 6.dp else 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                        .padding(if (isMedia && !message.isDeleted) 5.dp else 9.dp),
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
                     if (message.replyToText != null) {
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(if (isMe) Color.White.copy(alpha = .10f) else config.accentColor.copy(alpha = .07f))
-                                .clickable { message.replyToId?.let(onReplyPreviewClick) }
-                                .padding(horizontal = 9.dp, vertical = 7.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                Modifier
-                                    .width(3.dp)
-                                    .height(30.dp)
-                                    .clip(RoundedCornerShape(999.dp))
-                                    .background(if (isMe) Color.White.copy(alpha = .9f) else config.accentColor)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    message.replyToSender.orEmpty().ifBlank { "Reply" },
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (isMe) Color.White else config.accentColor
-                                )
-                                Text(
-                                    message.replyToText.orEmpty(),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    maxLines = 2,
-                                    color = contentColor.copy(alpha = .82f)
-                                )
-                            }
-                        }
+                        ReplyQuote(
+                            replyToSender = message.replyToSender,
+                            replyToText = message.replyToText.orEmpty(),
+                            isMe = isMe,
+                            contentColor = contentColor,
+                            preview = replyPreview,
+                            onClick = { message.replyToId?.let(onReplyPreviewClick) }
+                        )
                     }
 
                     if (!message.isDeleted) {
                         when (message.type) {
-                            MessageType.IMAGE -> PrivateImage(
-                                message.mediaUrl,
-                                "Photo",
-                                Modifier
-                                    .widthIn(min = 230.dp, max = 318.dp)
-                                    .aspectRatio(4f / 3f)
-                                    .clip(RoundedCornerShape(18.dp))
-                            )
-                            MessageType.VIDEO -> PrivateVideoThumbnail(
-                                message.mediaUrl,
-                                Modifier
-                                    .widthIn(min = 230.dp, max = 318.dp)
-                                    .aspectRatio(16f / 10f)
-                                    .clip(RoundedCornerShape(18.dp))
-                            )
+                            MessageType.IMAGE, MessageType.VIDEO -> {
+                                // The container follows the real media ratio, so no black letterboxing.
+                                val ratio = if (mediaRatio > 0f) {
+                                    mediaRatio.coerceIn(0.62f, 1.85f)
+                                } else if (message.type == MessageType.VIDEO) {
+                                    16f / 10f
+                                } else {
+                                    4f / 3f
+                                }
+                                Box(
+                                    Modifier
+                                        .widthIn(min = 180.dp, max = (maxWidth - 18.dp).coerceAtLeast(160.dp))
+                                        .aspectRatio(ratio)
+                                        .clip(RoundedCornerShape(15.dp))
+                                ) {
+                                    if (message.type == MessageType.IMAGE) {
+                                        PrivateImage(
+                                            model = message.mediaUrl,
+                                            contentDescription = "Photo",
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop,
+                                            cornerRadius = 15.dp,
+                                            onIntrinsicSize = { mediaRatio = it }
+                                        )
+                                    } else {
+                                        PrivateVideoThumbnail(message.mediaUrl, Modifier.fillMaxSize())
+                                    }
+
+                                    if (hideMediaPreview && !revealed) {
+                                        Box(
+                                            Modifier
+                                                .fillMaxSize()
+                                                .background(Color.Black.copy(alpha = .46f))
+                                                .clickable { revealed = true },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Icon(Icons.Default.Lock, null, Modifier.size(20.dp), tint = Color.White)
+                                                Spacer(Modifier.height(4.dp))
+                                                Text(
+                                                    "Tap to view",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = Color.White
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    if (isMe && message.status == MessageDeliveryStatus.SENDING) {
+                                        Box(
+                                            Modifier.fillMaxSize().background(Color.Black.copy(alpha = .26f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(22.dp),
+                                                strokeWidth = 2.dp,
+                                                color = Color.White
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                             MessageType.VOICE -> VoiceWaveformPlayer(
                                 message.voiceDurationSeconds,
                                 message.mediaUrl,
                                 waveform = message.waveform,
                                 isOutgoing = isMe
                             )
-                            MessageType.FILE -> Text(
-                                "▤  Document • Tap to open",
-                                Modifier.padding(horizontal = 5.dp, vertical = 8.dp),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = contentColor
-                            )
+                            MessageType.FILE -> Row(
+                                Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.InsertDriveFile, null, Modifier.size(17.dp), tint = contentColor)
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    caption.ifBlank { "Document" },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = contentColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                             else -> Unit
                         }
                     }
@@ -1420,51 +1565,88 @@ fun MessageBubble(
                         message.isDeleted ||
                         (caption.isNotBlank() && message.type != MessageType.VOICE)
                     ) {
+                        val body = if (message.type == MessageType.TEXT || message.isDeleted) message.text else caption
                         Text(
-                            if (message.type == MessageType.TEXT || message.isDeleted) message.text else caption,
-                            modifier = if (isMedia && !message.isDeleted) Modifier.padding(horizontal = 5.dp, vertical = 2.dp) else Modifier,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = contentColor
+                            if (message.isDeleted) "This message was deleted" else body,
+                            modifier = if (isMedia && !message.isDeleted) Modifier.padding(horizontal = 6.dp, vertical = 1.dp) else Modifier,
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontSize = 15.5.sp,
+                                lineHeight = 21.sp,
+                                fontStyle = if (message.isDeleted) FontStyle.Italic else FontStyle.Normal
+                            ),
+                            color = if (message.isDeleted) contentColor.copy(alpha = .62f) else contentColor
                         )
                     }
 
+                    // Compact metadata: timestamp and animated delivery tick share one quiet row.
                     Row(
                         Modifier
                             .align(Alignment.End)
-                            .padding(horizontal = if (isMedia) 5.dp else 0.dp),
+                            .padding(
+                                start = if (isMedia) 6.dp else 0.dp,
+                                end = if (isMedia) 6.dp else 0.dp,
+                                bottom = if (isMedia) 1.dp else 0.dp
+                            ),
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (message.isStarred) Text("★", fontSize = 10.sp, color = metadataColor)
-                        if (message.isEdited) Text("edited", style = MaterialTheme.typography.labelSmall, color = metadataColor)
+                        if (message.isStarred) {
+                            Icon(Icons.Default.Star, "Starred", Modifier.size(10.dp), tint = metadataColor)
+                        }
+                        if (message.isPinned) {
+                            Icon(Icons.Default.PushPin, "Pinned", Modifier.size(10.dp), tint = metadataColor)
+                        }
+                        if (message.isEdited) {
+                            Text("edited", style = BubbleMetaTextStyle, color = metadataColor)
+                        }
                         Text(
                             SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(message.createdAt)),
-                            style = MaterialTheme.typography.labelSmall,
+                            style = BubbleMetaTextStyle,
                             color = metadataColor
                         )
                         if (isMe) {
-                            val icon = when (message.status) {
-                                MessageDeliveryStatus.SENDING -> Icons.Default.Schedule
-                                MessageDeliveryStatus.FAILED -> Icons.Default.ErrorOutline
-                                MessageDeliveryStatus.SENT -> Icons.Default.Done
-                                else -> Icons.Default.DoneAll
+                            AnimatedContent(
+                                targetState = message.status,
+                                transitionSpec = {
+                                    (fadeIn(tween(180)) + scaleIn(initialScale = .7f)) togetherWith
+                                        (fadeOut(tween(120)) + scaleOut(targetScale = .7f))
+                                },
+                                label = "tick_morph"
+                            ) { status ->
+                                val icon = when (status) {
+                                    MessageDeliveryStatus.SENDING -> Icons.Default.Schedule
+                                    MessageDeliveryStatus.FAILED -> Icons.Default.ErrorOutline
+                                    MessageDeliveryStatus.SENT -> Icons.Default.Done
+                                    else -> Icons.Default.DoneAll
+                                }
+                                Icon(
+                                    icon,
+                                    status.name,
+                                    Modifier.size(13.dp),
+                                    tint = when (status) {
+                                        MessageDeliveryStatus.READ -> Color(0xFF8FE8FF)
+                                        MessageDeliveryStatus.FAILED -> MaterialTheme.colorScheme.error
+                                        else -> metadataColor
+                                    }
+                                )
                             }
-                            Icon(
-                                icon,
-                                message.status.name,
-                                Modifier.size(14.dp),
-                                tint = if (message.status == MessageDeliveryStatus.READ) Color(0xFF73E4FF) else metadataColor
-                            )
                         }
                     }
 
-                    if (message.status == MessageDeliveryStatus.FAILED) {
-                        Text(
-                            "Failed • tap to retry",
-                            color = if (isMe) Color.White else MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.align(Alignment.End).clickable(onClick = onRetry)
-                        )
+                    if (message.status == MessageDeliveryStatus.FAILED && isMe) {
+                        Row(
+                            Modifier
+                                .align(Alignment.End)
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(MaterialTheme.colorScheme.error.copy(alpha = if (config.isDark) .24f else .16f))
+                                .clickable(onClick = onRetry)
+                                .padding(horizontal = 9.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(Icons.Default.Refresh, null, Modifier.size(12.dp), tint = MaterialTheme.colorScheme.error)
+                            Text("Not delivered • tap to retry", style = BubbleMetaTextStyle, color = MaterialTheme.colorScheme.error)
+                        }
                     }
                 }
             }
@@ -1474,7 +1656,8 @@ fun MessageBubble(
                     modifier = Modifier.padding(top = 2.dp),
                     shape = RoundedCornerShape(999.dp),
                     backgroundColor = if (config.isDark) Color(0xFF0B151F).copy(alpha = .78f) else Color.White.copy(alpha = .66f),
-                    elevation = 2.dp
+                    elevation = 2.dp,
+                    lensing = false
                 ) {
                     Row(Modifier.padding(horizontal = 7.dp, vertical = 3.dp)) {
                         message.reactions.forEach { reaction ->
@@ -1489,4 +1672,216 @@ fun MessageBubble(
             }
         }
     }
+}
+
+/**
+ * Compact translucent quote block: accent edge, sender name, one-line truncation and an
+ * optional thumbnail of the original photo/video so a media reply never looks like plain text.
+ */
+@Composable
+private fun ReplyQuote(
+    replyToSender: String?,
+    replyToText: String,
+    isMe: Boolean,
+    contentColor: Color,
+    preview: Message?,
+    onClick: () -> Unit
+) {
+    val config = LocalLiquidGlass.current
+    val accent = if (isMe) Color.White.copy(alpha = .92f) else config.accentColor
+    val hasThumb = preview != null && (preview.type == MessageType.IMAGE || preview.type == MessageType.VIDEO)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (isMe) Color.White.copy(alpha = .14f) else config.accentColor.copy(alpha = if (config.isDark) .12f else .09f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier
+                .width(2.5.dp)
+                .height(if (hasThumb) 32.dp else 26.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .background(accent)
+        )
+        Spacer(Modifier.width(8.dp))
+        if (preview != null && preview.type == MessageType.IMAGE) {
+            PrivateImage(
+                model = preview.mediaUrl,
+                contentDescription = null,
+                modifier = Modifier.size(32.dp),
+                cornerRadius = 8.dp
+            )
+            Spacer(Modifier.width(8.dp))
+        } else if (preview != null && preview.type == MessageType.VIDEO) {
+            PrivateVideoThumbnail(preview.mediaUrl, Modifier.size(32.dp))
+            Spacer(Modifier.width(8.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            Text(
+                replyToSender.orEmpty().ifBlank { "Reply" },
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = accent,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                replyToText,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = contentColor.copy(alpha = .84f)
+            )
+        }
+    }
+}
+
+/** Icon-only nav control that lives inside the floating header card. */
+@Composable
+private fun NavGlyph(icon: ImageVector, description: String, onClick: () -> Unit) {
+    val config = LocalLiquidGlass.current
+    val haptics = rememberLiquidHaptics()
+    Box(
+        Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) {
+                haptics.tap()
+                onClick()
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            icon,
+            description,
+            tint = if (config.isDark) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(21.dp)
+        )
+    }
+}
+
+/** Hold-to-record mic: drag left cancels, drag up locks — identical behaviour, new shell. */
+@Composable
+private fun MicButton(
+    recording: Boolean,
+    locked: Boolean,
+    onStart: () -> Unit,
+    onStop: (Boolean) -> Unit,
+    onLock: () -> Unit
+) {
+    val config = LocalLiquidGlass.current
+    val haptics = rememberLiquidHaptics()
+    var dx by remember { mutableFloatStateOf(0f) }
+    var dy by remember { mutableFloatStateOf(0f) }
+    Box(
+        modifier = Modifier
+            .size(38.dp)
+            .clip(CircleShape)
+            .background(if (config.isDark) Color.White.copy(alpha = .08f) else Color.White.copy(alpha = .50f))
+            .pointerInput(Unit) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = {
+                        dx = 0f
+                        dy = 0f
+                        onStart()
+                    },
+                    onDragEnd = {
+                        if (recording && !locked) onStop(true)
+                    },
+                    onDragCancel = {
+                        if (recording && !locked) onStop(false)
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        dx += dragAmount.x
+                        dy += dragAmount.y
+                        if (dx < -100f && recording) onStop(false)
+                        if (dy < -100f && recording) onLock()
+                    }
+                )
+            }
+            .clickable {
+                if (!recording) {
+                    haptics.confirm()
+                    onLock()
+                    onStart()
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(Icons.Default.Mic, "Hold to record a voice message", modifier = Modifier.size(20.dp))
+    }
+}
+
+/** Accent orb that replaces the mic once the composer has text. */
+@Composable
+private fun SendOrb(
+    enabled: Boolean,
+    accent: Color,
+    reduced: Boolean,
+    onSend: () -> Unit
+) {
+    val scale by animateFloatAsState(
+        targetValue = if (enabled && !reduced) 1f else 0.9f,
+        animationSpec = spring(dampingRatio = .5f, stiffness = 460f),
+        label = "send_orb_scale"
+    )
+    Box(
+        Modifier
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .size(38.dp)
+            .shadow(4.dp, CircleShape, ambientColor = Color.Black, spotColor = accent.copy(alpha = .5f))
+            .clip(CircleShape)
+            .background(Brush.linearGradient(listOf(accent, accent.copy(alpha = .74f))))
+            .lensHighlight(dark = true, strength = 1.4f)
+            .lensEdge(CircleShape, dark = true, strength = 1f)
+            .clickable(enabled = enabled, onClick = onSend),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(Icons.Default.Send, "Send", tint = Color.White, modifier = Modifier.size(19.dp))
+    }
+}
+
+/** One frosted tile inside the attachment sheet. */
+@Composable
+private fun AttachTile(
+    icon: ImageVector,
+    label: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val config = LocalLiquidGlass.current
+    val haptics = rememberLiquidHaptics()
+    GlassCard(
+        modifier = modifier,
+        shape = RoundedCornerShape(20.dp),
+        backgroundColor = if (config.isDark) Color.White.copy(alpha = .07f) else Color.White.copy(alpha = .58f),
+        elevation = 1.dp,
+        onClick = {
+            haptics.tap()
+            onClick()
+        }
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = config.accentColor)
+            Spacer(Modifier.height(7.dp))
+            Text(label, style = MaterialTheme.typography.labelMedium)
+        }
+    }
+}
+
+private fun disappearingLabel(seconds: Long): String = when (seconds) {
+    0L -> "Off"
+    86400L -> "24 hours"
+    604800L -> "7 days"
+    else -> "${seconds / 3600}h"
 }

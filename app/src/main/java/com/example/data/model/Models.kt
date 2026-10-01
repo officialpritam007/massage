@@ -94,5 +94,9 @@ data class PrivacySettings(
   val lastSeenVisibility: String = "Everyone",
   val onlineVisibility: String = "Everyone",
   val profilePhotoVisibility: String = "Everyone",
-  val readReceipts: Boolean = true
+  val readReceipts: Boolean = true,
+  /** Off by default: received photos/videos stay in the private cache until saved manually. */
+  val autoSaveReceivedMedia: Boolean = false,
+  /** When on, incoming media is covered until it is tapped. */
+  val hideMediaPreview: Boolean = false
 )

@@ -74,6 +74,8 @@ class ChatRepository(
   val loading = _loading.asStateFlow()
   private val _upload = MutableStateFlow<Float?>(null)
   val upload = _upload.asStateFlow()
+  private val _syncIssue = MutableStateFlow<String?>(null)
+  val syncIssue = _syncIssue.asStateFlow()
 
   init {
     if (isUserLoggedIn()) startSync() else _loading.value = false
@@ -98,8 +100,21 @@ class ChatRepository(
     }
   }
 
+  /**
+   * A failing background listener must not interrupt the whole app. Only failures that truly
+   * stop sync (permission rules or an expired session) raise the global dialog; everything else
+   * is kept as a diagnostic breadcrumb while Firestore keeps retrying in the background.
+   */
   private fun reportSnapshotFailure(area: String, t: Throwable) {
-    _error.value = "$area: ${friendlyError(t, "could not be loaded")}"
+    val message = t.message.orEmpty()
+    val unrecoverable = message.contains("PERMISSION_DENIED", true) ||
+      message.contains("insufficient permissions", true) ||
+      (message.contains("token", true) && message.contains("expired", true))
+    if (unrecoverable) {
+      _error.value = "$area: ${friendlyError(t, "sync stopped unexpectedly")}"
+    } else {
+      _syncIssue.value = "$area: ${message.ifBlank { "listener retrying in the background" }}"
+    }
   }
 
   private inline fun guardSnapshot(area: String, block: () -> Unit) {
@@ -287,10 +302,12 @@ class ChatRepository(
 
         (snapshot.get("privacy") as? Map<*, *>)?.let { p ->
           _privacy.value = PrivacySettings(
-            p["lastSeenVisibility"] as? String ?: "Everyone",
-            p["onlineVisibility"] as? String ?: "Everyone",
-            p["profilePhotoVisibility"] as? String ?: "Everyone",
-            anyBoolean(p["readReceipts"], true)
+            lastSeenVisibility = p["lastSeenVisibility"] as? String ?: "Everyone",
+            onlineVisibility = p["onlineVisibility"] as? String ?: "Everyone",
+            profilePhotoVisibility = p["profilePhotoVisibility"] as? String ?: "Everyone",
+            readReceipts = anyBoolean(p["readReceipts"], true),
+            autoSaveReceivedMedia = anyBoolean(p["autoSaveReceivedMedia"], false),
+            hideMediaPreview = anyBoolean(p["hideMediaPreview"], false)
           )
         }
 
@@ -921,7 +938,9 @@ class ChatRepository(
       "lastSeenVisibility" to settings.lastSeenVisibility,
       "onlineVisibility" to settings.onlineVisibility,
       "profilePhotoVisibility" to settings.profilePhotoVisibility,
-      "readReceipts" to settings.readReceipts
+      "readReceipts" to settings.readReceipts,
+      "autoSaveReceivedMedia" to settings.autoSaveReceivedMedia,
+      "hideMediaPreview" to settings.hideMediaPreview
     ))
     writePresence(resumed)
   }

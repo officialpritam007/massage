@@ -40,6 +40,14 @@ val BubbleOutgoingGradientEnd = Color(0xFF2377DF)
 val BubbleIncoming = Color(0xFF152038)
 val BubbleIncomingBorder = Color(0x20FFFFFF)
 
+// Subtle glass tints for incoming bubbles (light / dark themes).
+val BubbleIncomingTintLight = Color(0xB8FFFFFF)
+val BubbleIncomingTintDark = Color(0x1AFFFFFF)
+
+// Readability veils drawn between the wallpaper and the conversation content.
+val ChatVeilLight = Color(0x2EFFFFFF)
+val ChatVeilDark = Color(0x3D050A12)
+
 // Text Colors
 val TextPrimary = Color(0xFFFFFFFF)
 val TextSecondary = Color(0xFF94A3B8)
@@ -52,3 +60,7 @@ val TextMutedLight = Color(0xFF94A3B8)
 // Theme-aware glass borders/highlights.
 val GlassBorderStrokeLight = Color(0x330F172A)
 val GlassBorderStrokeDark = Color(0x38FFFFFF)
+
+// Reads fine on both washed-out light and deep dark wallpapers.
+val MetaOnBubbleLight = Color(0xFF5A6B80)
+val MetaOnAccent = Color(0xCCFFFFFF)

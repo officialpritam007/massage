@@ -1,11 +1,7 @@
 package com.example.ui.screens
 
-import android.content.ContentValues
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
-import android.provider.MediaStore
 import android.widget.MediaController
 import android.widget.Toast
 import android.widget.VideoView
@@ -28,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -51,6 +48,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import com.example.data.media.saveMediaToGallery
 import com.example.data.model.Message
 import com.example.data.model.MessageType
 import com.example.data.network.LiquidApi
@@ -58,58 +56,10 @@ import com.example.ui.components.GlassButton
 import com.example.ui.components.GlassCard
 import com.example.ui.components.GlassIconButton
 import com.example.ui.components.LiquidBackground
+import com.example.ui.components.MediaShimmer
 import com.example.ui.components.VoiceWaveformPlayer
-import kotlinx.coroutines.Dispatchers
+import com.example.ui.components.rememberLiquidHaptics
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.File
-
-private suspend fun savePrivateMediaToDevice(context: Context, message: Message): Result<String> = withContext(Dispatchers.IO) {
-    runCatching {
-        require(message.mediaUrl.isNotBlank()) { "No media attached" }
-        require(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            "Save to device requires Android 10 or newer"
-        }
-
-        val source: File = LiquidApi.cachedPrivateMedia(message.mediaUrl)
-        val now = System.currentTimeMillis()
-        val (collection, mime, folder, extension) = when (message.type) {
-            MessageType.IMAGE -> Quad(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/jpeg", "Pictures/Liquid Chat", "jpg")
-            MessageType.VIDEO -> Quad(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, "video/mp4", "Movies/Liquid Chat", "mp4")
-            MessageType.VOICE -> Quad(MediaStore.Downloads.EXTERNAL_CONTENT_URI, "audio/mp4", "Download/Liquid Chat", "m4a")
-            else -> Quad(MediaStore.Downloads.EXTERNAL_CONTENT_URI, "application/octet-stream", "Download/Liquid Chat", "bin")
-        }
-
-        val displayName = "LiquidChat_${now}.${extension}"
-        val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
-            put(MediaStore.MediaColumns.MIME_TYPE, mime)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, folder)
-            put(MediaStore.MediaColumns.IS_PENDING, 1)
-        }
-        val resolver = context.contentResolver
-        val destination = requireNotNull(resolver.insert(collection, values)) { "Unable to create media file" }
-        try {
-            resolver.openOutputStream(destination)?.use { output ->
-                source.inputStream().use { input -> input.copyTo(output) }
-            } ?: error("Unable to open media destination")
-            values.clear()
-            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-            resolver.update(destination, values, null, null)
-        } catch (t: Throwable) {
-            resolver.delete(destination, null, null)
-            throw t
-        }
-        displayName
-    }
-}
-
-private data class Quad(
-    val collection: Uri,
-    val mime: String,
-    val folder: String,
-    val extension: String
-)
 
 @Composable
 fun MediaViewer(message: Message, onClose: () -> Unit) {
@@ -120,6 +70,7 @@ fun MediaViewer(message: Message, onClose: () -> Unit) {
     var video by remember { mutableStateOf<VideoView?>(null) }
     var saving by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val haptics = rememberLiquidHaptics()
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(message.mediaUrl) {
@@ -129,70 +80,95 @@ fun MediaViewer(message: Message, onClose: () -> Unit) {
     }
     DisposableEffect(Unit) { onDispose { video?.stopPlayback() } }
 
+    fun save() {
+        if (saving) return
+        saving = true
+        haptics.confirm()
+        scope.launch {
+            saveMediaToGallery(context, message)
+                .onSuccess { Toast.makeText(context, "Saved to gallery", Toast.LENGTH_SHORT).show() }
+                .onFailure { Toast.makeText(context, it.message ?: "Save failed", Toast.LENGTH_LONG).show() }
+            saving = false
+        }
+    }
+
     Dialog(onClose, DialogProperties(usePlatformDefaultWidth = false)) {
-        LiquidBackground(crystal = false) {
+        LiquidBackground(crystal = false, scrim = true) {
             Column(
                 Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = .58f))
+                    .background(Color.Black.copy(alpha = .52f))
                     .statusBarsPadding()
                     .navigationBarsPadding()
-                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                // One floating glass bar instead of three separate oversized objects.
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(26.dp),
+                    elevation = 8.dp
                 ) {
-                    GlassIconButton(Icons.AutoMirrored.Filled.ArrowBack, "Close media viewer", onClose)
-                    GlassCard(
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(28.dp)
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(Modifier.padding(horizontal = 15.dp, vertical = 10.dp)) {
-                            Text("Media", style = MaterialTheme.typography.titleMedium)
+                        GlassIconButton(Icons.AutoMirrored.Filled.ArrowBack, "Close media viewer", onClose, size = 40.dp)
+                        Spacer(Modifier.size(8.dp))
+                        Column(Modifier.weight(1f)) {
                             Text(
                                 when (message.type) {
-                                    MessageType.IMAGE -> "Private photo"
-                                    MessageType.VIDEO -> "Private video"
+                                    MessageType.IMAGE -> "Photo"
+                                    MessageType.VIDEO -> "Video"
                                     MessageType.VOICE -> "Voice message"
-                                    else -> "Private attachment"
+                                    else -> "Attachment"
                                 },
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                "Private • stored in your Liquid Chat cache",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1
                             )
                         }
+                        GlassIconButton(Icons.Default.Download, "Save to gallery", { save() }, size = 40.dp)
+                        Spacer(Modifier.size(6.dp))
+                        GlassIconButton(
+                            Icons.Default.OpenInNew,
+                            "Open with another app",
+                            {
+                                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                                    .onFailure { error = "No app available to open this attachment" }
+                            },
+                            size = 40.dp
+                        )
                     }
-                    GlassIconButton(
-                        Icons.Default.Download,
-                        "Save to device",
-                        onClick = {
-                            if (!saving) {
-                                saving = true
-                                scope.launch {
-                                    savePrivateMediaToDevice(context, message)
-                                        .onSuccess { Toast.makeText(context, "Saved to device", Toast.LENGTH_SHORT).show() }
-                                        .onFailure {
-                                            Toast.makeText(context, it.message ?: "Save failed", Toast.LENGTH_LONG).show()
-                                        }
-                                    saving = false
-                                }
-                            }
-                        }
-                    )
                 }
 
                 Spacer(Modifier.height(10.dp))
                 GlassCard(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
-                    shape = RoundedCornerShape(32.dp),
-                    backgroundColor = Color.Black.copy(alpha = .38f),
+                    shape = RoundedCornerShape(30.dp),
+                    backgroundColor = Color.Black.copy(alpha = .40f),
                     elevation = 2.dp
                 ) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         when {
-                            error != null -> Text(error.orEmpty(), color = Color.White, modifier = Modifier.padding(24.dp))
-                            url == null -> CircularProgressIndicator()
+                            error != null -> Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Text(error.orEmpty(), color = Color.White, modifier = Modifier.padding(horizontal = 24.dp))
+                                GlassButton("Try again", {
+                                    error = null
+                                    scope.launch {
+                                        runCatching { LiquidApi.resolve(message.mediaUrl, forceRefresh = true) }
+                                            .onSuccess { url = it }
+                                            .onFailure { error = it.message }
+                                    }
+                                }, isPrimary = false)
+                            }
+                            url == null -> MediaShimmer(Modifier.fillMaxSize())
                             message.type == MessageType.IMAGE -> {
                                 val state = rememberTransformableState { zoom, pan, _ ->
                                     scale = (scale * zoom).coerceIn(1f, 5f)
@@ -246,7 +222,7 @@ fun MediaViewer(message: Message, onClose: () -> Unit) {
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                                    Text("Saving…", style = MaterialTheme.typography.labelMedium)
+                                    Text("Saving to gallery…", style = MaterialTheme.typography.labelMedium)
                                 }
                             }
                         }

@@ -158,9 +158,10 @@ fun LiquidChatApp(
           onPhotoCaptured = { uri, caption ->
             chatViewModel.uploadChatMedia(convId, uri, MessageType.IMAGE) { result ->
               result.onSuccess { url ->
+                // An empty caption is correct here: the bubble shows the photo, never a generic label.
                 chatViewModel.sendMessage(
                   convId,
-                  caption.ifBlank { "Photo" },
+                  caption,
                   MessageType.IMAGE,
                   url
                 )

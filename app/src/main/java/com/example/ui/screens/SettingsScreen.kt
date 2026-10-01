@@ -210,6 +210,24 @@ fun SettingsScreen(
             Toggle("Read receipts", privacy.readReceipts) {
               viewModel.updatePrivacy(privacy.copy(readReceipts = it))
             }
+
+            Text("Media", style = MaterialTheme.typography.labelLarge)
+            Toggle("Auto-save received media", privacy.autoSaveReceivedMedia) {
+              viewModel.updatePrivacy(privacy.copy(autoSaveReceivedMedia = it))
+            }
+            Text(
+              "Off by default. When on, photos and videos you receive are copied to your gallery. They always stay private in Appwrite storage otherwise, and you can still save any photo or video manually from the viewer or the message menu.",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Toggle("Hide media previews", privacy.hideMediaPreview) {
+              viewModel.updatePrivacy(privacy.copy(hideMediaPreview = it))
+            }
+            Text(
+              "Covers incoming photos and videos until you tap them.",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
           }
 
           "Notifications" -> {
@@ -231,7 +249,11 @@ fun SettingsScreen(
 
           "Data & Storage" -> {
             Text("Temporary cache: ${cacheSize / 1024 / 1024} MB")
-            Text("Private attachments are stored in Appwrite. Maximum attachment size: 25 MB.")
+            Text("Private attachments are stored in Appwrite and served with short-lived access links. Maximum attachment size: 25 MB.")
+            Toggle("Auto-save received media to gallery", privacy.autoSaveReceivedMedia) {
+              viewModel.updatePrivacy(privacy.copy(autoSaveReceivedMedia = it))
+            }
+            Text("Clearing the cache also removes downloaded copies; the private Appwrite originals stay available.")
             Text("Clearing cache never restores messages or chats deleted from your account.")
             if (upload != null) {
               Text("Wait for the current upload to finish before clearing cache.")
