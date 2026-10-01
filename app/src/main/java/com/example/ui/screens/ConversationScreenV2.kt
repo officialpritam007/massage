@@ -51,6 +51,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -101,6 +102,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -210,8 +212,9 @@ fun ConversationScreenV2(
     val currentMessages by rememberUpdatedState(messages)
     val nearBottom by remember {
         derivedStateOf {
-            val total = listState.layoutInfo.totalItemsCount
-            total == 0 || (listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0) >= total - 3
+            // Exact list-end tracking: scrolling even a little upward disables
+            // auto-follow, while layout changes alone do not rewrite stickToBottom.
+            !listState.canScrollForward
         }
     }
 
@@ -400,7 +403,11 @@ fun ConversationScreenV2(
         if (unreadAnchorId == null) {
             val unread = conversation?.unreadCount ?: 0
             if (unread > 0 && messages.isNotEmpty()) {
-                unreadAnchorId = messages.getOrNull((messages.size - unread).coerceAtLeast(0))?.id
+                // unreadCount counts incoming messages; outgoing rows must not
+                // shift the separator below the actual first unread message.
+                val incoming = messages.filter { it.senderId != me.uid && !it.isDeleted }
+                val loadedUnread = minOf(unread, incoming.size)
+                unreadAnchorId = incoming.takeLast(loadedUnread).firstOrNull()?.id
             }
         }
     }
@@ -422,19 +429,10 @@ fun ConversationScreenV2(
             delay(50)
             val target = (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
             if (config.isReducedMotion) listState.scrollToItem(target) else listState.animateScrollToItem(target)
-            viewModel.clearUnread(conversationId)
         } else if (last.senderId != me.uid && unreadAnchorId == null) {
             unreadAnchorId = last.id
         }
         initialOpen = false
-    }
-
-    LaunchedEffect(stickToBottom) {
-        if (stickToBottom && messages.isNotEmpty()) {
-            viewModel.clearUnread(conversationId)
-            delay(220)
-            unreadAnchorId = null
-        }
     }
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -475,6 +473,23 @@ fun ConversationScreenV2(
     val filtered = messages.filter { query.isBlank() || it.text.contains(query, ignoreCase = true) }
     val morphMessage = filtered.firstOrNull { it.id == morphId }
     val rows = filtered.filterNot { it.id == morphId }
+    val latestRemoteId = rows.lastOrNull { it.senderId != me.uid && !it.isDeleted }?.id
+
+    LaunchedEffect(conversationId, latestRemoteId, conversation?.unreadCount) {
+        if ((conversation?.unreadCount ?: 0) <= 0 || latestRemoteId == null) return@LaunchedEffect
+        snapshotFlow {
+            listState.layoutInfo.visibleItemsInfo.any { item -> item.key == latestRemoteId }
+        }
+            .distinctUntilChanged()
+            .collect { latestIncomingVisible ->
+                if (latestIncomingVisible) {
+                    // Delivery is handled independently. Read is emitted only when
+                    // the newest incoming unread message is actually on screen.
+                    viewModel.clearUnread(conversationId)
+                    unreadAnchorId = null
+                }
+            }
+    }
 
     LiquidBackground(modifier = modifier, crystal = conversation?.wallpaperIndex != 1) {
         Scaffold(
@@ -503,7 +518,14 @@ fun ConversationScreenV2(
                         GlassIconButton(Icons.Default.MoreHoriz, "Chat menu", { menu = true }, size = 44.dp)
                     }
                     AnimatedVisibility(search) {
-                        GlassTextField(query, { query = it }, placeholder = "Search messages", modifier = Modifier.padding(top = 7.dp), shape = RoundedCornerShape(24.dp))
+                        GlassTextField(
+                            query,
+                            { query = it },
+                            placeholder = "Search messages",
+                            modifier = Modifier.padding(top = 7.dp),
+                            shape = RoundedCornerShape(24.dp),
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None)
+                        )
                     }
                 }
             },
@@ -629,6 +651,7 @@ fun ConversationScreenV2(
                                 { if (it.length <= 8000) text = it },
                                 placeholder = if (other.uid in blocked) "Contact blocked" else "Message…",
                                 modifier = Modifier.weight(1f),
+                                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
                                 singleLine = false,
                                 maxLines = 5,
                                 shape = RoundedCornerShape(24.dp)
@@ -829,7 +852,13 @@ fun ConversationScreenV2(
 
         editMessage?.let { message ->
             GlassDialog("Edit message", { editMessage = null }) {
-                GlassTextField(editText, { if (it.length <= 8000) editText = it }, singleLine = false, maxLines = 6)
+                GlassTextField(
+                    editText,
+                    { if (it.length <= 8000) editText = it },
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
+                    singleLine = false,
+                    maxLines = 6
+                )
                 GlassButton("Save", {
                     if (editText.isNotBlank()) viewModel.editMessage(conversationId, message.id, editText.trim())
                     editMessage = null
