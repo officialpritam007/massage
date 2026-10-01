@@ -21,13 +21,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -125,6 +123,7 @@ fun MessageBubbleV2(
     message: Message,
     isMe: Boolean,
     reduced: Boolean,
+    highlighted: Boolean = false,
     voiceAvatarUrl: String = "",
     voiceAvatarName: String = "",
     onLongClick: () -> Unit,
@@ -149,6 +148,11 @@ fun MessageBubbleV2(
         animationSpec = if (reduced) tween(0) else spring(dampingRatio = .72f, stiffness = 430f),
         label = "reply-v2"
     )
+    val highlightAmount by animateFloatAsState(
+        targetValue = if (highlighted) 1f else 0f,
+        animationSpec = if (reduced) tween(0) else spring(dampingRatio = .55f, stiffness = 360f),
+        label = "reply_target_highlight"
+    )
     val shape = if (isMe) RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp)
     else RoundedCornerShape(22.dp, 22.dp, 22.dp, 6.dp)
     val bg = if (isMe) config.accentColor.copy(alpha = if (config.isDark) .58f else .82f)
@@ -157,12 +161,22 @@ fun MessageBubbleV2(
     val metaColor = if (isMe) Color.White.copy(alpha = .78f) else MaterialTheme.colorScheme.onSurfaceVariant
     val genericLabels = setOf("Photo", "Video", "Voice message", "Document")
     val caption = message.text.trim().takeUnless { it in genericLabels }.orEmpty()
+    val borderColor = when {
+        highlightAmount > .01f -> config.accentColor.copy(alpha = .28f + highlightAmount * .66f)
+        isMe -> Color.White.copy(alpha = .30f)
+        else -> null
+    }
 
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start) {
         Column(
             Modifier
                 .widthIn(max = 330.dp)
                 .offset { IntOffset(offset.roundToInt(), 0) }
+                .graphicsLayer {
+                    val pulse = 1f + highlightAmount * .015f
+                    scaleX = pulse
+                    scaleY = pulse
+                }
                 .pointerInput(message.id, isMe) {
                     detectHorizontalDragGestures(
                         onDragEnd = {
@@ -178,7 +192,7 @@ fun MessageBubbleV2(
                 }
                 .combinedClickable(onClick = { if (message.mediaUrl.isNotBlank()) onMedia() }, onLongClick = onLongClick)
         ) {
-            GlassCard(shape = shape, backgroundColor = bg, borderColor = if (isMe) Color.White.copy(alpha = .30f) else null, elevation = 1.dp) {
+            GlassCard(shape = shape, backgroundColor = bg, borderColor = borderColor, elevation = if (highlighted) 6.dp else 1.dp) {
                 Column(
                     Modifier.animateContentSize(if (reduced) tween(0) else spring(dampingRatio = .78f, stiffness = 410f)).padding(10.dp),
                     verticalArrangement = Arrangement.spacedBy(5.dp)
@@ -270,12 +284,7 @@ fun MessageBubbleV2(
                                     MessageDeliveryStatus.SENT -> Icons.Default.Done
                                     else -> Icons.Default.DoneAll
                                 }
-                                Icon(
-                                    icon,
-                                    status.name,
-                                    Modifier.size(14.dp),
-                                    tint = if (status == MessageDeliveryStatus.READ) Color(0xFF73E4FF) else metaColor
-                                )
+                                Icon(icon, status.name, Modifier.size(14.dp), tint = if (status == MessageDeliveryStatus.READ) Color(0xFF73E4FF) else metaColor)
                             }
                         }
                     }
