@@ -38,6 +38,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -116,6 +118,7 @@ fun GlassCard(
         } else Modifier
       )
       .background(glassBackground)
+      .drawWithContent { drawContent(); drawLine(topHighlight.copy(alpha = .35f), Offset.Zero, Offset(size.width, 0f), 1.dp.toPx()) }
       .border(BorderStroke(1.dp, Brush.verticalGradient(listOf(topHighlight, border.copy(alpha = (border.alpha * config.borderStrength).coerceIn(0.06f, 1f))))), resolvedShape)
       .then(
         if (onClick != null) Modifier.clickable(
@@ -125,13 +128,6 @@ fun GlassCard(
         ) else Modifier
       )
   ) {
-    // Fine top sheen: gives the glass a physical edge without a heavy gradient.
-    Box(
-      Modifier
-        .fillMaxWidth()
-        .height(1.dp)
-        .background(topHighlight.copy(alpha = if (config.isDark) 0.38f else 0.70f))
-    )
     CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides androidx.compose.material3.MaterialTheme.colorScheme.onSurface) { content() }
   }
 }

@@ -16,8 +16,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.example.data.network.LiquidApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.math.abs
 import kotlin.math.sin
+
+private val activeVoicePlayer = MutableStateFlow<MediaPlayer?>(null)
 
 @Composable
 fun VoiceWaveformPlayer(
@@ -76,7 +80,7 @@ fun VoiceWaveformPlayer(
         true
       }
       player.prepareAsync()
-    }.onFailure { error = true }
+    }.onFailure { if (it is CancellationException) throw it; error = true }
   }
 
   LaunchedEffect(speed, ready) {
@@ -84,7 +88,7 @@ fun VoiceWaveformPlayer(
       runCatching {
         val wasPlaying = player.isPlaying
         player.playbackParams = player.playbackParams.setSpeed(speed)
-        if (wasPlaying && !player.isPlaying) player.start()
+        if (!wasPlaying) player.pause()
       }
     }
   }
@@ -96,8 +100,23 @@ fun VoiceWaveformPlayer(
     }
   }
 
-  DisposableEffect(player) {
-    onDispose { runCatching { player.release() } }
+  val activePlayer by activeVoicePlayer.collectAsState()
+  LaunchedEffect(activePlayer) {
+    if (activePlayer !== player && playing) { runCatching { player.pause() }; playing = false }
+  }
+  val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+  DisposableEffect(player, lifecycle) {
+    val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+      if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+        runCatching { if (player.isPlaying) player.pause() }; playing = false
+      }
+    }
+    lifecycle.addObserver(observer)
+    onDispose {
+      lifecycle.removeObserver(observer)
+      if (activeVoicePlayer.value === player) activeVoicePlayer.value = null
+      runCatching { player.release() }
+    }
   }
 
   val active = if (isOutgoing) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary
@@ -109,8 +128,10 @@ fun VoiceWaveformPlayer(
       IconButton(
         onClick = {
           if (ready && !error) {
-            if (playing) player.pause() else player.start()
-            playing = !playing
+            runCatching {
+              if (playing) player.pause() else { activeVoicePlayer.value = player; player.start() }
+              playing = !playing
+            }.onFailure { error = true; playing = false }
           }
         },
         enabled = ready && !error

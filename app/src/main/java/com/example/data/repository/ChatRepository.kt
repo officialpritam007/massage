@@ -1,6 +1,10 @@
 package com.example.data.repository
 
 import android.net.Uri
+import com.example.data.DeletionCoordinator
+import com.example.notifications.ReceiptWorker
+import com.example.notifications.VisibleConversation
+import androidx.work.WorkManager
 import com.example.data.model.*
 import com.example.data.network.LiquidApi
 import com.google.firebase.Timestamp
@@ -191,6 +195,9 @@ class ChatRepository(
   }
 
   fun logout() {
+    WorkManager.getInstance(LiquidApi.context).cancelAllWorkByTag("receipts:$uid")
+    VisibleConversation.id = null
+    DeletionCoordinator.clear()
     setPresence(false)
     val account = uid
     val tokenKey = prefs.getString("deviceId", "").orEmpty()
@@ -202,6 +209,7 @@ class ChatRepository(
     uploadJob?.cancel()
     retryUpload = null
     LiquidApi.clear()
+    java.io.File(LiquidApi.context.filesDir, "voice-drafts").deleteRecursively()
     prefs.edit().clear().apply()
     auth.signOut()
     deletedBefore.clear()
@@ -334,7 +342,7 @@ class ChatRepository(
             messageListeners.remove(it)?.remove()
             presenceListeners.remove(it)?.remove()
           }
-          _messages.update { map -> map.filterKeys { it in active } }
+          _messages.update { map -> map.filter { (cid, messages) -> cid in active || messages.any { it.status == MessageDeliveryStatus.SENDING || it.status == MessageDeliveryStatus.FAILED } } }
           // Message + typing listeners are attached only when a conversation is opened.
           // The chat list needs only the lightweight conversation-summary listener.
         }
@@ -465,13 +473,14 @@ class ChatRepository(
           return@addSnapshotListener
         }
         if (snapshot != null) guardSnapshot("Messages") {
+          if (snapshot.isEmpty && snapshot.metadata.isFromCache && _messages.value[cid].orEmpty().isNotEmpty()) return@guardSnapshot
           val list = snapshot.documents
             .mapNotNull { doc -> runCatching { toMessage(cid, doc) }.getOrNull() }
-            .sortedBy { it.createdAt }
+            .sortedWith(compareBy<Message> { it.createdAt }.thenBy { it.id })
           val pending = _messages.value[cid].orEmpty().filter {
             it.status == MessageDeliveryStatus.SENDING || it.status == MessageDeliveryStatus.FAILED
           }.filter { p -> list.none { saved -> saved.id == p.id } }
-          _messages.update { it + (cid to (list + pending).sortedBy { m -> m.createdAt }) }
+          _messages.update { it + (cid to (list + pending).sortedWith(compareBy<Message> { m -> m.createdAt }.thenBy { m -> m.id })) }
           list.filter { it.senderId != uid && it.status == MessageDeliveryStatus.SENT }
             .forEach { receipt(cid, it.id, "DELIVERED") }
         }
@@ -518,6 +527,7 @@ class ChatRepository(
       mediaUrl = snapshot.safeString("mediaUrl"),
       voiceDurationSeconds = snapshot.safeLong("voiceDurationSeconds").toInt().coerceAtLeast(0),
       waveform = safeWaveform(snapshot.get("waveform")),
+      seenByMe = (snapshot.get("seenBy") as? List<*>)?.contains(uid) == true,
       createdAt = createdAt,
       status = runCatching { MessageDeliveryStatus.valueOf(snapshot.safeString("status", "SENT")) }
         .getOrDefault(MessageDeliveryStatus.SENT),
@@ -570,7 +580,8 @@ class ChatRepository(
     replyToText: String? = null,
     replyToSender: String? = null,
     voiceDurationSeconds: Int = 0,
-    waveform: List<Float> = emptyList()
+    waveform: List<Float> = emptyList(),
+    localVoicePath: String? = null
   ) {
     if (text.isBlank() && mediaUrl.isBlank()) return
     val cleanWaveform = waveform.map { it.coerceIn(0.05f, 1f) }.take(80)
@@ -590,7 +601,7 @@ class ChatRepository(
       status = MessageDeliveryStatus.SENDING
     )
     _messages.update { it + (conversationId to (it[conversationId].orEmpty() + message)) }
-    persist(message)
+    persist(message, localVoicePath)
     scope.launch { flushOutbox() }
     setTyping(conversationId, false)
   }
@@ -614,8 +625,8 @@ class ChatRepository(
     "createdAt" to message.createdAt
   ))
 
-  private fun persist(message: Message) {
-    prefs.edit().putString("outbox:$uid:${message.id}", json(message).toString()).apply()
+  private fun persist(message: Message, localVoicePath: String? = null) {
+    prefs.edit().putString("outbox:$uid:${message.id}", json(message).put("localVoicePath", localVoicePath).toString()).apply()
   }
 
   private fun restoreOutbox() {
@@ -672,16 +683,19 @@ class ChatRepository(
         }
         val data = j.keys().asSequence().associateWith { j.opt(it).takeUnless { value -> value == JSONObject.NULL } }.toMutableMap()
         if (data["otherUid"] == null && otherUid != null) data["otherUid"] = otherUid
+        data.remove("localVoicePath")
         try {
           val response = LiquidApi.call("send", data)
+          if (response.optBoolean("notificationPending")) com.example.notifications.NotificationRetryWorker.enqueue(LiquidApi.context, uid, cid, id)
+          deleteVoiceSource(j.optString("localVoicePath"))
           prefs.edit().remove(key).apply()
           if (response.optBoolean("tombstoned")) removeLocalMessage(cid, id)
-          else updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.SENT) }
+          else updateLocal(cid, id) { it.copy(status = acknowledgedStatus(it.status)) }
         } catch (e: Exception) {
           if (e is CancellationException) throw e
           if (e !is java.io.IOException) {
             failed += id
-            updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.FAILED) }
+            updateLocal(cid, id) { if (it.status in setOf(MessageDeliveryStatus.READ, MessageDeliveryStatus.DELIVERED)) it else it.copy(status = MessageDeliveryStatus.FAILED) }
             _error.value = friendlyError(e)
           }
         }
@@ -691,10 +705,24 @@ class ChatRepository(
     }
   }
 
+  private fun deleteVoiceSource(path: String) {
+    if (path.isBlank()) return
+    val root = java.io.File(LiquidApi.context.filesDir, "voice-drafts").canonicalFile
+    val file = java.io.File(path).canonicalFile
+    if (file.path.startsWith(root.path + java.io.File.separator)) file.delete()
+  }
+
   fun retryMessage(cid: String, id: String) {
     failed -= id
     updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.SENDING) }
     scope.launch { flushOutbox() }
+  }
+
+  suspend fun removeProfilePhoto(): Result<Unit> = runCatching {
+    val old = _currentUser.value.photoUrl
+    LiquidApi.call("removeProfilePhoto")
+    if (old.isNotBlank()) LiquidApi.invalidateMedia(old)
+    _currentUser.update { it.copy(photoUrl = "") }
   }
 
   private fun updateLocal(cid: String, id: String, transform: (Message) -> Message) {
@@ -704,6 +732,7 @@ class ChatRepository(
   private fun removeLocalMessage(cid: String, id: String) {
     failed -= id
     receipts.removeAll { it.contains(":$id:") }
+    runCatching { deleteVoiceSource(JSONObject(prefs.getString("outbox:$uid:$id", "{}")!!).optString("localVoicePath")) }
     prefs.edit().remove("outbox:$uid:$id").remove("star:$uid:$id").remove("hidden:$uid:$id").apply()
     _messages.update { map -> map + (cid to map[cid].orEmpty().filterNot { it.id == id }) }
   }
@@ -726,7 +755,7 @@ class ChatRepository(
           // This does not resurrect deleted history; only a subsequent new send unhides the fresh chat.
           LiquidApi.call("conversation", mapOf("otherUid" to peer))
         }
-        LiquidApi.upload(uri, cid) { progress -> scope.launch { _upload.value = progress } }
+        LiquidApi.upload(uri, cid, type.name) { progress -> scope.launch { _upload.value = progress } }
       }
       _upload.value = null
       if (result.isFailure && result.exceptionOrNull() !is CancellationException) {
@@ -748,7 +777,7 @@ class ChatRepository(
 
   fun uploadProfilePhoto(uri: Uri, onResult: (Result<String>) -> Unit = {}) {
     runAction {
-      val result = runCatching { LiquidApi.upload(uri, null) }
+      val result = runCatching { LiquidApi.upload(uri, null, "IMAGE") }
       onResult(result)
       result.getOrThrow()
     }
@@ -770,19 +799,21 @@ class ChatRepository(
   fun addReaction(cid: String, id: String, emoji: String) = action("react", cid, id, mapOf("emoji" to emoji))
 
   fun deleteMessageForMe(cid: String, id: String) = runAction {
+    DeletionCoordinator.perform("message:$id") {
     val mediaUrl = _messages.value[cid].orEmpty().firstOrNull { it.id == id }?.mediaUrl.orEmpty()
-    prefs.edit().remove("outbox:$uid:$id").apply()
     LiquidApi.call("deleteForMe", mapOf("conversationId" to cid, "messageId" to id))
     if (mediaUrl.isNotBlank()) LiquidApi.invalidateMedia(mediaUrl)
     removeLocalMessage(cid, id)
+    }
   }
 
   fun deleteMessageForEveryone(cid: String, id: String) = runAction {
+    DeletionCoordinator.perform("message:$id") {
     val mediaUrl = _messages.value[cid].orEmpty().firstOrNull { it.id == id }?.mediaUrl.orEmpty()
-    prefs.edit().remove("outbox:$uid:$id").apply()
     LiquidApi.call("deleteForEveryone", mapOf("conversationId" to cid, "messageId" to id))
     if (mediaUrl.isNotBlank()) LiquidApi.invalidateMedia(mediaUrl)
     removeLocalMessage(cid, id)
+    }
   }
 
   fun deleteMessage(cid: String, id: String) = deleteMessageForEveryone(cid, id)
@@ -797,20 +828,19 @@ class ChatRepository(
   }
 
   private fun receipt(cid: String, id: String, status: String) {
-    val key = "$uid:$id:$status"
-    if (!receipts.add(key)) return
-    scope.launch {
-      runCatching { LiquidApi.call("receipt", mapOf("conversationId" to cid, "messageId" to id, "status" to status)) }
-        .onFailure { receipts.remove(key) }
-    }
+    if (!receipts.add("$uid:$id:$status")) return
+    ReceiptWorker.enqueue(LiquidApi.context, uid, cid, listOf(id), status)
   }
 
-  fun clearUnread(cid: String) {
-    _messages.value[cid].orEmpty()
-      .filter { it.senderId != uid && it.status != MessageDeliveryStatus.READ }
-      .forEach { receipt(cid, it.id, if (_privacy.value.readReceipts) "READ" else "DELIVERED") }
-    if (_conversations.value.find { it.id == cid }?.unreadCount != 0) setting(cid, "read", true)
+  fun markVisibleRead(cid: String, ids: List<String>) {
+    if (VisibleConversation.id != cid) return
+    val unseen = _messages.value[cid].orEmpty().filter { it.id in ids && it.senderId != uid && !it.seenByMe }
+      .map { it.id }.filter { receipts.add("$uid:$it:READ") }
+    ReceiptWorker.enqueue(LiquidApi.context, uid, cid, unseen, "READ")
   }
+
+  // Kept for call sites outside the conversation; only the visible viewport may mark messages read.
+  fun clearUnread(cid: String) = Unit
 
   private fun setting(cid: String, field: String, value: Any) = runAction {
     LiquidApi.call("conversationSetting", mapOf("conversationId" to cid, "field" to field, "value" to value))
@@ -821,6 +851,7 @@ class ChatRepository(
   fun setFavorite(cid: String, value: Boolean) = setting(cid, "favoriteFor", value)
 
   fun deleteChatForMe(cid: String) = runAction {
+    DeletionCoordinator.perform("chat:$cid") {
     val currentMessages = _messages.value[cid].orEmpty()
     val messageIds = currentMessages.map { it.id }.toSet()
     val mediaUrls = currentMessages.map { it.mediaUrl }.filter { it.isNotBlank() }.distinct()
@@ -836,10 +867,11 @@ class ChatRepository(
     prefs.all.filterKeys { it.startsWith("outbox:$uid:") }.forEach { (key, raw) ->
       runCatching {
         val j = JSONObject(raw as String)
-        if (j.optString("conversationId") == cid) edit.remove(key)
+        if (j.optString("conversationId") == cid) { deleteVoiceSource(j.optString("localVoicePath")); edit.remove(key) }
       }
     }
     edit.apply()
+    }
   }
 
   fun setDisappearingMessages(cid: String, seconds: Long) = setting(cid, "disappearingSeconds", seconds)

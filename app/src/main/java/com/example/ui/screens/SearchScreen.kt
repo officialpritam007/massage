@@ -35,6 +35,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import com.example.data.DeletionCoordinator
+import com.example.ui.components.DustDelete
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -68,6 +72,7 @@ fun SearchScreen(
   val searchQuery by viewModel.searchQuery.collectAsState()
   val searchResults by viewModel.searchResults.collectAsState()
   val searchHistory by viewModel.searchHistory.collectAsState()
+  val scope = rememberCoroutineScope()
   val glassConfig = LocalLiquidGlass.current
 
   LiquidBackground(modifier = modifier) {
@@ -145,13 +150,13 @@ fun SearchScreen(
                 Text(
                   text = "Clear All",
                   style = MaterialTheme.typography.labelSmall.copy(color = CyanAccent),
-                  modifier = Modifier.clickable { viewModel.clearSearchHistory() }
+                  modifier = Modifier.clickable { scope.launch { DeletionCoordinator.perform("search-history") { viewModel.clearSearchHistory() } } }
                 )
               }
             }
 
             item {
-              FlowRow(
+              DustDelete("search-history") { FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -172,6 +177,7 @@ fun SearchScreen(
                     }
                   }
                 }
+              }
               }
             }
           }

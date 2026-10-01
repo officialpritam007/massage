@@ -2,6 +2,7 @@ package com.example.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -72,7 +73,7 @@ fun LiquidChatTheme(
     MaterialTheme(
       colorScheme = colorScheme,
       typography = Typography,
-      content = content
+      content = { CompositionLocalProvider(LocalContentColor provides colorScheme.onSurface) { content() } }
     )
   }
 }

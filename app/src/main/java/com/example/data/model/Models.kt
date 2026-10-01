@@ -52,7 +52,8 @@ data class Message(
   val isDeleted: Boolean = false,
   val isPinned: Boolean = false,
   val isStarred: Boolean = false,
-  val expiresAt: Long? = null
+  val expiresAt: Long? = null,
+  val seenByMe: Boolean = false
 )
 
 data class Conversation(
@@ -95,3 +96,9 @@ data class PrivacySettings(
   val profilePhotoVisibility: String = "Everyone",
   val readReceipts: Boolean = true
 )
+
+/** A delayed send response must never downgrade a delivered/read snapshot. */
+fun acknowledgedStatus(current: MessageDeliveryStatus): MessageDeliveryStatus = when (current) {
+  MessageDeliveryStatus.READ, MessageDeliveryStatus.DELIVERED -> current
+  else -> MessageDeliveryStatus.SENT
+}

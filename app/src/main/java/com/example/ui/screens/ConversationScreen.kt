@@ -29,7 +29,22 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.collectLatest
+import com.example.notifications.VisibleConversation
+import com.example.data.DeletionCoordinator
+import com.example.data.local.VoiceDraft
+import com.example.data.local.VoiceDraftStore
+import com.example.ui.components.DustDelete
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
@@ -70,6 +85,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -160,7 +176,6 @@ fun presenceLabel(u: User): String {
     }
 }
 
-private data class VoiceDraft(val file: File, val seconds: Int, val waveform: List<Float>)
 
 private fun appendWaveform(existing: List<Float>, value: Float): List<Float> {
     var next = existing + value.coerceIn(.05f, 1f)
@@ -230,6 +245,10 @@ fun ConversationScreen(
     modifier: Modifier = Modifier
 ) {
     val conversations by viewModel.conversations.collectAsState()
+    var deletingThisChat by remember { mutableStateOf(false) }
+    LaunchedEffect(conversations, deletingThisChat) {
+        if (deletingThisChat && conversations.none { it.id == conversationId }) onBackClick()
+    }
     val messageMap by viewModel.messages.collectAsState()
     val me by viewModel.currentUser.collectAsState()
     val upload by viewModel.upload.collectAsState()
@@ -249,7 +268,8 @@ fun ConversationScreen(
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
-    val listState = rememberLazyListState()
+    val listState = rememberSaveable(conversationId, saver = LazyListState.Saver) { LazyListState() }
+    val density = LocalDensity.current
 
     var text by rememberSaveable(conversationId) { mutableStateOf(repo.draft(conversationId)) }
     var reply by remember { mutableStateOf<Message?>(null) }
@@ -270,7 +290,7 @@ fun ConversationScreen(
     var tailId by remember(conversationId) { mutableStateOf<String?>(null) }
     var lastRemoteId by remember(conversationId) { mutableStateOf<String?>(null) }
     var typingSeen by remember { mutableLongStateOf(0L) }
-    var initial by remember { mutableStateOf(true) }
+    var initial by rememberSaveable(conversationId) { mutableStateOf(true) }
 
     var recording by remember { mutableStateOf(false) }
     var locked by remember { mutableStateOf(false) }
@@ -279,36 +299,71 @@ fun ConversationScreen(
     var voiceFile by remember { mutableStateOf<File?>(null) }
     var paused by remember { mutableStateOf(false) }
     var voiceWaveform by remember { mutableStateOf<List<Float>>(emptyList()) }
-    var voiceDraft by remember { mutableStateOf<VoiceDraft?>(null) }
-    var initialUnread by rememberSaveable(conversationId) { mutableIntStateOf(conversation?.unreadCount ?: 0) }
+    var voiceDraft by remember(conversationId) { mutableStateOf(VoiceDraftStore.read(context, conversationId)) }
+    var showVoicePreview by remember { mutableStateOf(voiceDraft != null) }
+    var voiceUploading by remember { mutableStateOf(false) }
+    var cancellingRecording by remember { mutableStateOf(false) }
+    var recordDragX by remember { mutableFloatStateOf(0f) }
+    var recordDragY by remember { mutableFloatStateOf(0f) }
+    val initialUnread = rememberSaveable(conversationId) { conversation?.unreadCount ?: 0 }
+    var unreadAnchor by rememberSaveable(conversationId) { mutableStateOf<String?>(null) }
+    var showTyping by remember(conversationId) { mutableStateOf(false) }
+    val rowIdentity = remember(conversationId) { BubbleRowIdentity() }
 
-    fun stopRecording(send: Boolean) {
-        val activeRecorder = recorder
-        recorder = null
-        val file = voiceFile
-        voiceFile = null
-        val seconds = elapsed.coerceAtLeast(1)
-        val captured = voiceWaveform
-
-        val stoppedCleanly = runCatching { activeRecorder?.stop() }.isSuccess
-        runCatching { activeRecorder?.release() }
-        recording = false
-        paused = false
-        locked = false
-        focusManager.clearFocus()
-
-        if (send && stoppedCleanly && file != null && file.length() > 0) {
-            voiceDraft?.file?.delete()
-            voiceDraft = VoiceDraft(file, seconds, captured)
-        } else {
-            file?.delete()
+    fun sendVoice(draft: VoiceDraft) {
+        if (voiceUploading) return
+        voiceUploading = true
+        showVoicePreview = false
+        repo.uploadChatMedia(conversationId, Uri.fromFile(draft.file), MessageType.VOICE) { result ->
+            voiceUploading = false
+            result.onSuccess { url ->
+                repo.sendMessage(conversationId, "Voice message", MessageType.VOICE, url,
+                    voiceDurationSeconds = draft.seconds, waveform = draft.waveform,
+                    localVoicePath = draft.file.absolutePath)
+                VoiceDraftStore.clear(context, conversationId, deleteFile = false)
+                voiceDraft = null
+            }.onFailure { showVoicePreview = true }
         }
     }
 
+    fun stopRecording(send: Boolean, preview: Boolean = locked) {
+        val activeRecorder = recorder ?: return
+        recorder = null
+        val file = voiceFile
+        voiceFile = null
+        val captured = voiceWaveform
+        val stoppedCleanly = runCatching { activeRecorder.stop() }.isSuccess
+        runCatching { activeRecorder.release() }
+        recording = false; paused = false; locked = false; cancellingRecording = false
+        recordDragX = 0f; recordDragY = 0f
+        focusManager.clearFocus()
+        if (send && stoppedCleanly && file != null && file.length() > 0) {
+            val seconds = runCatching {
+                val reader = android.media.MediaMetadataRetriever()
+                try { reader.setDataSource(file.absolutePath)
+                    ((reader.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L) + 999L).div(1000).toInt().coerceAtLeast(1)
+                } finally { reader.release() }
+            }.getOrDefault(elapsed.coerceAtLeast(1))
+            val draft = VoiceDraft(file, seconds, captured)
+            voiceDraft = draft
+            VoiceDraftStore.save(context, conversationId, draft)
+            showVoicePreview = preview
+            if (!preview) sendVoice(draft)
+        } else file?.delete()
+    }
+
+    fun cancelRecording() {
+        if (cancellingRecording || !recording) return
+        cancellingRecording = true; locked = true
+        runCatching { recorder?.pause() }; paused = true
+        scope.launch { DeletionCoordinator.perform("recording:$conversationId") { stopRecording(false) } }
+    }
+
     fun startRecording() {
-        if (recording) return
+        if (recording || voiceUploading || voiceDraft != null) return
+        cancellingRecording = false
         runCatching {
-            val file = File.createTempFile("voice-", ".m4a", context.cacheDir)
+            val file = File.createTempFile("voice-", ".m4a", File(context.filesDir, "voice-drafts").apply { mkdirs() })
             val activeRecorder = if (Build.VERSION.SDK_INT >= 31) {
                 MediaRecorder(context)
             } else {
@@ -320,6 +375,9 @@ fun ConversationScreen(
             activeRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
             activeRecorder.setAudioEncodingBitRate(64000)
             activeRecorder.setOutputFile(file.absolutePath)
+            voiceFile = file
+            recorder = activeRecorder
+            activeRecorder.setAudioSamplingRate(44100)
             activeRecorder.prepare()
             activeRecorder.start()
             recorder = activeRecorder
@@ -329,6 +387,8 @@ fun ConversationScreen(
             voiceWaveform = emptyList()
             elapsed = 0
         }.onFailure {
+            runCatching { recorder?.release() }; recorder = null
+            voiceFile?.delete(); voiceFile = null
             android.widget.Toast.makeText(context, it.message, android.widget.Toast.LENGTH_LONG).show()
         }
     }
@@ -336,16 +396,12 @@ fun ConversationScreen(
     val stopCurrent by rememberUpdatedState<(Boolean) -> Unit> { send -> stopRecording(send) }
     val recordingCurrent by rememberUpdatedState(recording)
     val lockedCurrent by rememberUpdatedState(locked)
+    val cancellingCurrent by rememberUpdatedState(cancellingRecording)
+    val cancelCurrent by rememberUpdatedState<() -> Unit> { cancelRecording() }
+    val preserveRecording by rememberUpdatedState<() -> Unit> { stopRecording(true, preview = true) }
 
-    val recordPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            locked = true
-            keyboard?.hide()
-            focusManager.clearFocus()
-            startRecording()
-        }
+    val recordPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        android.widget.Toast.makeText(context, if (granted) "Hold the microphone to record" else "Microphone permission is needed to record", android.widget.Toast.LENGTH_SHORT).show()
     }
 
     fun requestRecording() {
@@ -404,25 +460,23 @@ fun ConversationScreen(
         }
     }
 
-    LaunchedEffect(conversation?.unreadCount) {
-        val count = conversation?.unreadCount ?: 0
-        if (initialUnread == 0 && count > 0) initialUnread = count
-    }
-
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
+    var resumed by remember { mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) }
+    DisposableEffect(lifecycleOwner, conversationId) {
+        if (resumed) VisibleConversation.id = conversationId
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) { resumed = true; VisibleConversation.id = conversationId }
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE) { resumed = false; if (VisibleConversation.id == conversationId) VisibleConversation.id = null }
             if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
-                if (recordingCurrent) stopCurrent(false)
+                if (recordingCurrent) preserveRecording()
                 repo.setTyping(conversationId, false)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
+            if (VisibleConversation.id == conversationId) VisibleConversation.id = null
             lifecycleOwner.lifecycle.removeObserver(observer)
-            runCatching { recorder?.release() }
-            voiceFile?.delete()
-            voiceDraft?.file?.delete()
+            preserveRecording()
             repo.setTyping(conversationId, false)
         }
     }
@@ -441,55 +495,40 @@ fun ConversationScreen(
     }
 
     LaunchedEffect(conversation?.isTyping) {
-        if (conversation?.isTyping == true) {
-            typingSeen = System.currentTimeMillis()
-            tailId = null
-        }
+        if (conversation?.isTyping == true) showTyping = true
+        else { delay(450); showTyping = false }
     }
-
+    var previousTail by remember(conversationId) { mutableStateOf<String?>(null) }
     LaunchedEffect(allMessages.lastOrNull()?.id, allMessages.size) {
-        val remote = allMessages.lastOrNull { it.senderId != me.uid }
-        if (
-            !initial &&
-            remote != null &&
-            remote.type == MessageType.TEXT &&
-            remote.id != lastRemoteId &&
-            System.currentTimeMillis() - typingSeen < 8000
-        ) {
-            tailId = remote.id
-        }
-        lastRemoteId = remote?.id
-
-        val nearBottom = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index?.let {
-            it >= listState.layoutInfo.totalItemsCount - 4
-        } ?: true
-
-        if (initial || nearBottom || allMessages.lastOrNull()?.senderId == me.uid) {
-            delay(60)
-            val count = listState.layoutInfo.totalItemsCount
-            if (count > 0) {
-                if (config.isReducedMotion) {
-                    listState.scrollToItem(count - 1)
-                } else {
-                    listState.animateScrollToItem(count - 1)
-                }
+        if (allMessages.isEmpty()) return@LaunchedEffect
+        val last = allMessages.last()
+        if (initial && initialUnread > 0) unreadAnchor = allMessages.filter { it.senderId != me.uid }.takeLast(initialUnread).firstOrNull()?.id
+        val added = previousTail != last.id
+        if (initial || (added && (!listState.canScrollForward || last.senderId == me.uid))) {
+            delay(40)
+            val target = listState.layoutInfo.totalItemsCount - 1
+            if (target >= 0) {
+                if (initial || config.isReducedMotion) listState.scrollToItem(target)
+                else listState.animateScrollToItem(target)
             }
         }
-        initial = false
-        viewModel.clearUnread(conversationId)
+        previousTail = last.id; initial = false
     }
-
-    LaunchedEffect(tailId) {
-        if (tailId != null) {
-            delay(1100)
-            tailId = null
-        }
-    }
-
     val visibleMessages = allMessages.filter {
         (!starsOnly || it.isStarred) && (query.isBlank() || it.text.contains(query, true))
     }
-    val morphMessage = visibleMessages.find { it.id == tailId }
+    val rows = rowIdentity.rows(visibleMessages, showTyping && query.isBlank() && !starsOnly, me.uid)
+    val currentRows by rememberUpdatedState(rows)
+    LaunchedEffect(conversationId, resumed) {
+        if (!resumed) return@LaunchedEffect
+        snapshotFlow {
+            val keys = listState.layoutInfo.visibleItemsInfo.map { it.key.toString() }
+            currentRows.filter { it.key in keys }.mapNotNull { it.message?.id }
+        }.collectLatest { ids ->
+            delay(250)
+            repo.markVisibleRead(conversationId, ids)
+        }
+    }
 
     LiquidBackground(
         modifier = modifier,
@@ -637,7 +676,7 @@ fun ConversationScreen(
                     }
 
                     upload?.let { progress ->
-                        GlassCard(
+                        DustDelete("upload:$conversationId") { GlassCard(
                             Modifier.fillMaxWidth().padding(bottom = 6.dp),
                             shape = RoundedCornerShape(20.dp),
                             backgroundColor = config.accentColor.copy(alpha = .08f),
@@ -650,14 +689,19 @@ fun ConversationScreen(
                                         style = MaterialTheme.typography.labelMedium,
                                         modifier = Modifier.weight(1f)
                                     )
-                                    TextButton(onClick = { repo.cancelUpload() }) { Text("Cancel") }
+                                    TextButton(onClick = { scope.launch { DeletionCoordinator.perform("upload:$conversationId") { repo.cancelUpload() } } }) { Text("Cancel") }
                                 }
                                 LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
                             }
                         }
                     }
+                    }
 
+                    if (voiceDraft != null && !showVoicePreview && !voiceUploading) {
+                        TextButton(onClick = { showVoicePreview = true }) { Text("Resume voice draft") }
+                    }
                     if (recording) {
+                      DustDelete("recording:$conversationId") {
                         GlassCard(
                             Modifier.fillMaxWidth().padding(bottom = 6.dp),
                             shape = RoundedCornerShape(22.dp),
@@ -670,7 +714,7 @@ fun ConversationScreen(
                             ) {
                                 Column(Modifier.weight(1f)) {
                                     Text(
-                                        "● ${elapsed / 60}:${(elapsed % 60).toString().padStart(2, '0')}  ${if (paused) "Paused" else if (locked) "Locked" else "Swipe up to lock • left to cancel"}",
+                                        "● ${elapsed / 60}:${(elapsed % 60).toString().padStart(2, '0')}  ${if (cancellingRecording) "Discarding…" else if (paused) "Paused" else if (locked) "Locked" else "← Slide to delete     ↑ Lock"}",
                                         color = MaterialTheme.colorScheme.error,
                                         style = MaterialTheme.typography.labelMedium
                                     )
@@ -688,17 +732,18 @@ fun ConversationScreen(
                                         size = 38.dp
                                     )
                                 }
-                                GlassIconButton(Icons.Default.Delete, "Cancel recording", { stopRecording(false) }, size = 38.dp)
+                                GlassIconButton(Icons.Default.Delete, "Cancel recording", { cancelRecording() }, size = 38.dp)
                                 GlassIconButton(
-                                    Icons.Default.Send,
-                                    "Send voice message",
-                                    { stopRecording(true) },
+                                    Icons.Default.Stop,
+                                    "Stop and preview recording",
+                                    { stopRecording(true, preview = true) },
                                     tint = Color.White,
                                     backgroundColor = config.accentColor.copy(alpha = .86f),
                                     size = 38.dp
                                 )
                             }
                         }
+                      }
                     }
 
                     GlassCard(
@@ -737,51 +782,59 @@ fun ConversationScreen(
                                     size = 40.dp
                                 )
 
-                                var dx by remember { mutableFloatStateOf(0f) }
-                                var dy by remember { mutableFloatStateOf(0f) }
-                                Box(
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(CircleShape)
-                                        .background(if (config.isDark) Color.White.copy(alpha = .07f) else Color.White.copy(alpha = .48f))
-                                        .pointerInput(Unit) {
-                                            detectDragGesturesAfterLongPress(
-                                                onDragStart = {
-                                                    dx = 0f
-                                                    dy = 0f
+                                Box(contentAlignment = Alignment.BottomCenter) {
+                                    if (recording && !locked) {
+                                        Column(Modifier.offset(y = (-54).dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Icon(Icons.Default.Lock, "Slide up to lock", tint = config.accentColor)
+                                            Text("↑", color = config.accentColor)
+                                        }
+                                    }
+                                    Box(
+                                        modifier = Modifier.size(44.dp)
+
+                                            .clip(CircleShape)
+                                            .background(if (recording) config.accentColor.copy(alpha = .25f) else Color.Transparent)
+                                            .pointerInput(conversationId) {
+                                                val threshold = with(density) { 78.dp.toPx() }
+                                                awaitEachGesture {
+                                                    val down = awaitFirstDown(requireUnconsumed = false)
+                                                    val held = awaitLongPressOrCancellation(down.id)
+                                                    if (held == null) {
+                                                        android.widget.Toast.makeText(context, "Hold to record • slide up to lock", android.widget.Toast.LENGTH_SHORT).show()
+                                                        return@awaitEachGesture
+                                                    }
+                                                    held.consume()
                                                     locked = false
+                                                    recordDragX = 0f; recordDragY = 0f
                                                     requestCurrent()
-                                                },
-                                                onDragEnd = {
-                                                    if (recordingCurrent && !lockedCurrent) stopCurrent(true)
-                                                },
-                                                onDragCancel = {
-                                                    if (recordingCurrent && !lockedCurrent) stopCurrent(false)
-                                                },
-                                                onDrag = { change, dragAmount ->
-                                                    change.consume()
-                                                    dx += dragAmount.x
-                                                    dy += dragAmount.y
-                                                    if (dx < -100f && recordingCurrent) stopCurrent(false)
-                                                    if (dy < -100f && recordingCurrent) {
-                                                        locked = true
-                                                        keyboard?.hide()
-                                                        focusManager.clearFocus()
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    var gestureLocked = false
+                                                    var gestureCancelled = false
+                                                    var released = false
+                                                    while (!released) {
+                                                        val event = awaitPointerEvent()
+                                                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                                        if (!lockedCurrent && !cancellingCurrent) {
+                                                            val delta = change.positionChange()
+                                                            recordDragX = (recordDragX + delta.x).coerceIn(-threshold, 0f)
+                                                            recordDragY = (recordDragY + delta.y).coerceIn(-threshold, 0f)
+                                                            if (recordDragX <= -threshold) { gestureCancelled = true; cancelCurrent() }
+                                                            else if (recordDragY <= -threshold) {
+                                                                gestureLocked = true
+                                                                locked = true
+                                                                recordDragX = 0f; recordDragY = 0f
+                                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                            }
+                                                        }
+                                                        change.consume()
+                                                        released = !change.pressed
+                                                    }
+                                                    if (recordingCurrent && !gestureLocked && !gestureCancelled && !lockedCurrent && !cancellingCurrent) {
+                                                        if (released) stopCurrent(true) else preserveRecording()
                                                     }
                                                 }
-                                            )
-                                        }
-                                        .clickable {
-                                            if (!recording) {
-                                                locked = true
-                                                keyboard?.hide()
-                                                focusManager.clearFocus()
-                                                requestRecording()
-                                            }
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(Icons.Default.Mic, "Hold to record", modifier = Modifier.size(21.dp))
+                                            }, contentAlignment = Alignment.Center
+                                    ) { Icon(Icons.Default.Mic, "Hold to record", modifier = Modifier.size(23.dp)) }
                                 }
                             } else {
                                 GlassIconButton(
@@ -810,7 +863,8 @@ fun ConversationScreen(
                 }
             }
         ) { padding ->
-            Box(Modifier.fillMaxSize().padding(padding)) {
+            DustDelete("chat:$conversationId", Modifier.fillMaxSize().padding(padding)) {
+            Box(Modifier.fillMaxSize()) {
                 LazyColumn(
                     Modifier.fillMaxSize(),
                     state = listState,
@@ -828,56 +882,29 @@ fun ConversationScreen(
                         }
                     }
 
-                    val rows = visibleMessages.filterNot { it.id == morphMessage?.id }
-                    itemsIndexed(rows, key = { _, item -> item.id }) { index, message ->
-                        if (index == 0 || !sameDay(rows[index - 1].createdAt, message.createdAt)) {
-                            DateSeparator(message.createdAt)
-                        }
-                        val unreadStart = (rows.size - initialUnread).coerceAtLeast(0)
-                        if (initialUnread > 0 && index == unreadStart) {
-                            DateSeparator(message.createdAt, unread = true)
-                        }
-                        val previousMessage = rows.getOrNull(index - 1)
-                        val nextMessage = rows.getOrNull(index + 1)
-                        val groupWithPrevious = previousMessage?.senderId == message.senderId &&
-                            previousMessage?.let { sameDay(it.createdAt, message.createdAt) } == true
-                        val groupWithNext = nextMessage?.senderId == message.senderId &&
-                            nextMessage?.let { sameDay(it.createdAt, message.createdAt) } == true
-                        MessageBubble(
-                            message = message,
-                            isMe = message.senderId == me.uid,
-                            groupWithPrevious = groupWithPrevious,
-                            groupWithNext = groupWithNext,
-                            onLongClick = {
-                                actions = message
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            },
-                            onReply = {
-                                reply = message
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            },
-                            onReplyPreviewClick = { replyId ->
-                                val target = rows.indexOfFirst { it.id == replyId }
-                                if (target >= 0) scope.launch { listState.animateScrollToItem(target + 1) }
-                            },
-                            onMedia = { viewer = message },
-                            onReactionClick = { emoji ->
-                                viewModel.addReaction(conversationId, message.id, emoji)
-                            },
-                            onRetry = { repo.retryMessage(conversationId, message.id) }
-                        )
-                    }
-
-                    item(key = "live-typing-tail") {
-                        AnimatedVisibility(
-                            visible = morphMessage != null || conversation?.isTyping == true,
-                            enter = fadeIn() + expandVertically(),
-                            exit = fadeOut() + shrinkVertically()
-                        ) {
-                            MorphingTypingBubble(
-                                message = morphMessage,
-                                reduced = config.isReducedMotion,
-                                onLongClick = { morphMessage?.let { actions = it } }
+                    itemsIndexed(rows, key = { _, row -> row.key }) { index, row ->
+                        val actual = row.message
+                        val typing = actual == null
+                        val message = actual ?: Message(id = row.key, conversationId = conversationId, senderId = other.uid, text = "")
+                        val previous = rows.getOrNull(index - 1)?.message
+                        val next = rows.getOrNull(index + 1)?.message
+                        if (!typing && (previous == null || !sameDay(previous.createdAt, message.createdAt))) DateSeparator(message.createdAt)
+                        if (!typing && message.id == unreadAnchor) DateSeparator(message.createdAt, unread = true)
+                        DustDelete("message:${message.id}", if (config.isReducedMotion) Modifier else Modifier.animateItem()) {
+                            MessageBubble(
+                                message = message, typing = typing,
+                                isMe = !typing && message.senderId == me.uid,
+                                groupWithPrevious = !typing && previous != null && previous.senderId == message.senderId && sameDay(previous.createdAt, message.createdAt),
+                                groupWithNext = !typing && next != null && next.senderId == message.senderId && sameDay(next.createdAt, message.createdAt),
+                                onLongClick = { if (!typing) { actions = message; haptic.performHapticFeedback(HapticFeedbackType.LongPress) } },
+                                onReply = { if (!typing) { reply = message; haptic.performHapticFeedback(HapticFeedbackType.LongPress) } },
+                                onReplyPreviewClick = { id ->
+                                    val target = rows.indexOfFirst { it.message?.id == id }
+                                    if (target >= 0) scope.launch { listState.animateScrollToItem(target + 1) }
+                                },
+                                onMedia = { if (!typing) viewer = message },
+                                onReactionClick = { emoji -> viewModel.addReaction(conversationId, message.id, emoji) },
+                                onRetry = { repo.retryMessage(conversationId, message.id) }
                             )
                         }
                     }
@@ -902,6 +929,7 @@ fun ConversationScreen(
                     }
                 }
             }
+        }
         }
 
         if (attachmentSheet) {
@@ -1078,39 +1106,23 @@ fun ConversationScreen(
             }
         }
 
-        voiceDraft?.let { draft ->
-            GlassDialog("Voice preview", {
-                draft.file.delete()
-                voiceDraft = null
-            }) {
-                VoiceWaveformPlayer(
-                    draft.seconds,
-                    Uri.fromFile(draft.file).toString(),
-                    waveform = draft.waveform,
-                    isOutgoing = true
-                )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    GlassButton("Discard", {
-                        draft.file.delete()
-                        voiceDraft = null
-                    }, Modifier.weight(1f), isPrimary = false)
-                    GlassButton("Send", {
-                        val localDraft = draft
-                        voiceDraft = null
-                        repo.uploadChatMedia(conversationId, Uri.fromFile(localDraft.file), MessageType.VOICE) { result ->
-                            result.onSuccess { url ->
-                                viewModel.sendMessage(
-                                    conversationId,
-                                    "Voice message",
-                                    MessageType.VOICE,
-                                    url,
-                                    voiceDurationSeconds = localDraft.seconds,
-                                    waveform = localDraft.waveform
-                                )
-                                localDraft.file.delete()
-                            }.onFailure { localDraft.file.delete() }
+        voiceDraft?.takeIf { showVoicePreview }?.let { draft ->
+            GlassDialog("Voice preview", { showVoicePreview = false }) {
+                DustDelete("voice-draft:${draft.file.name}") {
+                    Column {
+                        VoiceWaveformPlayer(draft.seconds, Uri.fromFile(draft.file).toString(), waveform = draft.waveform)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            GlassButton("Discard", {
+                                scope.launch {
+                                    DeletionCoordinator.perform("voice-draft:${draft.file.name}") {
+                                        VoiceDraftStore.clear(context, conversationId)
+                                        voiceDraft = null; showVoicePreview = false
+                                    }
+                                }
+                            }, Modifier.weight(1f), isPrimary = false)
+                            GlassButton("Send", { sendVoice(draft) }, Modifier.weight(1f), enabled = !voiceUploading)
                         }
-                    }, Modifier.weight(1f))
+                    }
                 }
             }
         }
@@ -1119,9 +1131,9 @@ fun ConversationScreen(
             GlassDialog("Delete chat?", { deleteChatConfirm = false }) {
                 Text("This permanently removes the existing conversation from your account. It will not return after restart, sign-in, reinstall or sync. A future new message can create a fresh chat without restoring the deleted history.")
                 GlassButton("Delete chat", {
+                    deletingThisChat = true
                     viewModel.deleteChatForMe(conversationId)
                     deleteChatConfirm = false
-                    onBackClick()
                 }, Modifier.fillMaxWidth())
             }
         }
@@ -1206,6 +1218,7 @@ private fun TypingDots(reduced: Boolean) {
 @Composable
 fun MessageBubble(
     message: Message,
+    typing: Boolean = false,
     isMe: Boolean,
     groupWithPrevious: Boolean = false,
     groupWithNext: Boolean = false,
@@ -1252,10 +1265,11 @@ fun MessageBubble(
     val caption = message.text.trim().takeUnless { it in genericMediaLabels }.orEmpty()
     val isMedia = message.type == MessageType.IMAGE || message.type == MessageType.VIDEO
 
+    val maxBubbleWidth = LocalConfiguration.current.screenWidthDp.dp * .82f
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start) {
         Column(
             Modifier
-                .widthIn(max = 330.dp)
+                .widthIn(min = 54.dp, max = maxBubbleWidth)
                 .offset { IntOffset(offset.roundToInt(), 0) }
                 .pointerInput(message.id, isMe) {
                     detectHorizontalDragGestures(
@@ -1289,6 +1303,7 @@ fun MessageBubble(
                         .padding(if (isMedia && !message.isDeleted) 6.dp else 10.dp),
                     verticalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
+                    if (typing) { TypingDots(reduced) } else {
                     if (message.replyToText != null) {
                         Row(
                             Modifier
@@ -1362,10 +1377,10 @@ fun MessageBubble(
                         message.isDeleted ||
                         (caption.isNotBlank() && message.type != MessageType.VOICE)
                     ) {
-                        Text(
-                            if (message.type == MessageType.TEXT || message.isDeleted) message.text else caption,
+                        ExpandableMessageText(
+                            id = message.id,
+                            text = if (message.type == MessageType.TEXT || message.isDeleted) message.text else caption,
                             modifier = if (isMedia && !message.isDeleted) Modifier.padding(horizontal = 5.dp, vertical = 2.dp) else Modifier,
-                            style = MaterialTheme.typography.bodyMedium,
                             color = contentColor
                         )
                     }
@@ -1408,6 +1423,7 @@ fun MessageBubble(
                             modifier = Modifier.align(Alignment.End).clickable(onClick = onRetry)
                         )
                     }
+                    }
                 }
             }
 
@@ -1430,5 +1446,40 @@ fun MessageBubble(
                 }
             }
         }
+    }
+}
+
+
+internal data class BubbleRow(val key: String, val message: Message?)
+internal class BubbleRowIdentity {
+    private val keys = mutableMapOf<String, String>()
+    private val known = mutableSetOf<String>()
+    private var first = true
+    private var typingKey: String? = null
+    private var wasTyping = false
+    fun rows(messages: List<Message>, typing: Boolean, me: String): List<BubbleRow> {
+        if (typing && !wasTyping) typingKey = "typing-${java.util.UUID.randomUUID()}"
+        if (!first) {
+            val incoming = messages.firstOrNull { it.id !in known && it.senderId != me }
+            if (incoming != null && typingKey != null) { keys[incoming.id] = typingKey!!; typingKey = null }
+        }
+        known.addAll(messages.map { it.id }); first = false; wasTyping = typing
+        if (!typing) typingKey = null
+        return messages.map { BubbleRow(keys[it.id] ?: it.id, it) } +
+            (typingKey?.takeIf { typing }?.let { listOf(BubbleRow(it, null)) } ?: emptyList())
+    }
+}
+
+@Composable
+private fun ExpandableMessageText(id: String, text: String, modifier: Modifier = Modifier, color: Color) {
+    var expanded by rememberSaveable(id, text) { mutableStateOf(false) }
+    var overflow by remember(id, text) { mutableStateOf(false) }
+    Column(modifier.animateContentSize(if (LocalLiquidGlass.current.isReducedMotion) tween(0) else spring())) {
+        Text(text, color = color, style = MaterialTheme.typography.bodyMedium,
+            maxLines = if (expanded) Int.MAX_VALUE else 6, overflow = TextOverflow.Ellipsis,
+            onTextLayout = { if (!expanded) overflow = it.hasVisualOverflow })
+        if (overflow || expanded) Text(if (expanded) "Read less" else "Read more",
+            Modifier.clickable { expanded = !expanded }.padding(top = 4.dp),
+            color = color, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium)
     }
 }

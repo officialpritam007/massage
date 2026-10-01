@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.ui.components.*
+import com.example.data.DeletionCoordinator
 import com.example.ui.viewmodel.LiquidChatViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -79,12 +80,13 @@ fun SettingsScreen(
             Modifier.padding(18.dp),
             verticalAlignment = Alignment.CenterVertically
           ) {
-            GlassAvatar(
+            DustDelete("profile-photo:${me.uid}") { GlassAvatar(
               me.photoUrl,
               me.displayName,
               66.dp,
               onClick = { photo.launch("image/*") }
             )
+            }
             Spacer(Modifier.width(15.dp))
             Column(Modifier.weight(1f)) {
               Text(me.displayName.ifBlank { "Your profile" }, style = MaterialTheme.typography.titleLarge)
@@ -95,6 +97,9 @@ fun SettingsScreen(
               TextButton(onClick = { dialog = "Profile" }, contentPadding = PaddingValues(0.dp)) {
                 Text("Edit profile")
               }
+              if (me.photoUrl.isNotBlank()) TextButton(onClick = { scope.launch { runCatching {
+                DeletionCoordinator.perform("profile-photo:${me.uid}") { viewModel.repository.removeProfilePhoto().getOrThrow() }
+              } } }) { Text("Remove photo") }
             }
           }
         }
@@ -230,7 +235,7 @@ fun SettingsScreen(
           }
 
           "Data & Storage" -> {
-            Text("Temporary cache: ${cacheSize / 1024 / 1024} MB")
+            DustDelete("temporary-cache") { Text("Temporary cache: ${cacheSize / 1024 / 1024} MB") }
             Text("Private attachments are stored in Appwrite. Maximum attachment size: 25 MB.")
             Text("Clearing cache never restores messages or chats deleted from your account.")
             if (upload != null) {
@@ -240,11 +245,13 @@ fun SettingsScreen(
                 "Clear temporary cache",
                 {
                   scope.launch {
-                    withContext(Dispatchers.IO) {
-                      context.cacheDir.listFiles()?.forEach { it.deleteRecursively() }
-                    }
-                    com.example.data.network.LiquidApi.clear()
-                    cacheSize = 0L
+                    runCatching { DeletionCoordinator.perform("temporary-cache") {
+                      withContext(Dispatchers.IO) {
+                        context.cacheDir.listFiles()?.forEach { check(it.deleteRecursively()) { "Cache could not be cleared" } }
+                      }
+                      com.example.data.network.LiquidApi.clearMediaCachesOnly()
+                      cacheSize = 0L
+                    } }
                   }
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -264,7 +271,7 @@ fun SettingsScreen(
           }
 
           "About & Support" -> {
-            Text("Liquid Chat 4.0.0")
+            Text("Liquid Chat ${com.example.BuildConfig.VERSION_NAME}")
             Text("Developed by Pritam Pal")
             Text("© 2026 Pritam Pal")
             Text("Firebase authentication + Firestore realtime data + Appwrite private media.")
@@ -294,17 +301,18 @@ fun SettingsScreen(
           }
 
           "Delete account" -> {
-            Text("This permanently deletes your account, uploaded files and conversations. Sign in again first if the backend requests recent authentication.")
+            DustDelete("account:${me.uid}") { Text("This permanently deletes your account, uploaded files and conversations. Sign in again first if the backend requests recent authentication.") }
             GlassButton(
               text = "Permanently delete",
               onClick = {
                 busy = true
-                viewModel.deleteAccount { ok, _ ->
-                  busy = false
-                  if (ok) {
+                scope.launch {
+                  runCatching { DeletionCoordinator.perform("account:${me.uid}") {
+                    viewModel.repository.deleteAccount().getOrThrow()
                     dialog = ""
                     onLogout()
-                  }
+                  } }
+                  busy = false
                 }
               },
               modifier = Modifier.fillMaxWidth(),
