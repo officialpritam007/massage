@@ -137,7 +137,7 @@ fun LiquidChatApp(
         arguments = listOf(navArgument("conversationId") { type = NavType.StringType })
       ) { backStackEntry ->
         val convId = backStackEntry.arguments?.getString("conversationId") ?: return@composable
-        ConversationScreen(
+        ConversationScreenV2(
           conversationId = convId,
           viewModel = chatViewModel,
           onBackClick = { navController.popBackStack() },
