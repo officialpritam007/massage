@@ -13,9 +13,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.example.data.repository.removeProfilePhoto
 import com.example.ui.components.*
+import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -36,6 +39,7 @@ fun SettingsScreen(
   val users by viewModel.users.collectAsState()
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
+  val glass = LocalLiquidGlass.current
 
   var dialog by remember { mutableStateOf("") }
   var name by remember(me.displayName) { mutableStateOf(me.displayName) }
@@ -46,9 +50,37 @@ fun SettingsScreen(
   var checkingUsername by remember { mutableStateOf(false) }
   var busy by remember { mutableStateOf(false) }
   var cacheSize by remember { mutableLongStateOf(0L) }
+  var photoDeleting by remember { mutableStateOf(false) }
+  var photoDeleteFailed by remember { mutableStateOf(false) }
+  var locallyRemovedPhoto by remember { mutableStateOf(false) }
+
+  LaunchedEffect(me.photoUrl) {
+    if (me.photoUrl.isNotBlank() && !photoDeleting) locallyRemovedPhoto = false
+  }
+
+  val shownPhoto = if (locallyRemovedPhoto) "" else me.photoUrl
 
   val photo = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-    uri?.let(viewModel::uploadProfilePhoto)
+    uri?.let {
+      viewModel.uploadProfilePhoto(it) { result ->
+        if (result.isSuccess) {
+          locallyRemovedPhoto = false
+          photoDeleteFailed = false
+        }
+      }
+    }
+  }
+
+  fun removePhoto() {
+    if (photoDeleting || shownPhoto.isBlank()) return
+    photoDeleting = true
+    photoDeleteFailed = false
+    scope.launch {
+      delay(if (glass.isReducedMotion) 80 else 420)
+      val result = viewModel.repository.removeProfilePhoto()
+      photoDeleting = false
+      if (result.isSuccess) locallyRemovedPhoto = true else photoDeleteFailed = true
+    }
   }
 
   LiquidBackground(crystal = true) {
@@ -79,21 +111,39 @@ fun SettingsScreen(
             Modifier.padding(18.dp),
             verticalAlignment = Alignment.CenterVertically
           ) {
-            GlassAvatar(
-              me.photoUrl,
-              me.displayName,
-              66.dp,
-              onClick = { photo.launch("image/*") }
-            )
+            DustDeleteContainerV2(active = photoDeleting, reduced = glass.isReducedMotion) {
+              GlassAvatar(
+                shownPhoto,
+                me.displayName,
+                66.dp,
+                onClick = { if (!photoDeleting) photo.launch("image/*") }
+              )
+            }
             Spacer(Modifier.width(15.dp))
             Column(Modifier.weight(1f)) {
-              Text(me.displayName.ifBlank { "Your profile" }, style = MaterialTheme.typography.titleLarge)
+              Text(me.displayName.ifBlank { "Your profile" }, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
               Text(
                 me.username.takeIf { it.isNotBlank() }?.let { "@$it" } ?: "Set your username",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
               )
-              TextButton(onClick = { dialog = "Profile" }, contentPadding = PaddingValues(0.dp)) {
-                Text("Edit profile")
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { dialog = "Profile" }, contentPadding = PaddingValues(0.dp)) {
+                  Text("Edit profile")
+                }
+                Spacer(Modifier.width(12.dp))
+                TextButton(onClick = { photo.launch("image/*") }, enabled = !photoDeleting) {
+                  Text(if (shownPhoto.isBlank()) "Add photo" else "Change photo")
+                }
+              }
+              if (shownPhoto.isNotBlank()) {
+                TextButton(onClick = ::removePhoto, enabled = !photoDeleting, contentPadding = PaddingValues(0.dp)) {
+                  Text("Remove photo", color = MaterialTheme.colorScheme.error)
+                }
+              }
+              if (photoDeleteFailed) {
+                TextButton(onClick = ::removePhoto, contentPadding = PaddingValues(0.dp)) {
+                  Text("Photo delete failed • Retry", color = MaterialTheme.colorScheme.error)
+                }
               }
             }
           }

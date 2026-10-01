@@ -116,6 +116,21 @@ async function revokeMediaFromConversation(db, mediaUrl, cid) {
   });
 }
 
+async function deleteOwnedProfileMedia(db, uid, mediaUrl) {
+  if (!String(mediaUrl || '').startsWith('appwrite:')) return;
+  const fileId = String(mediaUrl).slice(9);
+  if (!/^[a-z0-9]{32}$/.test(fileId)) return;
+  const mr = db.doc('media/' + fileId);
+  const snap = await mr.get();
+  if (!snap.exists) return;
+  const meta = snap.data();
+  if (meta?.owner !== uid || meta?.conversationId) return;
+  await aw(`/storage/buckets/${env.APPWRITE_BUCKET_ID}/files/${fileId}`, 'DELETE').catch(e => {
+    if (e.code !== 404) throw e;
+  });
+  await mr.delete().catch(() => {});
+}
+
 function isPermanentTokenError(code) {
   return code === 'messaging/registration-token-not-registered'
     || code === 'messaging/invalid-registration-token'
@@ -143,8 +158,6 @@ async function notify(db, cid, id) {
     .filter(([, token]) => typeof token === 'string' && token.length > 0)
     .slice(0, 10);
   if (!tokenEntries.length) {
-    // No registered device can be notified right now. Keep notificationPending true so a later
-    // token registration / cleanup pass gets another opportunity instead of silently dropping it.
     throw new Error('No active notification token');
   }
 
@@ -179,8 +192,6 @@ async function notify(db, cid, id) {
   });
   if (Object.keys(tokenDeletes).length) await userRef.update(tokenDeletes).catch(() => {});
 
-  // If every attempted delivery failed transiently, preserve notificationPending and retry later.
-  // A successful device delivery or only permanently-invalid tokens is considered complete.
   if (result.successCount === 0 && transientFailures > 0) throw new Error('Push delivery temporarily unavailable');
   await ref.update({notifiedAt: Date.now()});
 }
@@ -254,6 +265,17 @@ export default async ({req, res, error}) => {
       return res.json({ok: true});
     }
 
+    if (p.action === 'profilePhotoDelete') {
+      const old = (await own.get()).data() || {};
+      const previousPhoto = String(old.photoUrl || '');
+      await deleteOwnedProfileMedia(db, uid, previousPhoto);
+      await Promise.all([
+        own.set({photoUrl: FieldValue.delete()}, {merge: true}),
+        db.doc('directory/' + uid).set({photoUrl: FieldValue.delete()}, {merge: true})
+      ]);
+      return res.json({ok: true});
+    }
+
     if (p.action === 'conversation') {
       if (typeof p.otherUid !== 'string' || p.otherUid === uid || !(await db.doc('users/' + p.otherUid).get()).exists) {
         throw new Error('Invalid contact');
@@ -322,8 +344,13 @@ export default async ({req, res, error}) => {
       await aw(path, 'PUT', {name: file.name, permissions: []});
       await metaRef.update({ready: true, mimeType: file.mimeType || '', size: file.sizeOriginal || 0});
       if (!meta.conversationId) {
-        await own.set({photoUrl: 'appwrite:' + p.fileId}, {merge: true});
-        await db.doc('directory/' + uid).set({photoUrl: 'appwrite:' + p.fileId}, {merge: true});
+        const previousPhoto = String((await own.get()).data()?.photoUrl || '');
+        const nextPhoto = 'appwrite:' + p.fileId;
+        await own.set({photoUrl: nextPhoto}, {merge: true});
+        await db.doc('directory/' + uid).set({photoUrl: nextPhoto}, {merge: true});
+        if (previousPhoto && previousPhoto !== nextPhoto) {
+          await deleteOwnedProfileMedia(db, uid, previousPhoto);
+        }
       }
       return res.json({url: 'appwrite:' + p.fileId});
     }
@@ -616,7 +643,6 @@ export default async ({req, res, error}) => {
         const s = await t.get(mref);
         const m = s.data();
         if (!m || m.deletedForEveryone || (m.hiddenFor || []).includes(uid)) throw new Error('Message unavailable');
-        // Firestore transactions require all reads to happen before the first write.
         const currentConversation = p.action === 'edit' ? await t.get(ref) : null;
 
         if (p.action === 'edit') {
