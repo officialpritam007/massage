@@ -101,8 +101,15 @@ object LiquidApi {
     }
   }
 
+  private fun localFile(url: String?): File? {
+    if (url.isNullOrBlank() || !url.startsWith("file:")) return null
+    val path = runCatching { Uri.parse(url).path }.getOrNull().orEmpty()
+    return path.takeIf { it.isNotBlank() }?.let(::File)?.takeIf { it.exists() && it.length() > 0 }
+  }
+
   /** Returns an already-downloaded private media file synchronously so Compose can avoid a spinner. */
   fun peekCachedPrivateMedia(url: String?): File? {
+    localFile(url)?.let { return it }
     if (!::context.isInitialized || url.isNullOrBlank()) return null
     val id = if (url.startsWith("appwrite:")) url.removePrefix("appwrite:") else Integer.toHexString(url.hashCode())
     val cached = File(File(context.cacheDir, "private-media"), "$id.bin")
@@ -110,6 +117,7 @@ object LiquidApi {
   }
 
   suspend fun cachedPrivateMedia(url: String, forceRefresh: Boolean = false): File = withContext(Dispatchers.IO) {
+    localFile(url)?.let { return@withContext it }
     require(::context.isInitialized) { "App context is unavailable" }
     if (!url.startsWith("appwrite:")) {
       val id = Integer.toHexString(url.hashCode())
