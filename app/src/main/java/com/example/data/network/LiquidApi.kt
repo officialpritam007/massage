@@ -163,14 +163,22 @@ object LiquidApi {
     conversationId: String?,
     progress: (Float) -> Unit = {}
   ): String = withContext(Dispatchers.IO) {
-    var mime = context.contentResolver.getType(uri) ?: when (uri.toString().substringAfterLast('.').lowercase()) {
+    val extension = uri.lastPathSegment.orEmpty().substringAfterLast('.', "").lowercase()
+    var mime = context.contentResolver.getType(uri)?.lowercase() ?: when (extension) {
       "jpg", "jpeg" -> "image/jpeg"
       "png" -> "image/png"
       "webp" -> "image/webp"
+      "aac" -> "audio/aac"
       "m4a" -> "audio/mp4"
       "mp4" -> "video/mp4"
       else -> "application/octet-stream"
     }
+
+    // File Uris produced by MediaRecorder are not always classified consistently by OEMs.
+    // Prefer the actual recording extension so AAC voice notes remain audio/* in Appwrite.
+    if (extension == "aac") mime = "audio/aac"
+    if (extension == "m4a" && !mime.startsWith("audio/")) mime = "audio/mp4"
+
     val file = File.createTempFile("upload-", ".bin", context.cacheDir)
     try {
       context.contentResolver.openInputStream(uri).use { input ->
@@ -211,8 +219,9 @@ object LiquidApi {
       val auth = session()
       val suffix = when {
         mime.startsWith("image/") -> "jpg"
-        mime.startsWith("video/") -> "mp4"
+        mime == "audio/aac" -> "aac"
         mime.startsWith("audio/") -> "m4a"
+        mime.startsWith("video/") -> "mp4"
         else -> "bin"
       }
 
