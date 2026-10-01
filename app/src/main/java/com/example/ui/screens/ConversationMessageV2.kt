@@ -15,17 +15,21 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -52,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.Message
 import com.example.data.model.MessageDeliveryStatus
 import com.example.data.model.MessageType
+import com.example.ui.components.GlassAvatar
 import com.example.ui.components.GlassCard
 import com.example.ui.components.PrivateImage
 import com.example.ui.components.PrivateVideoThumbnail
@@ -107,6 +112,8 @@ fun MessageBubbleV2(
     message: Message,
     isMe: Boolean,
     reduced: Boolean,
+    voiceAvatarUrl: String = "",
+    voiceAvatarName: String = "",
     onLongClick: () -> Unit,
     onReply: () -> Unit,
     onReplyPreviewClick: (String) -> Unit,
@@ -120,7 +127,6 @@ fun MessageBubbleV2(
     var overflowed by remember(message.id, message.text) { mutableStateOf(false) }
 
     LaunchedEffect(message.text) {
-        // Edited/replaced text always returns to the predictable collapsed state.
         expanded = false
         overflowed = false
     }
@@ -189,7 +195,42 @@ fun MessageBubbleV2(
                             message.mediaUrl,
                             Modifier.widthIn(min = 210.dp, max = 310.dp).aspectRatio(16f / 10f)
                         )
-                        MessageType.VOICE -> VoiceWaveformPlayer(message.voiceDurationSeconds, message.mediaUrl, message.waveform, isOutgoing = isMe)
+                        MessageType.VOICE -> Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(Modifier.size(44.dp)) {
+                                GlassAvatar(
+                                    photoUrl = voiceAvatarUrl,
+                                    name = voiceAvatarName.ifBlank { message.senderName.ifBlank { "Voice" } },
+                                    size = 42.dp
+                                )
+                                Box(
+                                    Modifier
+                                        .size(17.dp)
+                                        .align(Alignment.BottomEnd)
+                                        .background(
+                                            if (isMe) Color.White.copy(alpha = .94f) else config.accentColor.copy(alpha = .94f),
+                                            CircleShape
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Default.Mic,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(10.dp),
+                                        tint = if (isMe) config.accentColor else Color.White
+                                    )
+                                }
+                            }
+                            VoiceWaveformPlayer(
+                                message.voiceDurationSeconds,
+                                message.mediaUrl,
+                                message.waveform,
+                                modifier = Modifier.widthIn(min = 190.dp, max = 250.dp),
+                                isOutgoing = isMe
+                            )
+                        }
                         MessageType.FILE -> Text("▤  Document • Tap to open", style = MaterialTheme.typography.bodyMedium, color = contentColor)
                         else -> Unit
                     }
