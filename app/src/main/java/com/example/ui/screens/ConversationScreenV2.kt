@@ -24,7 +24,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -37,7 +36,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
@@ -87,7 +85,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -207,9 +204,7 @@ fun ConversationScreenV2(
     var unreadAnchorId by rememberSaveable(conversationId) { mutableStateOf<String?>(null) }
     var stickToBottom by remember(conversationId) { mutableStateOf(true) }
 
-    val nearBottom by remember {
-        derivedStateOf { !listState.canScrollForward }
-    }
+    val nearBottom by remember { derivedStateOf { !listState.canScrollForward } }
 
     fun sendVoiceDraft(draft: VoiceDraftV2) {
         if (draft.uploading || voiceDraftDeleting || !draft.file.exists() || draft.file.length() <= 0L) return
@@ -238,7 +233,7 @@ fun ConversationScreenV2(
         voiceDraftDeleting = true
         voiceDraftDeleteFailed = false
         scope.launch {
-            delay(if (config.isReducedMotion) 80 else 520)
+            delay(if (config.isReducedMotion) 90 else 520)
             val removed = !draft.file.exists() || draft.file.delete()
             if (removed) {
                 if (voiceDraft?.file == draft.file) voiceDraft = null
@@ -313,11 +308,8 @@ fun ConversationScreenV2(
     }
 
     fun requestRecording() {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            startRecording()
-        } else {
-            recordPermission.launch(Manifest.permission.RECORD_AUDIO)
-        }
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startRecording()
+        else recordPermission.launch(Manifest.permission.RECORD_AUDIO)
     }
     val requestCurrent by rememberUpdatedState<() -> Unit> { requestRecording() }
 
@@ -335,18 +327,11 @@ fun ConversationScreenV2(
         }
     }
 
-    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let { uploadAttachment(it, MessageType.IMAGE) }
-    }
-    val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let { uploadAttachment(it, MessageType.VIDEO) }
-    }
-    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let { uploadAttachment(it, MessageType.FILE) }
-    }
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let { uploadAttachment(it, MessageType.IMAGE) } }
+    val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let { uploadAttachment(it, MessageType.VIDEO) } }
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let { uploadAttachment(it, MessageType.FILE) } }
 
     LaunchedEffect(conversationId) { viewModel.observeConversation(conversationId) }
-
     LaunchedEffect(recording, paused) {
         while (recording) {
             delay(1000)
@@ -363,7 +348,6 @@ fun ConversationScreenV2(
             delay(120)
         }
     }
-
     LaunchedEffect(text) {
         repo.saveDraft(conversationId, text)
         if (text.isNotBlank()) {
@@ -372,44 +356,32 @@ fun ConversationScreenV2(
         }
         repo.setTyping(conversationId, false)
     }
-
-    LaunchedEffect(conversation?.isTyping) {
-        if (conversation?.isTyping == true) typingAt = System.currentTimeMillis()
-    }
-
+    LaunchedEffect(conversation?.isTyping) { if (conversation?.isTyping == true) typingAt = System.currentTimeMillis() }
     LaunchedEffect(messages.lastOrNull()?.id) {
         val remote = messages.lastOrNull { it.senderId != me.uid }
-        if (
-            remote != null && remote.id != lastRemoteId && remote.type == MessageType.TEXT &&
-            System.currentTimeMillis() - typingAt < 8000
-        ) {
+        if (remote != null && remote.id != lastRemoteId && remote.type == MessageType.TEXT && System.currentTimeMillis() - typingAt < 8000) {
             morphId = remote.id
             delay(if (config.isReducedMotion) 120 else 1050)
             morphId = null
         }
         lastRemoteId = remote?.id
     }
-
     LaunchedEffect(messages.size, conversation?.unreadCount) {
         if (unreadAnchorId == null) {
             val unread = conversation?.unreadCount ?: 0
             if (unread > 0 && messages.isNotEmpty()) {
                 val incoming = messages.filter { it.senderId != me.uid && !it.isDeleted }
-                val loadedUnread = minOf(unread, incoming.size)
-                unreadAnchorId = incoming.takeLast(loadedUnread).firstOrNull()?.id
+                unreadAnchorId = incoming.takeLast(minOf(unread, incoming.size)).firstOrNull()?.id
             }
         }
     }
-
     LaunchedEffect(listState) {
         snapshotFlow { listState.isScrollInProgress to nearBottom }
             .distinctUntilChanged()
             .collect { (scrolling, atBottom) ->
-                if (scrolling) stickToBottom = atBottom
-                else if (atBottom) stickToBottom = true
+                if (scrolling) stickToBottom = atBottom else if (atBottom) stickToBottom = true
             }
     }
-
     LaunchedEffect(messages.lastOrNull()?.id, messages.size) {
         if (messages.isEmpty()) return@LaunchedEffect
         val last = messages.last()
@@ -418,9 +390,7 @@ fun ConversationScreenV2(
             delay(50)
             val target = (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
             if (config.isReducedMotion) listState.scrollToItem(target) else listState.animateScrollToItem(target)
-        } else if (last.senderId != me.uid && unreadAnchorId == null) {
-            unreadAnchorId = last.id
-        }
+        } else if (last.senderId != me.uid && unreadAnchorId == null) unreadAnchorId = last.id
         initialOpen = false
     }
 
@@ -464,9 +434,7 @@ fun ConversationScreenV2(
 
     LaunchedEffect(conversationId, latestRemoteId, conversation?.unreadCount) {
         if ((conversation?.unreadCount ?: 0) <= 0 || latestRemoteId == null) return@LaunchedEffect
-        snapshotFlow {
-            listState.layoutInfo.visibleItemsInfo.any { item -> item.key == latestRemoteId }
-        }
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.any { item -> item.key == latestRemoteId } }
             .distinctUntilChanged()
             .collect { latestIncomingVisible ->
                 if (latestIncomingVisible) {
@@ -503,14 +471,7 @@ fun ConversationScreenV2(
                         GlassIconButton(Icons.Default.MoreHoriz, "Chat menu", { menu = true }, size = 44.dp)
                     }
                     AnimatedVisibility(search) {
-                        GlassTextField(
-                            query,
-                            { query = it },
-                            placeholder = "Search messages",
-                            modifier = Modifier.padding(top = 7.dp),
-                            shape = RoundedCornerShape(24.dp),
-                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None)
-                        )
+                        GlassTextField(query, { query = it }, placeholder = "Search messages", modifier = Modifier.padding(top = 7.dp), shape = RoundedCornerShape(24.dp), keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None))
                     }
                 }
             },
@@ -532,16 +493,8 @@ fun ConversationScreenV2(
                     }
 
                     voiceDraft?.let { draft ->
-                        DustDeleteContainerV2(
-                            active = voiceDraftDeleting,
-                            reduced = config.isReducedMotion,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            GlassCard(
-                                shape = RoundedCornerShape(22.dp),
-                                backgroundColor = if (draft.failed || voiceDraftDeleteFailed) MaterialTheme.colorScheme.error.copy(alpha = .09f) else config.accentColor.copy(alpha = .08f),
-                                elevation = 1.dp
-                            ) {
+                        DustDeleteContainerV2(active = voiceDraftDeleting, reduced = config.isReducedMotion, modifier = Modifier.fillMaxWidth()) {
+                            GlassCard(shape = RoundedCornerShape(22.dp), backgroundColor = if (draft.failed || voiceDraftDeleteFailed) MaterialTheme.colorScheme.error.copy(alpha = .09f) else config.accentColor.copy(alpha = .08f), elevation = 1.dp) {
                                 Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
@@ -559,20 +512,8 @@ fun ConversationScreenV2(
                                     }
                                     VoiceWaveformPlayer(draft.seconds, Uri.fromFile(draft.file).toString(), draft.waveform, isOutgoing = true)
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        GlassButton(
-                                            if (voiceDraftDeleteFailed) "Retry discard" else "Discard",
-                                            onClick = { discardVoiceDraft(draft) },
-                                            modifier = Modifier.weight(1f),
-                                            isPrimary = false,
-                                            enabled = !draft.uploading && !voiceDraftDeleting
-                                        )
-                                        GlassButton(
-                                            if (draft.failed) "Retry" else "Send",
-                                            onClick = { sendVoiceDraft(draft.copy(uploading = false)) },
-                                            modifier = Modifier.weight(1f),
-                                            isLoading = draft.uploading,
-                                            enabled = !draft.uploading && !voiceDraftDeleting
-                                        )
+                                        GlassButton(if (voiceDraftDeleteFailed) "Retry discard" else "Discard", { discardVoiceDraft(draft) }, Modifier.weight(1f), isPrimary = false, enabled = !draft.uploading && !voiceDraftDeleting)
+                                        GlassButton(if (draft.failed) "Retry" else "Send", { sendVoiceDraft(draft.copy(uploading = false)) }, Modifier.weight(1f), isLoading = draft.uploading, enabled = !draft.uploading && !voiceDraftDeleting)
                                     }
                                 }
                             }
@@ -588,9 +529,7 @@ fun ConversationScreenV2(
                             reducedMotion = config.isReducedMotion,
                             onPauseResume = {
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                                    runCatching {
-                                        if (paused) recorder?.resume() else recorder?.pause()
-                                    }.onSuccess { paused = !paused }
+                                    runCatching { if (paused) recorder?.resume() else recorder?.pause() }.onSuccess { paused = !paused }
                                 }
                             },
                             onDiscard = { finishRecording(false, false) },
@@ -613,25 +552,11 @@ fun ConversationScreenV2(
                         }
                     }
 
-                    GlassCard(
-                        Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(30.dp),
-                        backgroundColor = if (config.isDark) Color(0xFF0C1620).copy(alpha = .78f) else Color.White.copy(alpha = .72f),
-                        elevation = 8.dp
-                    ) {
+                    GlassCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(30.dp), backgroundColor = if (config.isDark) Color(0xFF0C1620).copy(alpha = .78f) else Color.White.copy(alpha = .72f), elevation = 8.dp) {
                         Row(Modifier.padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
                             GlassIconButton(Icons.Default.Add, "Attach", { attachmentSheet = true }, size = 40.dp)
                             Spacer(Modifier.width(3.dp))
-                            GlassTextField(
-                                text,
-                                { if (it.length <= 8000) text = it },
-                                placeholder = if (other.uid in blocked) "Contact blocked" else "Message…",
-                                modifier = Modifier.weight(1f),
-                                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
-                                singleLine = false,
-                                maxLines = 5,
-                                shape = RoundedCornerShape(24.dp)
-                            )
+                            GlassTextField(text, { if (it.length <= 8000) text = it }, placeholder = if (other.uid in blocked) "Contact blocked" else "Message…", modifier = Modifier.weight(1f), keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None), singleLine = false, maxLines = 5, shape = RoundedCornerShape(24.dp))
                             Spacer(Modifier.width(3.dp))
                             if (text.isBlank()) {
                                 GlassIconButton(Icons.Default.PhotoCamera, "Camera", onNavigateToCamera, size = 40.dp)
@@ -640,74 +565,43 @@ fun ConversationScreenV2(
                                 val micX = if (recording && !locked) dx.coerceIn(-120f, 0f) else 0f
                                 val micY = if (recording && !locked) dy.coerceIn(-120f, 0f) else 0f
                                 Box(
-                                    Modifier
-                                        .size(40.dp)
-                                        .offset { IntOffset(micX.roundToInt(), micY.roundToInt()) }
-                                        .clip(CircleShape)
+                                    Modifier.size(40.dp).offset { IntOffset(micX.roundToInt(), micY.roundToInt()) }.clip(CircleShape)
                                         .background(if (config.isDark) Color.White.copy(alpha = .08f) else Color.White.copy(alpha = .58f))
                                         .pointerInput(other.uid, blocked) {
                                             detectDragGesturesAfterLongPress(
                                                 onDragStart = {
-                                                    dx = 0f
-                                                    dy = 0f
-                                                    locked = false
-                                                    keyboard?.hide()
-                                                    focus.clearFocus()
-                                                    requestCurrent()
+                                                    dx = 0f; dy = 0f; locked = false
+                                                    keyboard?.hide(); focus.clearFocus(); requestCurrent()
                                                 },
                                                 onDragEnd = {
                                                     if (recordingCurrent && !lockedCurrent) finishCurrent(true, true)
-                                                    dx = 0f
-                                                    dy = 0f
+                                                    dx = 0f; dy = 0f
                                                 },
                                                 onDragCancel = {
                                                     if (recordingCurrent && !lockedCurrent) finishCurrent(false, false)
-                                                    dx = 0f
-                                                    dy = 0f
+                                                    dx = 0f; dy = 0f
                                                 },
                                                 onDrag = { change, amount ->
-                                                    change.consume()
-                                                    dx += amount.x
-                                                    dy += amount.y
+                                                    change.consume(); dx += amount.x; dy += amount.y
                                                     if (dx < -100f && recordingCurrent) {
                                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                        finishCurrent(false, false)
-                                                        dx = 0f
-                                                        dy = 0f
+                                                        finishCurrent(false, false); dx = 0f; dy = 0f
                                                     } else if (dy < -100f && recordingCurrent && !lockedCurrent) {
-                                                        locked = true
-                                                        dx = 0f
-                                                        dy = 0f
+                                                        locked = true; dx = 0f; dy = 0f
                                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                                     }
                                                 }
                                             )
                                         },
                                     contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(Icons.Default.Mic, "Press and hold to record", Modifier.size(21.dp), tint = MaterialTheme.colorScheme.onSurface)
-                                }
+                                ) { Icon(Icons.Default.Mic, "Press and hold to record", Modifier.size(21.dp), tint = MaterialTheme.colorScheme.onSurface) }
                             } else {
-                                GlassIconButton(
-                                    Icons.Default.Send,
-                                    "Send",
-                                    {
-                                        if (text.isNotBlank() && other.uid !in blocked) {
-                                            viewModel.sendMessage(
-                                                conversationId,
-                                                text.trim(),
-                                                replyToId = reply?.id,
-                                                replyToText = reply?.text,
-                                                replyToSender = reply?.senderName
-                                            )
-                                            text = ""
-                                            reply = null
-                                        }
-                                    },
-                                    tint = Color.White,
-                                    backgroundColor = config.accentColor.copy(alpha = .90f),
-                                    size = 40.dp
-                                )
+                                GlassIconButton(Icons.Default.Send, "Send", {
+                                    if (text.isNotBlank() && other.uid !in blocked) {
+                                        viewModel.sendMessage(conversationId, text.trim(), replyToId = reply?.id, replyToText = reply?.text, replyToSender = reply?.senderName)
+                                        text = ""; reply = null
+                                    }
+                                }, tint = Color.White, backgroundColor = config.accentColor.copy(alpha = .90f), size = 40.dp)
                             }
                         }
                     }
@@ -715,25 +609,13 @@ fun ConversationScreenV2(
             }
         ) { padding ->
             Box(Modifier.fillMaxSize().padding(padding)) {
-                LazyColumn(
-                    Modifier.fillMaxSize(),
-                    state = listState,
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(3.dp)
-                ) {
+                LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     item(key = "load-earlier") {
-                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            TextButton(onClick = { repo.loadOlder(conversationId) }) { Text("Load earlier messages") }
-                        }
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { TextButton(onClick = { repo.loadOlder(conversationId) }) { Text("Load earlier messages") } }
                     }
-
                     itemsIndexed(rows, key = { _, item -> item.id }) { _, message ->
                         if (message.id == unreadAnchorId) UnreadSeparatorV2()
-                        DustDeleteContainerV2(
-                            active = deletingId == message.id,
-                            reduced = config.isReducedMotion,
-                            modifier = Modifier.animateItem().fillMaxWidth()
-                        ) {
+                        DustDeleteContainerV2(active = deletingId == message.id, reduced = config.isReducedMotion, modifier = Modifier.animateItem().fillMaxWidth()) {
                             MessageBubbleV2(
                                 message = message,
                                 isMe = message.senderId == me.uid,
@@ -753,32 +635,21 @@ fun ConversationScreenV2(
                         }
                         if (deleteRetry?.first?.id == message.id && deletingId != message.id) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.senderId == me.uid) Arrangement.End else Arrangement.Start) {
-                                TextButton(onClick = { deleteRetry?.let { performDelete(it.first, it.second) } }) {
-                                    Text("Delete failed • Retry", color = MaterialTheme.colorScheme.error)
-                                }
+                                TextButton(onClick = { deleteRetry?.let { performDelete(it.first, it.second) } }) { Text("Delete failed • Retry", color = MaterialTheme.colorScheme.error) }
                             }
                         }
                     }
-
                     item(key = "typing-morph") {
-                        AnimatedVisibility(
-                            visible = morphMessage != null || conversation?.isTyping == true,
-                            enter = fadeIn() + expandVertically(),
-                            exit = fadeOut() + shrinkVertically()
-                        ) {
+                        AnimatedVisibility(visible = morphMessage != null || conversation?.isTyping == true, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
                             TypingMorphBubbleV2(morphMessage, config.isReducedMotion)
                         }
                     }
                 }
-
                 if (!stickToBottom && listState.layoutInfo.totalItemsCount > 0) {
-                    SmallFloatingActionButton(
-                        onClick = {
-                            stickToBottom = true
-                            scope.launch { listState.animateScrollToItem((listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)) }
-                        },
-                        modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp)
-                    ) { Icon(Icons.Default.KeyboardArrowDown, "Jump to newest") }
+                    SmallFloatingActionButton(onClick = {
+                        stickToBottom = true
+                        scope.launch { listState.animateScrollToItem((listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)) }
+                    }, modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp)) { Icon(Icons.Default.KeyboardArrowDown, "Jump to newest") }
                 }
             }
         }
@@ -801,24 +672,19 @@ fun ConversationScreenV2(
         }
 
         actionMessage?.let { message ->
-            GlassDialog("Message", { actionMessage = null }) {
-                Row {
-                    listOf("❤️", "👍", "😂", "😮", "😢", "🙏").forEach { emoji ->
-                        Text(emoji, Modifier.clickable { viewModel.addReaction(conversationId, message.id, emoji); actionMessage = null }.padding(6.dp), fontSize = 22.sp)
-                    }
-                }
-                TextButton(onClick = { reply = message; actionMessage = null }) { Text("Reply") }
-                TextButton(onClick = { clipboard.setText(AnnotatedString(message.text)); actionMessage = null }) { Text("Copy") }
-                TextButton(onClick = { repo.starMessage(conversationId, message.id); actionMessage = null }) { Text(if (message.isStarred) "Unstar" else "Star") }
-                TextButton(onClick = { viewModel.pinMessage(conversationId, message.id); actionMessage = null }) { Text(if (message.isPinned) "Unpin" else "Pin") }
-                if (message.senderId == me.uid && message.type == MessageType.TEXT && !message.isDeleted) {
-                    TextButton(onClick = { editMessage = message; editText = message.text; actionMessage = null }) { Text("Edit") }
-                }
-                TextButton(onClick = { deleteTarget = message to DeleteModeV2.FOR_ME; actionMessage = null }) { Text("Delete for me") }
-                if (message.senderId == me.uid) {
-                    TextButton(onClick = { deleteTarget = message to DeleteModeV2.FOR_EVERYONE; actionMessage = null }) { Text("Delete for everyone", color = MaterialTheme.colorScheme.error) }
-                }
-            }
+            MessageActionSheetV3(
+                message = message,
+                isMine = message.senderId == me.uid,
+                onDismiss = { actionMessage = null },
+                onReaction = { emoji -> viewModel.addReaction(conversationId, message.id, emoji); actionMessage = null },
+                onReply = { reply = message; actionMessage = null },
+                onCopy = { clipboard.setText(AnnotatedString(message.text)); actionMessage = null },
+                onToggleStar = { repo.starMessage(conversationId, message.id); actionMessage = null },
+                onTogglePin = { viewModel.pinMessage(conversationId, message.id); actionMessage = null },
+                onEdit = { editMessage = message; editText = message.text; actionMessage = null },
+                onDeleteForMe = { deleteTarget = message to DeleteModeV2.FOR_ME; actionMessage = null },
+                onDeleteForEveryone = { deleteTarget = message to DeleteModeV2.FOR_EVERYONE; actionMessage = null }
+            )
         }
 
         deleteTarget?.let { (message, mode) ->
@@ -830,13 +696,7 @@ fun ConversationScreenV2(
 
         editMessage?.let { message ->
             GlassDialog("Edit message", { editMessage = null }) {
-                GlassTextField(
-                    editText,
-                    { if (it.length <= 8000) editText = it },
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
-                    singleLine = false,
-                    maxLines = 6
-                )
+                GlassTextField(editText, { if (it.length <= 8000) editText = it }, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None), singleLine = false, maxLines = 6)
                 GlassButton("Save", {
                     if (editText.isNotBlank()) viewModel.editMessage(conversationId, message.id, editText.trim())
                     editMessage = null
@@ -864,9 +724,7 @@ private fun TypingMorphBubbleV2(message: Message?, reduced: Boolean) {
     val shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp, bottomStart = 7.dp, bottomEnd = 22.dp)
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
         Box(
-            Modifier
-                .widthIn(min = 54.dp, max = 330.dp)
-                .clip(shape)
+            Modifier.widthIn(min = 54.dp, max = 330.dp).clip(shape)
                 .background(if (config.isDark) Color.White.copy(alpha = .07f) else Color.White.copy(alpha = .68f))
                 .border(1.dp, Color.White.copy(alpha = if (config.isDark) .10f else .58f), shape)
                 .animateContentSize(if (reduced) tween(0) else spring(dampingRatio = .72f, stiffness = 360f))
@@ -887,12 +745,7 @@ private fun TypingDotsV2(reduced: Boolean) {
         repeat(3) { index ->
             val y = if (reduced) 0f else {
                 val transition = rememberInfiniteTransition(label = "typing-v2-$index")
-                val value by transition.animateFloat(
-                    initialValue = 0f,
-                    targetValue = -3.5f,
-                    animationSpec = infiniteRepeatable(tween(330, delayMillis = index * 95), repeatMode = RepeatMode.Reverse),
-                    label = "dot-v2"
-                )
+                val value by transition.animateFloat(initialValue = 0f, targetValue = -3.5f, animationSpec = infiniteRepeatable(tween(330, delayMillis = index * 95), repeatMode = RepeatMode.Reverse), label = "dot-v2")
                 value
             }
             Box(Modifier.offset(y = y.dp).size(6.dp).clip(CircleShape).background(accent.copy(alpha = .9f)))
