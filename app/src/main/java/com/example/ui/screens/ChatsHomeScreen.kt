@@ -46,7 +46,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -58,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.Conversation
+import com.example.data.repository.deleteChatForMeAwait
 import com.example.ui.components.GlassAvatar
 import com.example.ui.components.GlassBadge
 import com.example.ui.components.GlassCard
@@ -90,7 +90,6 @@ fun ChatsHomeScreen(
     val current by viewModel.currentUser.collectAsState()
     val glass = LocalLiquidGlass.current
     val scope = rememberCoroutineScope()
-    val currentConversations by rememberUpdatedState(conversations)
 
     var tab by rememberSaveable { mutableStateOf(initialTab) }
     var menu by remember { mutableStateOf<Conversation?>(null) }
@@ -113,13 +112,10 @@ fun ChatsHomeScreen(
         deletingId = conversation.id
         deleteRetry = null
         scope.launch {
-            delay(if (glass.isReducedMotion) 80 else 420)
-            viewModel.deleteChatForMe(conversation.id)
-            delay(1800)
-            if (currentConversations.any { it.id == conversation.id }) {
-                deletingId = null
-                deleteRetry = conversation
-            }
+            delay(if (glass.isReducedMotion) 90 else 520)
+            val result = viewModel.repository.deleteChatForMeAwait(conversation.id)
+            deletingId = null
+            deleteRetry = if (result.isFailure) conversation else null
         }
     }
 
