@@ -84,6 +84,8 @@ fun GlassCard(
   borderColor: Color? = null,
   elevation: Dp = 3.dp,
   lensing: Boolean = true,
+  /** Set false for long lists: keeps the tint but skips the per-item blur layer. */
+  frost: Boolean = true,
   onClick: (() -> Unit)? = null,
   content: @Composable () -> Unit
 ) {
@@ -128,7 +130,7 @@ fun GlassCard(
       .shadow(elevation, resolvedShape, ambientColor = shadow, spotColor = shadow)
       .clip(resolvedShape)
       .then(
-        if (backdrop != null && config.isGlassEnabled) {
+        if (backdrop != null && config.isGlassEnabled && frost) {
           Modifier.hazeEffect(backdrop) {
             this.blurRadius = blurDp.dp
             noiseFactor = noise

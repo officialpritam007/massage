@@ -901,6 +901,16 @@ class ChatRepository(
   fun draft(cid: String) = prefs.getString("draft:$uid:$cid", "").orEmpty()
   fun saveDraft(cid: String, text: String) { prefs.edit().putString("draft:$uid:$cid", text).apply() }
 
+  /** Media already copied to the gallery for this conversation, so auto-save never duplicates. */
+  fun autoSavedMediaIds(cid: String): Set<String> =
+    prefs.getStringSet("autoSaved:$uid:$cid", emptySet()).orEmpty()
+
+  fun markAutoSavedMedia(cid: String, ids: Collection<String>) {
+    if (ids.isEmpty()) return
+    val next = (autoSavedMediaIds(cid) + ids).toList().takeLast(400).toSet()
+    prefs.edit().putStringSet("autoSaved:$uid:$cid", next).apply()
+  }
+
   suspend fun checkUsernameAvailability(username: String): Result<Boolean> = runCatching {
     LiquidApi.call("usernameCheck", mapOf("username" to username.trim().lowercase())).optBoolean("available", false)
   }

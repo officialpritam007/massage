@@ -137,8 +137,14 @@ fun MediaViewer(message: Message, onClose: () -> Unit) {
                             Icons.Default.OpenInNew,
                             "Open with another app",
                             {
-                                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
-                                    .onFailure { error = "No app available to open this attachment" }
+                                val openUrl = url
+                                if (openUrl.isNullOrBlank()) {
+                                    // The private link is still being resolved; nothing to open yet.
+                                    error = null
+                                } else {
+                                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(openUrl))) }
+                                        .onFailure { error = "No app available to open this attachment" }
+                                }
                             },
                             size = 40.dp
                         )

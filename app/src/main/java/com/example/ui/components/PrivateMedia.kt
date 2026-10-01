@@ -38,6 +38,7 @@ fun PrivateImage(
   modifier: Modifier = Modifier,
   contentScale: ContentScale = ContentScale.Crop,
   cornerRadius: Dp = 18.dp,
+  hidden: Boolean = false,
   onIntrinsicSize: ((Float) -> Unit)? = null
 ) {
   var resolved by remember(model) { mutableStateOf<String?>(null) }
@@ -45,10 +46,14 @@ fun PrivateImage(
   var imageFailed by remember(model) { mutableStateOf(false) }
   var retry by remember(model) { mutableIntStateOf(0) }
 
-  LaunchedEffect(model, retry) {
+  LaunchedEffect(model, retry, hidden) {
     resolved = null
     failed = false
     imageFailed = false
+    if (hidden) {
+      // Privacy gate: never resolve or download the private file until it is revealed.
+      return@LaunchedEffect
+    }
     if (model.isNullOrBlank()) {
       failed = true
     } else {
@@ -88,6 +93,11 @@ fun PrivateImage(
           }
         }
       }
+      hidden && resolved == null -> Box(
+        Modifier
+          .fillMaxSize()
+          .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.30f))
+      )
       resolved == null -> MediaShimmer(Modifier.fillMaxSize())
       else -> {
         AsyncImage(

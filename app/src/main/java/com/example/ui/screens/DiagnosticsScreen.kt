@@ -36,6 +36,7 @@ fun DiagnosticsScreen(
 ) {
   val clipboard = LocalClipboardManager.current
   val appError by viewModel.error.collectAsState()
+  val syncIssue by viewModel.syncIssue.collectAsState()
   var running by remember { mutableStateOf(true) }
   var items by remember { mutableStateOf<List<DiagnosticItem>>(emptyList()) }
   var runKey by remember { mutableIntStateOf(0) }
@@ -91,6 +92,11 @@ fun DiagnosticsScreen(
       "Backend configuration",
       BuildConfig.LIQUID_API_URL.startsWith("https://"),
       BuildConfig.LIQUID_API_URL.ifBlank { "LIQUID_API_URL missing" }
+    )
+    result += DiagnosticItem(
+      "Realtime listeners",
+      syncIssue.isNullOrBlank(),
+      syncIssue ?: "All background listeners healthy"
     )
     result += DiagnosticItem(
       "Last app error",

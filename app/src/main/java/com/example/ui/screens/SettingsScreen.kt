@@ -249,10 +249,7 @@ fun SettingsScreen(
 
           "Data & Storage" -> {
             Text("Temporary cache: ${cacheSize / 1024 / 1024} MB")
-            Text("Private attachments are stored in Appwrite and served with short-lived access links. Maximum attachment size: 25 MB.")
-            Toggle("Auto-save received media to gallery", privacy.autoSaveReceivedMedia) {
-              viewModel.updatePrivacy(privacy.copy(autoSaveReceivedMedia = it))
-            }
+            Text("Private attachments are stored in Appwrite and served with short-lived access links. Maximum attachment size: 25 MB. Auto-save to gallery is controlled in Privacy.")
             Text("Clearing the cache also removes downloaded copies; the private Appwrite originals stay available.")
             Text("Clearing cache never restores messages or chats deleted from your account.")
             if (upload != null) {

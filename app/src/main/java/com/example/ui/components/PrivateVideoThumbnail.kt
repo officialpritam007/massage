@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
+import android.util.LruCache
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -21,18 +22,31 @@ import com.example.data.network.LiquidApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+// Decoded preview frames are cached so scrolling a media-heavy chat does not re-decode every time.
+private val videoThumbCache = LruCache<String, Bitmap>(12)
+
 @Composable
 fun PrivateVideoThumbnail(
   mediaUrl: String,
-  modifier: Modifier = Modifier
+  modifier: Modifier = Modifier,
+  hidden: Boolean = false
 ) {
   var frame by remember(mediaUrl) { mutableStateOf<Bitmap?>(null) }
   var error by remember(mediaUrl) { mutableStateOf(false) }
   var retry by remember(mediaUrl) { mutableIntStateOf(0) }
 
-  LaunchedEffect(mediaUrl, retry) {
+  LaunchedEffect(mediaUrl, retry, hidden) {
     error = false
-    frame?.recycle()
+    if (hidden) {
+      // Privacy gate: no resolve/download/decode until the preview is revealed.
+      frame = null
+      return@LaunchedEffect
+    }
+    val cacheKey = if (retry > 0) "$mediaUrl#$retry" else mediaUrl
+    videoThumbCache.get(cacheKey)?.let {
+      frame = it
+      return@LaunchedEffect
+    }
     frame = null
     runCatching {
       withContext(Dispatchers.IO) {
@@ -47,12 +61,10 @@ fun PrivateVideoThumbnail(
           retriever.release()
         }
       }
-    }.onSuccess { frame = it }
-      .onFailure { error = true }
-  }
-
-  DisposableEffect(mediaUrl) {
-    onDispose { frame?.recycle() }
+    }.onSuccess {
+      videoThumbCache.put(cacheKey, it)
+      frame = it
+    }.onFailure { error = true }
   }
 
   Box(
@@ -73,6 +85,11 @@ fun PrivateVideoThumbnail(
           Text("Retry")
         }
       }
+      hidden && frame == null -> Box(
+        Modifier
+          .fillMaxSize()
+          .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .30f))
+      )
       frame == null -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
       else -> {
         Image(

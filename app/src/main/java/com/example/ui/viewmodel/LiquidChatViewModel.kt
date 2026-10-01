@@ -25,6 +25,7 @@ class LiquidChatViewModel(
   val error = repository.error
   val loading = repository.loading
   val upload = repository.upload
+  val syncIssue = repository.syncIssue
   override fun onCleared() { repository.close() }
 
   private val _searchQuery = MutableStateFlow("")

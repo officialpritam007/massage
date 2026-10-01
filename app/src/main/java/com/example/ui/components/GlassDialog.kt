@@ -3,9 +3,11 @@ package com.example.ui.components
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -35,17 +38,22 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.ui.theme.LocalLiquidGlass
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextPrimaryLight
 
@@ -124,6 +132,12 @@ fun GlassSheet(
   val sheetBackground = config.panelSurface
   // Taps on the sheet surface must never fall through to the dismissing scrim.
   val swallow = remember { MutableInteractionSource() }
+  // Drag the grabber down to dismiss, with a spring snap-back when the pull was short.
+  val scope = rememberCoroutineScope()
+  val dragY = remember { Animatable(0f) }
+  fun settle() {
+    scope.launch { dragY.animateTo(0f, spring(dampingRatio = .8f, stiffness = 420f)) }
+  }
 
   Dialog(
     onDismissRequest = { onDismiss() },
@@ -151,6 +165,7 @@ fun GlassSheet(
         GlassCard(
           modifier = Modifier
             .fillMaxWidth()
+            .offset { IntOffset(0, dragY.value.roundToInt()) }
             .padding(horizontal = 8.dp)
             .navigationBarsPadding(),
           shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp, bottomStart = 18.dp, bottomEnd = 18.dp),
@@ -168,12 +183,35 @@ fun GlassSheet(
           ) {
             Box(
               Modifier
-                .align(Alignment.CenterHorizontally)
-                .width(38.dp)
-                .height(4.dp)
-                .clip(RoundedCornerShape(999.dp))
-                .background(config.chromeBorder)
-            )
+                .fillMaxWidth()
+                .height(18.dp)
+                .pointerInput(Unit) {
+                  detectVerticalDragGestures(
+                    onVerticalDrag = { change, amount ->
+                      change.consume()
+                      scope.launch { dragY.snapTo((dragY.value + amount).coerceAtLeast(0f)) }
+                    },
+                    onDragEnd = {
+                      if (dragY.value > 140f) {
+                        haptics.confirm()
+                        onDismiss()
+                      } else {
+                        settle()
+                      }
+                    },
+                    onDragCancel = { settle() }
+                  )
+                },
+              contentAlignment = Alignment.Center
+            ) {
+              Box(
+                Modifier
+                  .width(38.dp)
+                  .height(4.dp)
+                  .clip(RoundedCornerShape(999.dp))
+                  .background(config.chromeBorder)
+              )
+            }
             if (!title.isNullOrBlank()) {
               Text(
                 title,

@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -81,6 +80,8 @@ fun SearchScreen(
   onNavigateToConversation: (String) -> Unit,
   onNavigateToProfile: (String) -> Unit,
   onBackClick: () -> Unit,
+  /** Opens the conversation and scrolls to the exact hit. */
+  onOpenMessage: (String, String) -> Unit = { _, _ -> },
   modifier: Modifier = Modifier
 ) {
   val searchQuery by viewModel.searchQuery.collectAsState()
@@ -319,7 +320,10 @@ fun SearchScreen(
                 shape = RoundedCornerShape(20.dp),
                 elevation = 0.dp,
                 lensing = false,
-                onClick = { onNavigateToConversation(msg.conversationId) }
+                onClick = {
+                  haptics.tap()
+                  onOpenMessage(msg.conversationId, msg.id)
+                }
               ) {
                 Row(
                   modifier = Modifier

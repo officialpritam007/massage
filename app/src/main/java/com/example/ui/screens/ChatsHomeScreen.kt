@@ -120,17 +120,7 @@ fun ChatsHomeScreen(
     }
 
     // Directory fallback: only fall back to "Contact" when no profile data exists at all.
-    fun identityOf(conversation: Conversation): User {
-        val base = conversation.otherUser
-        val directoryMatch = directory.firstOrNull { it.uid == base.uid }
-        if (base.displayName.isNotBlank() && base.photoUrl.isNotBlank()) return base
-        if (directoryMatch == null) return base
-        return base.copy(
-            displayName = base.displayName.ifBlank { directoryMatch.displayName },
-            photoUrl = base.photoUrl.ifBlank { directoryMatch.photoUrl },
-            username = base.username.ifBlank { directoryMatch.username }
-        )
-    }
+    fun identityOf(conversation: Conversation): User = conversation.otherUser.withDirectoryFallback(directory)
 
     LiquidBackground(modifier, crystal = true, scrim = true) {
         Box(
@@ -266,6 +256,7 @@ fun ChatsHomeScreen(
                         // Rows stay flat on purpose: no per-row elevation in a long list.
                         elevation = 0.dp,
                         lensing = false,
+                        frost = false,
                         onClick = { onNavigateToConversation(conversation.id) }
                     ) {
                         Row(
@@ -338,7 +329,7 @@ fun ChatsHomeScreen(
 
                             IconButton(
                                 onClick = { menu = conversation },
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(40.dp)
                             ) {
                                 Icon(
                                     Icons.Default.MoreHoriz,
@@ -359,7 +350,8 @@ fun ChatsHomeScreen(
                             backgroundColor = glass.rowSurface,
                             borderColor = glass.chromeBorder,
                             elevation = 0.dp,
-                            lensing = false
+                            lensing = false,
+                            frost = false
                         ) {
                             Column(
                                 Modifier.fillMaxWidth().padding(vertical = 34.dp),
@@ -438,7 +430,8 @@ private fun listTime(time: Long): String {
     val sameDay = now.get(Calendar.YEAR) == then.get(Calendar.YEAR) &&
         now.get(Calendar.DAY_OF_YEAR) == then.get(Calendar.DAY_OF_YEAR)
     if (sameDay) return SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(time))
-    val daysApart = (now.timeInMillis - time) / 86_400_000L
+    // Clamp so a device clock that lags the server never shows a negative weekday offset.
+    val daysApart = ((now.timeInMillis - time) / 86_400_000L).coerceAtLeast(0)
     return if (daysApart < 7) SimpleDateFormat("EEE", Locale.getDefault()).format(Date(time))
     else SimpleDateFormat("d MMM", Locale.getDefault()).format(Date(time))
 }
@@ -543,7 +536,7 @@ fun GlassBottomBar(
                                     .graphicsLayer { scaleX = iconScale; scaleY = iconScale }
                             )
                             Spacer(Modifier.height(1.dp))
-                            Text(item.second, fontSize = 9.5.sp, color = color, maxLines = 1)
+                            Text(item.second, fontSize = 10.5.sp, color = color, maxLines = 1)
                         }
                     }
                 }

@@ -136,12 +136,20 @@ fun LiquidChatApp(
 
       composable(
         route = Screen.Conversation.route,
-        arguments = listOf(navArgument("conversationId") { type = NavType.StringType })
+        arguments = listOf(
+          navArgument("conversationId") { type = NavType.StringType },
+          navArgument("messageId") {
+            type = NavType.StringType
+            nullable = true
+            defaultValue = null
+          }
+        )
       ) { backStackEntry ->
         val convId = backStackEntry.arguments?.getString("conversationId") ?: return@composable
         ConversationScreen(
           conversationId = convId,
           viewModel = chatViewModel,
+          initialMessageId = backStackEntry.arguments?.getString("messageId"),
           onBackClick = { navController.popBackStack() },
           onNavigateToProfile = { navController.navigate(Screen.ContactProfile.createRoute(it)) },
           onNavigateToCamera = { navController.navigate(Screen.Camera.createRoute(convId)) }
@@ -177,6 +185,9 @@ fun LiquidChatApp(
         SearchScreen(
           viewModel = chatViewModel,
           onNavigateToConversation = { navController.navigate(Screen.Conversation.createRoute(it)) },
+          onOpenMessage = { convId, messageId ->
+            navController.navigate(Screen.Conversation.createRoute(convId, messageId))
+          },
           onNavigateToProfile = { navController.navigate(Screen.ContactProfile.createRoute(it)) },
           onBackClick = { navController.popBackStack() }
         )

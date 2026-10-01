@@ -42,6 +42,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -201,6 +202,9 @@ fun presenceLabel(u: User): String {
 
 private data class VoiceDraft(val file: File, val seconds: Int, val waveform: List<Float>)
 
+// Legacy placeholder captions that must never be shown as a real message caption.
+private val GenericMediaLabels = setOf("Photo", "Video", "Voice message", "Document")
+
 private fun appendWaveform(existing: List<Float>, value: Float): List<Float> {
     var next = existing + value.coerceIn(.05f, 1f)
     while (next.size > 80) {
@@ -273,6 +277,8 @@ fun ConversationScreen(
     onBackClick: () -> Unit,
     onNavigateToProfile: (String) -> Unit,
     onNavigateToCamera: () -> Unit = {},
+    /** Search hit to jump to and highlight on open. */
+    initialMessageId: String? = null,
     modifier: Modifier = Modifier
 ) {
     val conversations by viewModel.conversations.collectAsState()
@@ -281,11 +287,12 @@ fun ConversationScreen(
     val upload by viewModel.upload.collectAsState()
     val blocked by viewModel.blockedUserIds.collectAsState()
     val privacySettings by viewModel.privacy.collectAsState()
+    val directory by viewModel.users.collectAsState()
 
     val repo = viewModel.repository
     val conversation = conversations.find { it.id == conversationId }
-    val other = conversation?.otherUser
-        ?: repo.peerForConversation(conversationId)
+    val other = (conversation?.otherUser ?: repo.peerForConversation(conversationId))
+        ?.withDirectoryFallback(directory)
         ?: User(displayName = "Contact")
     val allMessages = messageMap[conversationId].orEmpty()
 
@@ -311,7 +318,8 @@ fun ConversationScreen(
         label = "header_avatar"
     )
 
-    var autoSaved by remember(conversationId) { mutableStateOf<Set<String>>(emptySet()) }
+    var autoSaved by remember(conversationId) { mutableStateOf(repo.autoSavedMediaIds(conversationId)) }
+    var autoSavePrimed by remember(conversationId) { mutableStateOf(false) }
     var text by rememberSaveable(conversationId) { mutableStateOf(repo.draft(conversationId)) }
     var reply by remember { mutableStateOf<Message?>(null) }
     var actions by remember { mutableStateOf<Message?>(null) }
@@ -329,6 +337,7 @@ fun ConversationScreen(
     var starsOnly by remember { mutableStateOf(false) }
 
     var tailId by remember(conversationId) { mutableStateOf<String?>(null) }
+    var highlightId by remember(conversationId) { mutableStateOf<String?>(null) }
     var lastRemoteId by remember(conversationId) { mutableStateOf<String?>(null) }
     var typingSeen by remember { mutableLongStateOf(0L) }
     var initial by remember { mutableStateOf(true) }
@@ -521,22 +530,27 @@ fun ConversationScreen(
         }
         lastRemoteId = remote?.id
 
-        val nearBottom = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index?.let {
-            it >= listState.layoutInfo.totalItemsCount - 4
-        } ?: true
+        if (initial && initialMessageId != null) {
+            // A search jump owns the first scroll position, so do not snap to the newest message.
+            initial = false
+        } else {
+            val nearBottom = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index?.let {
+                it >= listState.layoutInfo.totalItemsCount - 4
+            } ?: true
 
-        if (initial || nearBottom || allMessages.lastOrNull()?.senderId == me.uid) {
-            delay(60)
-            val count = listState.layoutInfo.totalItemsCount
-            if (count > 0) {
-                if (config.isReducedMotion) {
-                    listState.scrollToItem(count - 1)
-                } else {
-                    listState.animateScrollToItem(count - 1)
+            if (initial || nearBottom || allMessages.lastOrNull()?.senderId == me.uid) {
+                delay(60)
+                val count = listState.layoutInfo.totalItemsCount
+                if (count > 0) {
+                    if (config.isReducedMotion) {
+                        listState.scrollToItem(count - 1)
+                    } else {
+                        listState.animateScrollToItem(count - 1)
+                    }
                 }
             }
+            initial = false
         }
-        initial = false
         viewModel.clearUnread(conversationId)
     }
 
@@ -548,7 +562,23 @@ fun ConversationScreen(
     }
 
     // Optional gallery auto-save for received photos and videos — off unless the user opts in.
-    LaunchedEffect(allMessages.size, allMessages.lastOrNull()?.id, privacySettings.autoSaveReceivedMedia) {
+    // Saved ids are persisted, and the existing history is only ever marked as seen, so
+    // reopening the app or flipping the switch never dumps or duplicates gallery entries.
+    LaunchedEffect(conversationId, allMessages.size, privacySettings.autoSaveReceivedMedia) {
+        if (!autoSavePrimed) {
+            if (allMessages.isEmpty()) return@LaunchedEffect
+            autoSavePrimed = true
+            val history = allMessages.filter {
+                it.senderId != me.uid &&
+                    (it.type == MessageType.IMAGE || it.type == MessageType.VIDEO) &&
+                    it.mediaUrl.isNotBlank()
+            }.map { it.id }
+            if (history.isNotEmpty()) {
+                repo.markAutoSavedMedia(conversationId, history)
+                autoSaved = repo.autoSavedMediaIds(conversationId)
+            }
+            return@LaunchedEffect
+        }
         if (!privacySettings.autoSaveReceivedMedia) return@LaunchedEffect
         val pending = allMessages.filter {
             it.senderId != me.uid &&
@@ -558,13 +588,35 @@ fun ConversationScreen(
         }.takeLast(2)
         if (pending.isEmpty()) return@LaunchedEffect
         autoSaved = autoSaved + pending.map { it.id }
-        pending.forEach { message -> runCatching { saveMediaToGallery(context, message) } }
+        repo.markAutoSavedMedia(conversationId, pending.map { it.id })
+        var failures = 0
+        pending.forEach { message -> if (saveMediaToGallery(context, message).isFailure) failures++ }
+        if (failures > 0) {
+            android.widget.Toast.makeText(
+                context,
+                "Couldn't auto-save $failures file(s). Long-press the message and use Save to gallery.",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
     }
 
     val visibleMessages = allMessages.filter {
         (!starsOnly || it.isStarred) && (query.isBlank() || it.text.contains(query, true))
     }
     val morphMessage = visibleMessages.find { it.id == tailId }
+
+    // Jump-to-message: scroll to the search hit and highlight it briefly.
+    LaunchedEffect(initialMessageId, visibleMessages.size) {
+        val target = initialMessageId ?: return@LaunchedEffect
+        val index = visibleMessages.indexOfFirst { it.id == target }
+        if (index < 0) return@LaunchedEffect
+        highlightId = target
+        haptics.tap()
+        val targetIndex = index + 1
+        if (config.isReducedMotion) listState.scrollToItem(targetIndex) else listState.animateScrollToItem(targetIndex)
+        delay(2200)
+        highlightId = null
+    }
 
     LiquidBackground(
         modifier = modifier,
@@ -769,6 +821,33 @@ fun ConversationScreen(
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
+                                    // Lock state gets its own animated chip so locking feels deliberate.
+                                    AnimatedVisibility(
+                                        visible = locked,
+                                        enter = fadeIn(tween(140)) + scaleIn(initialScale = .7f)
+                                    ) {
+                                        Row(
+                                            Modifier
+                                                .padding(end = 6.dp)
+                                                .clip(RoundedCornerShape(999.dp))
+                                                .background(config.insetSurface)
+                                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Lock,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(12.dp),
+                                                tint = MaterialTheme.colorScheme.error
+                                            )
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(
+                                                "Locked",
+                                                style = BubbleMetaTextStyle,
+                                                color = MaterialTheme.colorScheme.error
+                                            )
+                                        }
+                                    }
                                     if (locked) {
                                         GlassIconButton(
                                             if (paused) Icons.Default.PlayArrow else Icons.Default.Pause,
@@ -815,7 +894,7 @@ fun ConversationScreen(
                                 Icons.Default.Add,
                                 "Attach",
                                 { attachmentSheet = true },
-                                size = 38.dp
+                                size = 40.dp
                             )
                             Spacer(Modifier.width(3.dp))
                             GlassTextField(
@@ -844,7 +923,7 @@ fun ConversationScreen(
                                             Icons.Default.PhotoCamera,
                                             "Camera",
                                             onNavigateToCamera,
-                                            size = 38.dp
+                                            size = 40.dp
                                         )
                                         Spacer(Modifier.width(2.dp))
                                         MicButton(
@@ -889,7 +968,8 @@ fun ConversationScreen(
                     Modifier.fillMaxSize(),
                     state = listState,
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                    // Spacing is applied per bubble so grouped messages sit tighter than new ones.
+                    verticalArrangement = Arrangement.Top
                 ) {
                     item {
                         Box(
@@ -926,6 +1006,7 @@ fun ConversationScreen(
                             isMe = message.senderId == me.uid,
                             groupWithPrevious = grouped(previousMessage),
                             groupWithNext = grouped(nextMessage),
+                            highlighted = message.id == highlightId,
                             maxWidth = maxBubbleWidth,
                             animateIn = index == rows.lastIndex && !initial && !config.isReducedMotion,
                             hideMediaPreview = privacySettings.hideMediaPreview && message.senderId != me.uid,
@@ -1156,7 +1237,7 @@ fun ConversationScreen(
         }
 
         editing?.let { message ->
-            GlassDialog("Edit message", { editing = null }) {
+            GlassSheet("Edit message", { editing = null }) {
                 GlassTextField(
                     editText,
                     { editText = it },
@@ -1171,7 +1252,7 @@ fun ConversationScreen(
         }
 
         forward?.let { message ->
-            GlassDialog("Forward to", { forward = null }) {
+            GlassSheet("Forward to", { forward = null }) {
                 conversations.filter { it.id != conversationId }.forEach { target ->
                     TextButton(onClick = {
                         if (message.type == MessageType.TEXT) {
@@ -1191,7 +1272,7 @@ fun ConversationScreen(
         }
 
         voiceDraft?.let { draft ->
-            GlassDialog("Voice preview", {
+            GlassSheet("Voice preview", {
                 draft.file.delete()
                 voiceDraft = null
             }) {
@@ -1228,7 +1309,7 @@ fun ConversationScreen(
         }
 
         if (deleteChatConfirm) {
-            GlassDialog("Delete chat?", { deleteChatConfirm = false }) {
+            GlassSheet("Delete chat?", { deleteChatConfirm = false }) {
                 Text("This permanently removes the existing conversation from your account. It will not return after restart, sign-in, reinstall or sync. A future new message can create a fresh chat without restoring the deleted history.")
                 GlassButton("Delete chat", {
                     viewModel.deleteChatForMe(conversationId)
@@ -1279,7 +1360,9 @@ private fun MorphingTypingBubble(
                     when (message.type) {
                         MessageType.TEXT -> message.text
                         MessageType.VOICE -> "Voice message"
-                        else -> message.text.ifBlank { "Attachment" }
+                        // Only text messages morph in from the typing bubble, so a generic
+                        // "Photo"/"Attachment" placeholder is never invented here.
+                        else -> message.text
                     },
                     style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.5.sp, lineHeight = 21.sp),
                     maxLines = 3,
@@ -1342,6 +1425,7 @@ fun MessageBubble(
     isMe: Boolean,
     groupWithPrevious: Boolean = false,
     groupWithNext: Boolean = false,
+    highlighted: Boolean = false,
     maxWidth: Dp = 330.dp,
     animateIn: Boolean = false,
     hideMediaPreview: Boolean = false,
@@ -1370,6 +1454,8 @@ fun MessageBubble(
         label = "bubble_entrance"
     )
     LaunchedEffect(message.id) { entered = true }
+    // 0f..1f while the bubble is being dragged aside to reply.
+    val swipeProgress = (kotlin.math.abs(drag) / 92f).coerceIn(0f, 1f)
 
     val bubbleShape = if (isMe) {
         RoundedCornerShape(
@@ -1395,13 +1481,19 @@ fun MessageBubble(
     }
     val contentColor = if (isMe) Color.White else MaterialTheme.colorScheme.onSurface
     val metadataColor = if (isMe) MetaOnAccent else if (config.isDark) MaterialTheme.colorScheme.onSurfaceVariant else MetaOnBubbleLight
-    val genericMediaLabels = setOf("Photo", "Video", "Voice message", "Document")
-    val caption = message.text.trim().takeUnless { it in genericMediaLabels }.orEmpty()
+    val caption = message.text.trim().takeUnless { it in GenericMediaLabels }.orEmpty()
     val isMedia = message.type == MessageType.IMAGE || message.type == MessageType.VIDEO
     var mediaRatio by remember(message.id) { mutableFloatStateOf(0f) }
     var revealed by remember(message.id) { mutableStateOf(false) }
 
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            // Grouped messages sit tight; a new sender/day gets breathing room.
+            .padding(top = if (groupWithPrevious) 2.dp else 9.dp),
+        horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start
+    ) {
+        if (!isMe) SwipeReplyGlyph(swipeProgress)
         Column(
             Modifier
                 .widthIn(max = maxWidth)
@@ -1409,7 +1501,9 @@ fun MessageBubble(
                     alpha = entrance
                     scaleX = 0.94f + entrance * 0.06f
                     scaleY = 0.94f + entrance * 0.06f
-                    translationY = (1f - entrance) * 26f
+                    translationY = (1f - entrance) * 12f
+                    // Sent bubbles rise from the composer edge, received ones from the opposite edge.
+                    translationX = (1f - entrance) * (if (isMe) 30f else -30f)
                 }
                 .offset { IntOffset(offset.roundToInt(), 0) }
                 .pointerInput(message.id, isMe) {
@@ -1450,7 +1544,13 @@ fun MessageBubble(
                         )
                     )
                 } else null,
-                borderColor = if (isMe) Color.White.copy(alpha = .34f) else null,
+                borderColor = if (highlighted) {
+                    config.accentColor.copy(alpha = .85f)
+                } else if (isMe) {
+                    Color.White.copy(alpha = .34f)
+                } else {
+                    null
+                },
                 elevation = if (groupWithPrevious || groupWithNext) 0.dp else 1.dp,
                 lensing = !isMe
             ) {
@@ -1495,10 +1595,15 @@ fun MessageBubble(
                                             modifier = Modifier.fillMaxSize(),
                                             contentScale = ContentScale.Crop,
                                             cornerRadius = 15.dp,
+                                            hidden = hideMediaPreview && !revealed,
                                             onIntrinsicSize = { mediaRatio = it }
                                         )
                                     } else {
-                                        PrivateVideoThumbnail(message.mediaUrl, Modifier.fillMaxSize())
+                                        PrivateVideoThumbnail(
+                                            message.mediaUrl,
+                                            Modifier.fillMaxSize(),
+                                            hidden = hideMediaPreview && !revealed
+                                        )
                                     }
 
                                     if (hideMediaPreview && !revealed) {
@@ -1670,6 +1775,30 @@ fun MessageBubble(
                 }
             }
         }
+        if (isMe) SwipeReplyGlyph(swipeProgress)
+    }
+}
+
+/** Reply glyph that expands in beside a bubble while the user swipes to reply. */
+@Composable
+private fun RowScope.SwipeReplyGlyph(progress: Float) {
+    val config = LocalLiquidGlass.current
+    Box(
+        Modifier
+            .align(Alignment.CenterVertically)
+            .width((22f * progress).dp)
+            .height(22.dp)
+            .graphicsLayer { alpha = progress },
+        contentAlignment = Alignment.Center
+    ) {
+        if (progress > 0.02f) {
+            Icon(
+                Icons.AutoMirrored.Filled.Reply,
+                contentDescription = null,
+                modifier = Modifier.size(15.dp),
+                tint = config.accentColor
+            )
+        }
     }
 }
 
@@ -1759,7 +1888,7 @@ private fun NavGlyph(icon: ImageVector, description: String, onClick: () -> Unit
         Icon(
             icon,
             description,
-            tint = if (config.isDark) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface,
+            tint = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.size(21.dp)
         )
     }
@@ -1780,7 +1909,7 @@ private fun MicButton(
     var dy by remember { mutableFloatStateOf(0f) }
     Box(
         modifier = Modifier
-            .size(38.dp)
+            .size(40.dp)
             .clip(CircleShape)
             .background(config.insetSurface)
             .pointerInput(Unit) {
@@ -1835,7 +1964,7 @@ private fun SendOrb(
     Box(
         Modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .size(38.dp)
+            .size(40.dp)
             .shadow(
                 config.panelElevation,
                 CircleShape,
