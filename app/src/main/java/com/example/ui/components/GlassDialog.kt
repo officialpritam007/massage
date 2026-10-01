@@ -3,7 +3,6 @@ package com.example.ui.components
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -40,7 +39,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -61,11 +59,8 @@ fun GlassDialog(
   content: @Composable ColumnScope.() -> Unit
 ) {
   val config = LocalLiquidGlass.current
-  val denseGlass = if (config.isDark) {
-    Color(0xFF0D1723).copy(alpha = 0.82f)
-  } else {
-    Color(0xFFF8FBFF).copy(alpha = 0.78f)
-  }
+  // Panel tint comes from the shared config so the appearance sliders drive it.
+  val denseGlass = config.panelSurface
 
   Dialog(
     onDismissRequest = onDismiss,
@@ -79,7 +74,8 @@ fun GlassDialog(
         modifier = Modifier.fillMaxWidth().widthIn(max = 520.dp),
         shape = RoundedCornerShape(34.dp),
         backgroundColor = denseGlass,
-        elevation = 18.dp
+        borderColor = config.chromeBorder,
+        elevation = config.sheetElevation
       ) {
         Column(
           Modifier
@@ -100,7 +96,7 @@ fun GlassDialog(
               contentDescription = "Close",
               onClick = onDismiss,
               size = 42.dp,
-              backgroundColor = if (config.isDark) Color.White.copy(alpha = .07f) else Color.White.copy(alpha = .52f)
+              backgroundColor = config.insetSurface
             )
           }
           content()
@@ -125,11 +121,7 @@ fun GlassSheet(
   var shown by remember { mutableStateOf(false) }
   LaunchedEffect(Unit) { shown = true }
 
-  val sheetBackground = if (config.isDark) {
-    Color(0xFF0C1521).copy(alpha = .92f)
-  } else {
-    Color(0xFFF9FCFF).copy(alpha = .90f)
-  }
+  val sheetBackground = config.panelSurface
   // Taps on the sheet surface must never fall through to the dismissing scrim.
   val swallow = remember { MutableInteractionSource() }
 
@@ -141,7 +133,7 @@ fun GlassSheet(
       Box(
         Modifier
           .fillMaxSize()
-          .background(Color.Black.copy(alpha = if (config.isDark) .34f else .18f))
+          .background(config.scrim)
           .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
             haptics.tap()
             onDismiss()
@@ -163,7 +155,8 @@ fun GlassSheet(
             .navigationBarsPadding(),
           shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp, bottomStart = 18.dp, bottomEnd = 18.dp),
           backgroundColor = sheetBackground,
-          elevation = 18.dp
+          borderColor = config.chromeBorder,
+          elevation = config.sheetElevation
         ) {
           Column(
             Modifier
@@ -179,7 +172,7 @@ fun GlassSheet(
                 .width(38.dp)
                 .height(4.dp)
                 .clip(RoundedCornerShape(999.dp))
-                .background(if (config.isDark) Color.White.copy(alpha = .22f) else Color.Black.copy(alpha = .14f))
+                .background(config.chromeBorder)
             )
             if (!title.isNullOrBlank()) {
               Text(

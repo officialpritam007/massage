@@ -29,8 +29,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -57,7 +55,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -94,7 +91,6 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -125,12 +121,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -298,7 +292,6 @@ fun ConversationScreen(
     val config = LocalLiquidGlass.current
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    val haptic = LocalHapticFeedback.current
     val haptics = rememberLiquidHaptics()
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
@@ -591,8 +584,9 @@ fun ConversationScreen(
                     GlassCard(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(if (compactHeader) 22.dp else 28.dp),
-                        backgroundColor = if (config.isDark) Color(0xFF0C1620).copy(alpha = .70f) else Color.White.copy(alpha = .58f),
-                        elevation = if (compactHeader) 5.dp else 9.dp
+                        backgroundColor = config.chromeSurface,
+                        borderColor = config.chromeBorder,
+                        elevation = if (compactHeader) config.compactElevation else config.floatingElevation
                     ) {
                         Row(
                             Modifier
@@ -654,8 +648,9 @@ fun ConversationScreen(
                         GlassCard(
                             modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                             shape = RoundedCornerShape(18.dp),
-                            backgroundColor = config.accentColor.copy(alpha = if (config.isDark) .10f else .08f),
-                            elevation = 0.dp,
+                            backgroundColor = config.accentFill(0.75f),
+                            borderColor = config.chromeBorder,
+                            elevation = config.compactElevation,
                             onClick = { actions = pinned }
                         ) {
                             Text(
@@ -679,8 +674,9 @@ fun ConversationScreen(
                         GlassCard(
                             Modifier.fillMaxWidth().padding(bottom = 6.dp),
                             shape = RoundedCornerShape(22.dp),
-                            backgroundColor = if (config.isDark) Color.White.copy(alpha = .05f) else Color.White.copy(alpha = .52f),
-                            elevation = 1.dp
+                            backgroundColor = config.insetSurface,
+                            borderColor = config.chromeBorder,
+                            elevation = config.compactElevation
                         ) {
                             Row(
                                 Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -722,8 +718,9 @@ fun ConversationScreen(
                         GlassCard(
                             Modifier.fillMaxWidth().padding(bottom = 6.dp),
                             shape = RoundedCornerShape(18.dp),
-                            backgroundColor = config.accentColor.copy(alpha = .10f),
-                            elevation = 0.dp
+                            backgroundColor = config.accentFill(0.8f),
+                            borderColor = config.chromeBorder,
+                            elevation = config.compactElevation
                         ) {
                             Column {
                                 Row(
@@ -752,8 +749,9 @@ fun ConversationScreen(
                         GlassCard(
                             Modifier.fillMaxWidth().padding(bottom = 6.dp),
                             shape = RoundedCornerShape(24.dp),
-                            backgroundColor = MaterialTheme.colorScheme.error.copy(alpha = .11f),
-                            elevation = 4.dp
+                            backgroundColor = config.tintFill(MaterialTheme.colorScheme.error, 0.9f),
+                            borderColor = config.chromeBorder,
+                            elevation = config.panelElevation
                         ) {
                             Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -792,7 +790,7 @@ fun ConversationScreen(
                                         "Send voice message",
                                         { stopRecording(true) },
                                         tint = Color.White,
-                                        backgroundColor = config.accentColor.copy(alpha = .88f),
+                                        backgroundColor = config.solidAccent,
                                         size = 36.dp
                                     )
                                 }
@@ -805,8 +803,9 @@ fun ConversationScreen(
                     GlassCard(
                         Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(26.dp),
-                        backgroundColor = if (config.isDark) Color(0xFF0C1620).copy(alpha = .78f) else Color.White.copy(alpha = .64f),
-                        elevation = 10.dp
+                        backgroundColor = config.chromeSurface,
+                        borderColor = config.chromeBorder,
+                        elevation = config.floatingElevation
                     ) {
                         Row(
                             Modifier.padding(horizontal = 5.dp, vertical = 5.dp),
@@ -1075,7 +1074,7 @@ fun ConversationScreen(
                             Modifier
                                 .size(42.dp)
                                 .clip(CircleShape)
-                                .background(if (config.isDark) Color.White.copy(alpha = .08f) else Color.White.copy(alpha = .60f))
+                                .background(config.insetSurface)
                                 .clickable {
                                     haptics.toggle()
                                     viewModel.addReaction(conversationId, message.id, emoji)
@@ -1783,7 +1782,7 @@ private fun MicButton(
         modifier = Modifier
             .size(38.dp)
             .clip(CircleShape)
-            .background(if (config.isDark) Color.White.copy(alpha = .08f) else Color.White.copy(alpha = .50f))
+            .background(config.insetSurface)
             .pointerInput(Unit) {
                 detectDragGesturesAfterLongPress(
                     onDragStart = {
@@ -1827,6 +1826,7 @@ private fun SendOrb(
     reduced: Boolean,
     onSend: () -> Unit
 ) {
+    val config = LocalLiquidGlass.current
     val scale by animateFloatAsState(
         targetValue = if (enabled && !reduced) 1f else 0.9f,
         animationSpec = spring(dampingRatio = .5f, stiffness = 460f),
@@ -1836,11 +1836,16 @@ private fun SendOrb(
         Modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .size(38.dp)
-            .shadow(4.dp, CircleShape, ambientColor = Color.Black, spotColor = accent.copy(alpha = .5f))
+            .shadow(
+                config.panelElevation,
+                CircleShape,
+                ambientColor = config.shadowColor,
+                spotColor = config.shadowColor.copy(alpha = config.shadowColor.alpha * 0.9f)
+            )
             .clip(CircleShape)
-            .background(Brush.linearGradient(listOf(accent, accent.copy(alpha = .74f))))
-            .lensHighlight(dark = true, strength = 1.4f)
-            .lensEdge(CircleShape, dark = true, strength = 1f)
+            .background(Brush.linearGradient(listOf(accent, accent.copy(alpha = 0.55f + config.borderStrength * 0.25f))))
+            .lensHighlight(dark = true, strength = 0.9f + config.borderStrength * 0.7f)
+            .lensEdge(CircleShape, dark = true, strength = 0.6f + config.borderStrength * 0.5f)
             .clickable(enabled = enabled, onClick = onSend),
         contentAlignment = Alignment.Center
     ) {
@@ -1861,8 +1866,9 @@ private fun AttachTile(
     GlassCard(
         modifier = modifier,
         shape = RoundedCornerShape(20.dp),
-        backgroundColor = if (config.isDark) Color.White.copy(alpha = .07f) else Color.White.copy(alpha = .58f),
-        elevation = 1.dp,
+        backgroundColor = config.insetSurface,
+        borderColor = config.chromeBorder,
+        elevation = config.compactElevation,
         onClick = {
             haptics.tap()
             onClick()

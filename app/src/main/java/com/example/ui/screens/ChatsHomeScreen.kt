@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -65,7 +64,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.Conversation
-import com.example.data.model.MessageType
 import com.example.data.model.User
 import com.example.ui.components.GlassActionRow
 import com.example.ui.components.GlassAvatar
@@ -82,7 +80,6 @@ import com.example.ui.components.rememberLiquidHaptics
 import com.example.ui.theme.BubbleMetaTextStyle
 import com.example.ui.theme.EmeraldOnline
 import com.example.ui.theme.LocalLiquidGlass
-import com.example.ui.theme.MetaOnBubbleLight
 import com.example.ui.viewmodel.LiquidChatViewModel
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -176,8 +173,9 @@ fun ChatsHomeScreen(
                     GlassCard(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(26.dp),
-                        backgroundColor = if (glass.isDark) Color(0xFF0C1620).copy(alpha = .70f) else Color.White.copy(alpha = .58f),
-                        elevation = 8.dp
+                        backgroundColor = glass.chromeSurface,
+                        borderColor = glass.chromeBorder,
+                        elevation = glass.floatingElevation
                     ) {
                         Row(
                             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 7.dp),
@@ -209,7 +207,7 @@ fun ChatsHomeScreen(
                                 "New message",
                                 onNavigateToSearch,
                                 tint = Color.White,
-                                backgroundColor = glass.accentColor.copy(alpha = .86f),
+                                backgroundColor = glass.solidAccent,
                                 size = 38.dp
                             )
                         }
@@ -219,12 +217,9 @@ fun ChatsHomeScreen(
                     GlassCard(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(999.dp),
-                        backgroundColor = if (glass.isDark) {
-                            Color.White.copy(alpha = .055f)
-                        } else {
-                            Color.White.copy(alpha = .48f)
-                        },
-                        elevation = 1.dp,
+                        backgroundColor = glass.insetSurface,
+                        borderColor = glass.chromeBorder,
+                        elevation = glass.compactElevation,
                         onClick = onNavigateToSearch
                     ) {
                         Row(
@@ -266,11 +261,9 @@ fun ChatsHomeScreen(
                     GlassCard(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(22.dp),
-                        backgroundColor = if (glass.isDark) {
-                            Color.White.copy(alpha = .045f)
-                        } else {
-                            Color.White.copy(alpha = .34f)
-                        },
+                        backgroundColor = glass.rowSurface,
+                        borderColor = glass.chromeBorder,
+                        // Rows stay flat on purpose: no per-row elevation in a long list.
                         elevation = 0.dp,
                         lensing = false,
                         onClick = { onNavigateToConversation(conversation.id) }
@@ -363,7 +356,8 @@ fun ChatsHomeScreen(
                         GlassCard(
                             Modifier.fillMaxWidth().padding(top = 20.dp),
                             shape = RoundedCornerShape(28.dp),
-                            backgroundColor = if (glass.isDark) Color.White.copy(alpha = .035f) else Color.White.copy(alpha = .32f),
+                            backgroundColor = glass.rowSurface,
+                            borderColor = glass.chromeBorder,
                             elevation = 0.dp,
                             lensing = false
                         ) {
@@ -482,8 +476,9 @@ fun GlassBottomBar(
         GlassCard(
             Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(26.dp),
-            backgroundColor = if (config.isDark) Color(0xFF0C1620).copy(alpha = .70f) else Color.White.copy(alpha = .58f),
-            elevation = 10.dp
+            backgroundColor = config.chromeSurface,
+            borderColor = config.chromeBorder,
+            elevation = config.floatingElevation
         ) {
             BoxWithConstraints(Modifier.fillMaxWidth().padding(4.dp)) {
                 val itemWidth = maxWidth / 4
@@ -500,11 +495,20 @@ fun GlassBottomBar(
                         .offset(x = x)
                         .width(itemWidth)
                         .height(barHeight)
-                        .shadow(3.dp, RoundedCornerShape(22.dp), ambientColor = Color.Black, spotColor = Color.Black.copy(alpha = .30f))
+                        .shadow(
+                            config.compactElevation,
+                            RoundedCornerShape(22.dp),
+                            ambientColor = config.shadowColor,
+                            spotColor = config.shadowColor
+                        )
                         .clip(RoundedCornerShape(22.dp))
-                        .background(config.accentColor.copy(alpha = if (config.isDark) .20f else .15f))
-                        .lensHighlight(dark = config.isDark, strength = 1.2f)
-                        .lensEdge(RoundedCornerShape(22.dp), dark = config.isDark, strength = .9f)
+                        .background(config.accentFill(1.15f))
+                        .lensHighlight(dark = config.isDark, strength = 0.8f + config.borderStrength * 0.7f)
+                        .lensEdge(
+                            RoundedCornerShape(22.dp),
+                            dark = config.isDark,
+                            strength = 0.5f + config.borderStrength * 0.6f
+                        )
                 )
 
                 Row(Modifier.fillMaxWidth()) {

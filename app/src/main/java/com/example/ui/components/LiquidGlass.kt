@@ -1,7 +1,6 @@
 package com.example.ui.components
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.spring
@@ -18,7 +17,6 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -110,11 +108,11 @@ fun GlassCard(
   }
   val glassBackground = backgroundColor ?: surface
   val backdrop = LocalGlassBackdrop.current
-  val border = borderColor
-    ?: if (config.isDark) GlassBorderStrokeDark else Color.White.copy(alpha = if (clear) 0.62f else 0.38f)
+  // Border, highlight and depth all come from the shared config so Appearance sliders apply.
+  val border = borderColor ?: config.edgeBorder
   val resolvedShape: Shape = shape ?: RoundedCornerShape(config.cornerRadiusDp.coerceIn(16f, 32f).dp)
-  val topHighlight = if (config.isDark) GlassHighlight.copy(alpha = 0.30f) else Color.White.copy(alpha = 0.95f)
-  val shadow = if (config.isDark) Color.Black.copy(alpha = 0.42f) else Color.Black.copy(alpha = 0.10f)
+  val topHighlight = config.highlightColor
+  val shadow = config.shadowColor
   // Clear style keeps a thin blur so content behind stays legible; Regular gets the full frost.
   val blurDp = when {
     !config.isGlassEnabled -> 0f
@@ -200,7 +198,7 @@ fun GlassButton(
       .graphicsLayer { scaleX = buttonScale; scaleY = buttonScale }
       .defaultMinSize(minHeight = 50.dp)
       .clip(resolvedShape)
-      .background(accent.copy(alpha = if (isPrimary) 0.82f else 1f))
+      .background(if (isPrimary) config.solidAccent else accent)
       .lensHighlight(dark = true, strength = 1.3f)
       .liquidSheen(enabled = isPrimary && !config.isReducedMotion, dark = true)
       .border(1.dp, GlassHighlight.copy(alpha = 0.42f), resolvedShape)
