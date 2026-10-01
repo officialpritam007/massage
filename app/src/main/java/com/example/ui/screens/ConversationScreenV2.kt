@@ -57,12 +57,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreHoriz
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Icon
@@ -212,8 +209,6 @@ fun ConversationScreenV2(
     val currentMessages by rememberUpdatedState(messages)
     val nearBottom by remember {
         derivedStateOf {
-            // Exact list-end tracking: scrolling even a little upward disables
-            // auto-follow, while layout changes alone do not rewrite stickToBottom.
             !listState.canScrollForward
         }
     }
@@ -284,9 +279,6 @@ fun ConversationScreenV2(
     fun startRecording() {
         if (recording || other.uid in blocked) return
         runCatching {
-            // AAC/ADTS keeps the stored media unambiguously audio/* in Appwrite.
-            // Some Appwrite/MP4 sniffers classify .m4a containers as video/mp4,
-            // which caused valid voice notes to fail the VOICE attachment check.
             val file = File.createTempFile("voice-", ".aac", context.cacheDir)
             val active = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(context) else {
                 @Suppress("DEPRECATION")
@@ -318,8 +310,6 @@ fun ConversationScreenV2(
     val lockedCurrent by rememberUpdatedState(locked)
 
     val recordPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        // Permission sheets interrupt the original press gesture. Starting a locked
-        // recording here felt accidental; after granting, the user simply holds mic again.
         val message = if (granted) "Microphone ready — hold the mic to record" else "Microphone permission is required for voice messages"
         android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
     }
@@ -406,8 +396,6 @@ fun ConversationScreenV2(
         if (unreadAnchorId == null) {
             val unread = conversation?.unreadCount ?: 0
             if (unread > 0 && messages.isNotEmpty()) {
-                // unreadCount counts incoming messages; outgoing rows must not
-                // shift the separator below the actual first unread message.
                 val incoming = messages.filter { it.senderId != me.uid && !it.isDeleted }
                 val loadedUnread = minOf(unread, incoming.size)
                 unreadAnchorId = incoming.takeLast(loadedUnread).firstOrNull()?.id
@@ -486,8 +474,6 @@ fun ConversationScreenV2(
             .distinctUntilChanged()
             .collect { latestIncomingVisible ->
                 if (latestIncomingVisible) {
-                    // Delivery is handled independently. Read is emitted only when
-                    // the newest incoming unread message is actually on screen.
                     viewModel.clearUnread(conversationId)
                     unreadAnchorId = null
                 }
@@ -598,32 +584,23 @@ fun ConversationScreenV2(
                     }
 
                     if (recording) {
-                        GlassCard(shape = RoundedCornerShape(22.dp), backgroundColor = MaterialTheme.colorScheme.error.copy(alpha = .09f), elevation = 1.dp) {
-                            Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        "● ${elapsed / 60}:${(elapsed % 60).toString().padStart(2, '0')}  ${if (paused) "Paused" else if (locked) "Locked" else "Slide left to cancel • up to lock"}",
-                                        color = MaterialTheme.colorScheme.error,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    if (locked) {
-                                        GlassIconButton(
-                                            if (paused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                                            if (paused) "Resume" else "Pause",
-                                            { runCatching { if (paused) recorder?.resume() else recorder?.pause() }.onSuccess { paused = !paused } },
-                                            size = 36.dp
-                                        )
-                                    }
-                                    GlassIconButton(Icons.Default.Delete, "Cancel", { finishRecording(false) }, size = 36.dp)
-                                    if (locked) {
-                                        GlassIconButton(Icons.Default.Done, "Stop and preview", { finishRecording(true, false) }, size = 36.dp)
-                                        GlassIconButton(Icons.Default.Send, "Send voice message", { finishRecording(true, true) }, tint = Color.White, backgroundColor = config.accentColor.copy(alpha = .88f), size = 36.dp)
-                                    }
+                        VoiceRecorderPanelV3(
+                            elapsedSeconds = elapsed,
+                            locked = locked,
+                            paused = paused,
+                            waveform = waveform,
+                            reducedMotion = config.isReducedMotion,
+                            onPauseResume = {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                                    runCatching {
+                                        if (paused) recorder?.resume() else recorder?.pause()
+                                    }.onSuccess { paused = !paused }
                                 }
-                                LiveRecordingWaveformV2(waveform, Modifier.fillMaxWidth())
-                            }
-                        }
+                            },
+                            onDiscard = { finishRecording(false, false) },
+                            onStopPreview = { finishRecording(true, false) },
+                            onSend = { finishRecording(true, true) }
+                        )
                     }
 
                     upload?.let { progress ->
