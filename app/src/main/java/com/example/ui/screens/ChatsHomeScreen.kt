@@ -45,6 +45,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -65,6 +67,8 @@ import com.example.ui.components.LiquidBackground
 import com.example.ui.theme.EmeraldOnline
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -85,10 +89,14 @@ fun ChatsHomeScreen(
     val loading by viewModel.loading.collectAsState()
     val current by viewModel.currentUser.collectAsState()
     val glass = LocalLiquidGlass.current
+    val scope = rememberCoroutineScope()
+    val currentConversations by rememberUpdatedState(conversations)
 
     var tab by rememberSaveable { mutableStateOf(initialTab) }
     var menu by remember { mutableStateOf<Conversation?>(null) }
     var delete by remember { mutableStateOf<Conversation?>(null) }
+    var deletingId by remember { mutableStateOf<String?>(null) }
+    var deleteRetry by remember { mutableStateOf<Conversation?>(null) }
 
     LaunchedEffect(initialTab) { tab = initialTab }
 
@@ -97,6 +105,21 @@ fun ChatsHomeScreen(
             "Favorites" -> it.isPinned && !it.isArchived
             "Archived" -> it.isArchived
             else -> !it.isArchived
+        }
+    }
+
+    fun deleteChatWithAnimation(conversation: Conversation) {
+        if (deletingId != null) return
+        deletingId = conversation.id
+        deleteRetry = null
+        scope.launch {
+            delay(if (glass.isReducedMotion) 80 else 420)
+            viewModel.deleteChatForMe(conversation.id)
+            delay(1800)
+            if (currentConversations.any { it.id == conversation.id }) {
+                deletingId = null
+                deleteRetry = conversation
+            }
         }
     }
 
@@ -132,10 +155,7 @@ fun ChatsHomeScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 item {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         GlassAvatar(
                             current.photoUrl,
                             current.displayName.ifBlank { "You" },
@@ -143,12 +163,7 @@ fun ChatsHomeScreen(
                             onClick = { onNavigateToProfile(current.uid) }
                         )
                         Spacer(Modifier.weight(1f))
-                        GlassIconButton(
-                            Icons.Default.Palette,
-                            "Appearance",
-                            onNavigateToAppearance,
-                            size = 44.dp
-                        )
+                        GlassIconButton(Icons.Default.Palette, "Appearance", onNavigateToAppearance, size = 44.dp)
                         Spacer(Modifier.width(8.dp))
                         GlassIconButton(
                             Icons.Default.Add,
@@ -164,17 +179,14 @@ fun ChatsHomeScreen(
                         if (tab == "All") "Chats" else tab,
                         style = MaterialTheme.typography.headlineLarge,
                         fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onBackground,
                         modifier = Modifier.padding(top = 18.dp, bottom = 12.dp)
                     )
 
                     GlassCard(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(28.dp),
-                        backgroundColor = if (glass.isDark) {
-                            Color.White.copy(alpha = .055f)
-                        } else {
-                            Color.White.copy(alpha = .50f)
-                        },
+                        backgroundColor = if (glass.isDark) Color(0xFF0D1723).copy(alpha = .72f) else Color.White.copy(alpha = .62f),
                         elevation = 2.dp,
                         onClick = onNavigateToSearch
                     ) {
@@ -199,89 +211,88 @@ fun ChatsHomeScreen(
                     Spacer(Modifier.height(6.dp))
                 }
 
-                if (loading) {
-                    item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
-                }
+                if (loading) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
 
                 items(visible, key = { it.id }) { conversation ->
-                    GlassCard(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(24.dp),
-                        backgroundColor = if (glass.isDark) {
-                            Color.White.copy(alpha = .040f)
-                        } else {
-                            Color.White.copy(alpha = .30f)
-                        },
-                        elevation = 0.dp,
-                        onClick = { onNavigateToConversation(conversation.id) }
+                    DustDeleteContainerV2(
+                        active = deletingId == conversation.id,
+                        reduced = glass.isReducedMotion,
+                        modifier = Modifier.animateItem().fillMaxWidth()
                     ) {
-                        Row(
-                            Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        GlassCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(24.dp),
+                            backgroundColor = if (glass.isDark) Color(0xFF0D1723).copy(alpha = .64f) else Color.White.copy(alpha = .46f),
+                            elevation = 0.dp,
+                            onClick = { if (deletingId != conversation.id) onNavigateToConversation(conversation.id) }
                         ) {
-                            GlassAvatar(
-                                conversation.otherUser.photoUrl,
-                                conversation.otherUser.displayName.ifBlank { "Contact" },
-                                isOnline = conversation.isOnline && conversation.otherUser.onlineVisible,
-                                size = 52.dp,
-                                onClick = { onNavigateToProfile(conversation.otherUser.uid) }
-                            )
-                            Spacer(Modifier.width(12.dp))
+                            Row(
+                                Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                GlassAvatar(
+                                    conversation.otherUser.photoUrl,
+                                    conversation.otherUser.displayName.ifBlank { "Contact" },
+                                    isOnline = conversation.isOnline && conversation.otherUser.onlineVisible,
+                                    size = 52.dp,
+                                    onClick = { onNavigateToProfile(conversation.otherUser.uid) }
+                                )
+                                Spacer(Modifier.width(12.dp))
 
-                            Column(Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        conversation.otherUser.displayName.ifBlank { "Contact" },
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Text(
-                                        if (conversation.lastMessageTime > 0) {
-                                            SimpleDateFormat("h:mm a", Locale.getDefault())
-                                                .format(Date(conversation.lastMessageTime))
-                                        } else "",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                Spacer(Modifier.height(4.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        if (conversation.isTyping) {
-                                            "Typing…"
-                                        } else {
-                                            conversation.lastMessageText.ifBlank { "Start a conversation" }
-                                        },
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = if (conversation.isTyping) {
-                                            EmeraldOnline
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    if (conversation.unreadCount > 0) {
-                                        Spacer(Modifier.width(8.dp))
-                                        GlassBadge(conversation.unreadCount, color = glass.accentColor)
+                                Column(Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            conversation.otherUser.displayName.ifBlank { "Contact" },
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(
+                                            if (conversation.lastMessageTime > 0) {
+                                                SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(conversation.lastMessageTime))
+                                            } else "",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            if (conversation.isTyping) "Typing…" else conversation.lastMessageText.ifBlank { "Start a conversation" },
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = if (conversation.isTyping) EmeraldOnline else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        if (conversation.unreadCount > 0) {
+                                            Spacer(Modifier.width(8.dp))
+                                            GlassBadge(conversation.unreadCount, color = glass.accentColor)
+                                        }
                                     }
                                 }
-                            }
 
-                            IconButton(
-                                onClick = { menu = conversation },
-                                modifier = Modifier.size(34.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.MoreHoriz,
-                                    "Chat actions",
-                                    modifier = Modifier.size(19.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                IconButton(
+                                    onClick = { if (deletingId != conversation.id) menu = conversation },
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.MoreHoriz,
+                                        "Chat actions",
+                                        modifier = Modifier.size(19.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    if (deleteRetry?.id == conversation.id && deletingId != conversation.id) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = { deleteRetry?.let(::deleteChatWithAnimation) }) {
+                                Text("Delete failed • Retry", color = MaterialTheme.colorScheme.error)
                             }
                         }
                     }
@@ -292,27 +303,21 @@ fun ChatsHomeScreen(
                         GlassCard(
                             Modifier.fillMaxWidth().padding(top = 34.dp),
                             shape = RoundedCornerShape(30.dp),
-                            backgroundColor = if (glass.isDark) Color.White.copy(alpha = .035f) else Color.White.copy(alpha = .32f),
+                            backgroundColor = if (glass.isDark) Color.White.copy(alpha = .045f) else Color.White.copy(alpha = .42f),
                             elevation = 0.dp
                         ) {
                             Column(
                                 Modifier.fillMaxWidth().padding(vertical = 38.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Icon(
-                                    Icons.Default.ChatBubbleOutline,
-                                    contentDescription = null,
-                                    Modifier.size(38.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                Icon(Icons.Default.ChatBubbleOutline, null, Modifier.size(38.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Spacer(Modifier.height(10.dp))
                                 Text(
                                     "No ${if (tab == "All") "chats yet" else tab.lowercase() + " chats"}",
-                                    style = MaterialTheme.typography.titleMedium
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
-                                TextButton(onClick = onNavigateToSearch) {
-                                    Text("Start a new conversation")
-                                }
+                                TextButton(onClick = onNavigateToSearch) { Text("Start a new conversation") }
                             }
                         }
                     }
@@ -346,8 +351,8 @@ fun ChatsHomeScreen(
             GlassDialog("Delete this chat?", { delete = null }) {
                 Text("This permanently removes the current history from your account. It will not return after restart, sign-in, reinstall or sync. A later new message may start a fresh chat without restoring deleted history.")
                 TextButton(onClick = {
-                    viewModel.deleteChatForMe(conversation.id)
                     delete = null
+                    deleteChatWithAnimation(conversation)
                 }) { Text("Delete for me", color = MaterialTheme.colorScheme.error) }
             }
         }
@@ -369,24 +374,17 @@ fun GlassBottomBar(
         Triple("archived", "Archived", Icons.Default.Inventory2),
         Triple("settings", "Settings", Icons.Default.Settings)
     )
-    val clicks = listOf(
-        onNavigateToChats,
-        onNavigateToFavorites,
-        onNavigateToArchived,
-        onNavigateToSettings
-    )
+    val clicks = listOf(onNavigateToChats, onNavigateToFavorites, onNavigateToArchived, onNavigateToSettings)
     val index = items.indexOfFirst { it.first == selectedRoute }.coerceAtLeast(0)
     val config = LocalLiquidGlass.current
 
     Box(
-        modifier
-            .navigationBarsPadding()
-            .padding(horizontal = 14.dp, vertical = 7.dp)
+        modifier.navigationBarsPadding().padding(horizontal = 14.dp, vertical = 7.dp)
     ) {
         GlassCard(
             Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(32.dp),
-            backgroundColor = if (config.isDark) Color(0xFF0C1620).copy(alpha = .72f) else Color.White.copy(alpha = .60f),
+            backgroundColor = if (config.isDark) Color(0xFF0C1620).copy(alpha = .78f) else Color.White.copy(alpha = .68f),
             elevation = 10.dp
         ) {
             BoxWithConstraints(Modifier.fillMaxWidth().padding(5.dp)) {
@@ -403,7 +401,7 @@ fun GlassBottomBar(
                         .width(itemWidth)
                         .height(52.dp)
                         .clip(RoundedCornerShape(26.dp))
-                        .background(config.accentColor.copy(alpha = if (config.isDark) .18f else .14f))
+                        .background(config.accentColor.copy(alpha = if (config.isDark) .22f else .17f))
                 )
 
                 Row(Modifier.fillMaxWidth()) {
