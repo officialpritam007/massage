@@ -2,10 +2,16 @@
 
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -92,22 +98,17 @@ fun DustDeleteContainerV2(
         content()
         if (active && !reduced) {
             Canvas(Modifier.matchParentSize()) {
-                // More/larger particles with staggered release make the element visibly
-                // disintegrate instead of simply fading away. Coordinates are deterministic
-                // so recomposition never makes particles jump to random locations.
                 repeat(72) { i ->
                     val fx = ((i * 47 + 13) % 101) / 100f
                     val fy = ((i * 71 + 29) % 101) / 100f
                     val start = (i % 11) / 36f
                     val local = ((progress - start) / (1f - start)).coerceIn(0f, 1f)
                     if (local <= 0f) return@repeat
-
                     val direction = if (i % 2 == 0) 1f else .72f
                     val driftX = (20.dp.toPx() + (i % 7) * 4.dp.toPx()) * local * direction
                     val driftY = (((i % 9) - 4) * 2.8.dp.toPx()) * local - 7.dp.toPx() * local * local
                     val baseRadius = (1.25f + (i % 4) * .55f).dp.toPx()
                     val particleAlpha = ((1f - local) * (.72f - (i % 5) * .055f)).coerceIn(0f, .78f)
-
                     drawCircle(
                         color = dustColor.copy(alpha = particleAlpha),
                         radius = baseRadius * (1f - local * .32f),
@@ -198,41 +199,19 @@ fun MessageBubbleV2(
                     }
 
                     when (message.type) {
-                        MessageType.IMAGE -> PrivateImage(
-                            message.mediaUrl,
-                            "Photo",
-                            Modifier.widthIn(min = 210.dp, max = 310.dp).aspectRatio(4f / 3f)
-                        )
-                        MessageType.VIDEO -> PrivateVideoThumbnail(
-                            message.mediaUrl,
-                            Modifier.widthIn(min = 210.dp, max = 310.dp).aspectRatio(16f / 10f)
-                        )
-                        MessageType.VOICE -> Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
+                        MessageType.IMAGE -> PrivateImage(message.mediaUrl, "Photo", Modifier.widthIn(min = 210.dp, max = 310.dp).aspectRatio(4f / 3f))
+                        MessageType.VIDEO -> PrivateVideoThumbnail(message.mediaUrl, Modifier.widthIn(min = 210.dp, max = 310.dp).aspectRatio(16f / 10f))
+                        MessageType.VOICE -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Box(Modifier.size(44.dp)) {
-                                GlassAvatar(
-                                    photoUrl = voiceAvatarUrl,
-                                    name = voiceAvatarName.ifBlank { message.senderName.ifBlank { "Voice" } },
-                                    size = 42.dp
-                                )
+                                GlassAvatar(photoUrl = voiceAvatarUrl, name = voiceAvatarName.ifBlank { message.senderName.ifBlank { "Voice" } }, size = 42.dp)
                                 Box(
-                                    Modifier
-                                        .size(17.dp)
-                                        .align(Alignment.BottomEnd)
-                                        .background(
-                                            if (isMe) Color.White.copy(alpha = .94f) else config.accentColor.copy(alpha = .94f),
-                                            CircleShape
-                                        ),
+                                    Modifier.size(17.dp).align(Alignment.BottomEnd).background(
+                                        if (isMe) Color.White.copy(alpha = .94f) else config.accentColor.copy(alpha = .94f),
+                                        CircleShape
+                                    ),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(
-                                        Icons.Default.Mic,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(10.dp),
-                                        tint = if (isMe) config.accentColor else Color.White
-                                    )
+                                    Icon(Icons.Default.Mic, contentDescription = null, modifier = Modifier.size(10.dp), tint = if (isMe) config.accentColor else Color.White)
                                 }
                             }
                             VoiceWaveformPlayer(
@@ -255,9 +234,7 @@ fun MessageBubbleV2(
                             color = contentColor,
                             maxLines = if (expanded) Int.MAX_VALUE else 6,
                             overflow = if (expanded) TextOverflow.Clip else TextOverflow.Ellipsis,
-                            onTextLayout = { layout ->
-                                if (!expanded) overflowed = layout.hasVisualOverflow
-                            }
+                            onTextLayout = { layout -> if (!expanded) overflowed = layout.hasVisualOverflow }
                         )
                         if (overflowed || expanded) {
                             Text(
@@ -265,12 +242,10 @@ fun MessageBubbleV2(
                                 color = if (isMe) Color.White.copy(alpha = .92f) else config.accentColor,
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier
-                                    .clickable {
-                                        expanded = if (expanded) false else overflowed
-                                        if (!expanded) overflowed = true
-                                    }
-                                    .padding(horizontal = 2.dp, vertical = 6.dp)
+                                modifier = Modifier.clickable {
+                                    expanded = if (expanded) false else overflowed
+                                    if (!expanded) overflowed = true
+                                }.padding(horizontal = 2.dp, vertical = 6.dp)
                             )
                         }
                     }
@@ -280,13 +255,28 @@ fun MessageBubbleV2(
                         if (message.isEdited) Text("edited", style = MaterialTheme.typography.labelSmall, color = metaColor)
                         Text(SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(message.createdAt)), style = MaterialTheme.typography.labelSmall, color = metaColor)
                         if (isMe) {
-                            val icon = when (message.status) {
-                                MessageDeliveryStatus.SENDING -> Icons.Default.Schedule
-                                MessageDeliveryStatus.FAILED -> Icons.Default.ErrorOutline
-                                MessageDeliveryStatus.SENT -> Icons.Default.Done
-                                else -> Icons.Default.DoneAll
+                            AnimatedContent(
+                                targetState = message.status,
+                                transitionSpec = {
+                                    if (reduced) fadeIn(tween(0)) togetherWith fadeOut(tween(0))
+                                    else (fadeIn(tween(150)) + scaleIn(initialScale = .70f, animationSpec = tween(170))) togetherWith
+                                        (fadeOut(tween(110)) + scaleOut(targetScale = 1.18f, animationSpec = tween(130)))
+                                },
+                                label = "delivery_status"
+                            ) { status ->
+                                val icon = when (status) {
+                                    MessageDeliveryStatus.SENDING -> Icons.Default.Schedule
+                                    MessageDeliveryStatus.FAILED -> Icons.Default.ErrorOutline
+                                    MessageDeliveryStatus.SENT -> Icons.Default.Done
+                                    else -> Icons.Default.DoneAll
+                                }
+                                Icon(
+                                    icon,
+                                    status.name,
+                                    Modifier.size(14.dp),
+                                    tint = if (status == MessageDeliveryStatus.READ) Color(0xFF73E4FF) else metaColor
+                                )
                             }
-                            Icon(icon, message.status.name, Modifier.size(14.dp), tint = if (message.status == MessageDeliveryStatus.READ) Color(0xFF73E4FF) else metaColor)
                         }
                     }
                     if (message.status == MessageDeliveryStatus.FAILED) {
