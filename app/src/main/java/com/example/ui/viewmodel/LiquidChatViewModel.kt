@@ -15,7 +15,23 @@ class LiquidChatViewModel(
   val currentUser: StateFlow<User> = repository.currentUser
   val users: StateFlow<List<User>> = repository.users
   val conversations: StateFlow<List<Conversation>> = repository.conversations
+
+  // A cached/server snapshot can occasionally arrive after a newer optimistic/realtime state.
+  // Preserve delivery monotonicity in the UI while still accepting every other field update.
   val messages: StateFlow<Map<String, List<Message>>> = repository.messages
+    .scan(repository.messages.value) { previous, current ->
+      current.mapValues { (conversationId, list) ->
+        val oldById = previous[conversationId].orEmpty().associateBy { it.id }
+        list.map { message ->
+          val old = oldById[message.id]
+          if (old != null && deliveryRank(old.status) > deliveryRank(message.status)) {
+            message.copy(status = old.status)
+          } else message
+        }
+      }
+    }
+    .stateIn(viewModelScope, SharingStarted.Eagerly, repository.messages.value)
+
   val appearance: StateFlow<AppearanceSettings> = repository.appearance
   val privacy: StateFlow<PrivacySettings> = repository.privacy
   val notifications: StateFlow<NotificationSettings> = repository.notifications
@@ -137,6 +153,14 @@ class LiquidChatViewModel(
   fun updatePrivacy(settings: PrivacySettings) = repository.updatePrivacy(settings)
   fun blockUser(userId: String) = repository.blockUser(userId)
   fun unblockUser(userId: String) = repository.unblockUser(userId)
+
+  private fun deliveryRank(status: MessageDeliveryStatus): Int = when (status) {
+    MessageDeliveryStatus.FAILED -> -1
+    MessageDeliveryStatus.SENDING -> 0
+    MessageDeliveryStatus.SENT -> 1
+    MessageDeliveryStatus.DELIVERED -> 2
+    MessageDeliveryStatus.READ -> 3
+  }
 }
 
 data class SearchResults(

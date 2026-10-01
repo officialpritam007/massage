@@ -116,6 +116,12 @@ async function revokeMediaFromConversation(db, mediaUrl, cid) {
   });
 }
 
+function isPermanentTokenError(code) {
+  return code === 'messaging/registration-token-not-registered'
+    || code === 'messaging/invalid-registration-token'
+    || code === 'messaging/invalid-argument';
+}
+
 async function notify(db, cid, id) {
   const ref = db.doc(`conversations/${cid}/messages/${id}`);
   const m = (await ref.get()).data();
@@ -126,30 +132,56 @@ async function notify(db, cid, id) {
     await ref.update({notifiedAt: Date.now()});
     return;
   }
-  const u = (await db.doc('users/' + uid).get()).data();
+  const userRef = db.doc('users/' + uid);
+  const u = (await userRef.get()).data();
   if (!u || u.notifications?.messages === false || (c.mutedFor || []).includes(uid) || (u.blockedUserIds || []).includes(m.senderId)) {
     await ref.update({notifiedAt: Date.now()});
     return;
   }
-  const tokens = Object.values(u.tokens || {}).filter(x => typeof x === 'string').slice(0, 10);
-  if (tokens.length) {
-    const showPreview = u.notifications?.showPreview !== false;
-    await getMessaging().sendEachForMulticast({
-      tokens,
-      android: {priority: 'high'},
-      data: {
-        type: 'message',
-        conversationId: cid,
-        messageId: id,
-        title: showPreview ? (m.senderName || 'Liquid Chat') : 'Liquid Chat',
-        body: showPreview
-          ? (m.type === 'TEXT' ? String(m.text || '').slice(0, 120) : m.type.toLowerCase() + ' message')
-          : 'New message',
-        vibration: String(u.notifications?.vibration !== false),
-        preview: String(showPreview)
-      }
-    });
+
+  const tokenEntries = Object.entries(u.tokens || {})
+    .filter(([, token]) => typeof token === 'string' && token.length > 0)
+    .slice(0, 10);
+  if (!tokenEntries.length) {
+    // No registered device can be notified right now. Keep notificationPending true so a later
+    // token registration / cleanup pass gets another opportunity instead of silently dropping it.
+    throw new Error('No active notification token');
   }
+
+  const tokens = tokenEntries.map(([, token]) => token);
+  const showPreview = u.notifications?.showPreview !== false;
+  const result = await getMessaging().sendEachForMulticast({
+    tokens,
+    android: {priority: 'high'},
+    data: {
+      type: 'message',
+      conversationId: cid,
+      messageId: id,
+      title: showPreview ? (m.senderName || 'Liquid Chat') : 'Liquid Chat',
+      body: showPreview
+        ? (m.type === 'TEXT' ? String(m.text || '').slice(0, 120) : m.type.toLowerCase() + ' message')
+        : 'New message',
+      vibration: String(u.notifications?.vibration !== false),
+      preview: String(showPreview)
+    }
+  });
+
+  const tokenDeletes = {};
+  let transientFailures = 0;
+  result.responses.forEach((response, index) => {
+    if (response.success) return;
+    const code = response.error?.code || '';
+    if (isPermanentTokenError(code)) {
+      tokenDeletes[`tokens.${tokenEntries[index][0]}`] = FieldValue.delete();
+    } else {
+      transientFailures += 1;
+    }
+  });
+  if (Object.keys(tokenDeletes).length) await userRef.update(tokenDeletes).catch(() => {});
+
+  // If every attempted delivery failed transiently, preserve notificationPending and retry later.
+  // A successful device delivery or only permanently-invalid tokens is considered complete.
+  if (result.successCount === 0 && transientFailures > 0) throw new Error('Push delivery temporarily unavailable');
   await ref.update({notifiedAt: Date.now()});
 }
 
@@ -584,17 +616,23 @@ export default async ({req, res, error}) => {
         const s = await t.get(mref);
         const m = s.data();
         if (!m || m.deletedForEveryone || (m.hiddenFor || []).includes(uid)) throw new Error('Message unavailable');
+        // Firestore transactions require all reads to happen before the first write.
+        const currentConversation = p.action === 'edit' ? await t.get(ref) : null;
+
         if (p.action === 'edit') {
           if (m.senderId !== uid) throw new Error('Only the sender can do this');
           if (m.type !== 'TEXT' || !String(p.text).trim() || String(p.text).length > 8000) throw new Error('Invalid edit');
           t.update(mref, {text: p.text, isEdited: true});
-          const current = await t.get(ref);
-          if (current.data()?.lastMessageId === String(p.messageId)) t.update(ref, {lastMessageText: String(p.text).slice(0, 500)});
+          if (currentConversation?.data()?.lastMessageId === String(p.messageId)) {
+            t.update(ref, {lastMessageText: String(p.text).slice(0, 500)});
+          }
         } else if (p.action === 'receipt') {
           if (m.senderId === uid) return;
           const u = (await t.get(own)).data();
-          const status = p.status === 'READ' && u?.privacy?.readReceipts !== false ? 'READ' : 'DELIVERED';
-          if (m.status !== 'READ') t.update(mref, {status});
+          const nextStatus = p.status === 'READ' && u?.privacy?.readReceipts !== false ? 'READ' : 'DELIVERED';
+          const rank = {SENT: 1, DELIVERED: 2, READ: 3};
+          const currentStatus = Object.hasOwn(rank, m.status) ? m.status : 'SENT';
+          if (rank[nextStatus] > rank[currentStatus]) t.update(mref, {status: nextStatus});
         } else if (p.action === 'pin') {
           t.update(mref, {isPinned: !m.isPinned});
         } else {
@@ -657,8 +695,12 @@ export async function cleanup({res, error}) {
       .limit(50)
       .get();
     for (const d of pending.docs) {
-      await notify(db, d.ref.parent.parent.id, d.id);
-      await d.ref.update({notificationPending: false});
+      try {
+        await notify(db, d.ref.parent.parent.id, d.id);
+        await d.ref.update({notificationPending: false});
+      } catch {
+        // Keep notificationPending=true; the next cleanup invocation retries transient failures.
+      }
     }
 
     return res.json({ok: true});
