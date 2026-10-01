@@ -74,31 +74,43 @@ fun DustDeleteContainerV2(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
-    val dustColor = MaterialTheme.colorScheme.onSurface.copy(alpha = .32f)
+    val dustColor = MaterialTheme.colorScheme.onSurface
     val progress by animateFloatAsState(
         targetValue = if (active) 1f else 0f,
-        animationSpec = tween(if (reduced) 80 else 400),
+        animationSpec = tween(if (reduced) 90 else 520),
         label = "dust-delete"
     )
     Box(
         modifier.graphicsLayer {
-            alpha = (1f - progress * .92f).coerceIn(0f, 1f)
-            scaleX = 1f - progress * .06f
-            scaleY = 1f - progress * .04f
-            translationX = progress * 12f
+            val disappear = if (reduced) progress else (progress * 1.10f).coerceIn(0f, 1f)
+            alpha = (1f - disappear * .94f).coerceIn(0f, 1f)
+            scaleX = 1f - progress * .045f
+            scaleY = 1f - progress * .035f
+            translationX = progress * 18f
         }
     ) {
         content()
         if (active && !reduced) {
             Canvas(Modifier.matchParentSize()) {
-                repeat(24) { i ->
-                    val fx = ((i * 37) % 101) / 100f
-                    val fy = ((i * 61 + 17) % 101) / 100f
-                    val driftX = (18f + (i % 5) * 7f) * progress
-                    val driftY = ((i % 7) - 3) * 4f * progress
+                // More/larger particles with staggered release make the element visibly
+                // disintegrate instead of simply fading away. Coordinates are deterministic
+                // so recomposition never makes particles jump to random locations.
+                repeat(72) { i ->
+                    val fx = ((i * 47 + 13) % 101) / 100f
+                    val fy = ((i * 71 + 29) % 101) / 100f
+                    val start = (i % 11) / 36f
+                    val local = ((progress - start) / (1f - start)).coerceIn(0f, 1f)
+                    if (local <= 0f) return@repeat
+
+                    val direction = if (i % 2 == 0) 1f else .72f
+                    val driftX = (20.dp.toPx() + (i % 7) * 4.dp.toPx()) * local * direction
+                    val driftY = (((i % 9) - 4) * 2.8.dp.toPx()) * local - 7.dp.toPx() * local * local
+                    val baseRadius = (1.25f + (i % 4) * .55f).dp.toPx()
+                    val particleAlpha = ((1f - local) * (.72f - (i % 5) * .055f)).coerceIn(0f, .78f)
+
                     drawCircle(
-                        color = dustColor.copy(alpha = (.34f * (1f - progress)).coerceAtLeast(0f)),
-                        radius = (1.2f + (i % 3) * .8f) * (1f - progress * .35f),
+                        color = dustColor.copy(alpha = particleAlpha),
+                        radius = baseRadius * (1f - local * .32f),
                         center = Offset(size.width * fx + driftX, size.height * fy + driftY)
                     )
                 }
