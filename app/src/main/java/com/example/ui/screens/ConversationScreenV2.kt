@@ -56,7 +56,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreHoriz
@@ -108,6 +107,8 @@ import androidx.core.content.ContextCompat
 import com.example.data.model.Message
 import com.example.data.model.MessageType
 import com.example.data.model.User
+import com.example.data.repository.deleteMessageForEveryoneAwait
+import com.example.data.repository.deleteMessageForMeAwait
 import com.example.ui.components.GlassAvatar
 import com.example.ui.components.GlassButton
 import com.example.ui.components.GlassCard
@@ -206,11 +207,8 @@ fun ConversationScreenV2(
     var unreadAnchorId by rememberSaveable(conversationId) { mutableStateOf<String?>(null) }
     var stickToBottom by remember(conversationId) { mutableStateOf(true) }
 
-    val currentMessages by rememberUpdatedState(messages)
     val nearBottom by remember {
-        derivedStateOf {
-            !listState.canScrollForward
-        }
+        derivedStateOf { !listState.canScrollForward }
     }
 
     fun sendVoiceDraft(draft: VoiceDraftV2) {
@@ -240,7 +238,7 @@ fun ConversationScreenV2(
         voiceDraftDeleting = true
         voiceDraftDeleteFailed = false
         scope.launch {
-            delay(if (config.isReducedMotion) 80 else 420)
+            delay(if (config.isReducedMotion) 80 else 520)
             val removed = !draft.file.exists() || draft.file.delete()
             if (removed) {
                 if (voiceDraft?.file == draft.file) voiceDraft = null
@@ -445,19 +443,17 @@ fun ConversationScreenV2(
     }
 
     fun performDelete(message: Message, mode: DeleteModeV2) {
+        if (deletingId != null) return
         deletingId = message.id
         deleteRetry = null
         scope.launch {
-            delay(if (config.isReducedMotion) 80 else 430)
-            when (mode) {
-                DeleteModeV2.FOR_ME -> viewModel.deleteMessageForMe(conversationId, message.id)
-                DeleteModeV2.FOR_EVERYONE -> viewModel.deleteMessageForEveryone(conversationId, message.id)
+            delay(if (config.isReducedMotion) 90 else 520)
+            val result = when (mode) {
+                DeleteModeV2.FOR_ME -> repo.deleteMessageForMeAwait(conversationId, message.id)
+                DeleteModeV2.FOR_EVERYONE -> repo.deleteMessageForEveryoneAwait(conversationId, message.id)
             }
-            delay(1200)
-            if (currentMessages.any { it.id == message.id }) {
-                deletingId = null
-                deleteRetry = message to mode
-            }
+            deletingId = null
+            deleteRetry = if (result.isFailure) message to mode else null
         }
     }
 
@@ -742,6 +738,8 @@ fun ConversationScreenV2(
                                 message = message,
                                 isMe = message.senderId == me.uid,
                                 reduced = config.isReducedMotion,
+                                voiceAvatarUrl = if (message.senderId == me.uid) me.photoUrl else other.photoUrl,
+                                voiceAvatarName = if (message.senderId == me.uid) me.displayName else other.displayName,
                                 onLongClick = { actionMessage = message; haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
                                 onReply = { reply = message; haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
                                 onReplyPreviewClick = { replyId ->
@@ -847,22 +845,6 @@ fun ConversationScreenV2(
         }
 
         viewer?.let { message -> MediaViewer(message) { viewer = null } }
-    }
-}
-
-@Composable
-private fun LiveRecordingWaveformV2(values: List<Float>, modifier: Modifier = Modifier) {
-    val color = MaterialTheme.colorScheme.error
-    Canvas(modifier.height(30.dp)) {
-        val bars = values.takeLast(36)
-        if (bars.isEmpty()) return@Canvas
-        val gap = 3.dp.toPx()
-        val width = ((size.width - gap * (bars.size - 1)) / bars.size).coerceAtLeast(2.dp.toPx())
-        bars.forEachIndexed { index, amp ->
-            val h = size.height * amp.coerceIn(.08f, 1f)
-            val x = index * (width + gap) + width / 2
-            drawLine(color, Offset(x, (size.height - h) / 2), Offset(x, (size.height + h) / 2), width)
-        }
     }
 }
 
