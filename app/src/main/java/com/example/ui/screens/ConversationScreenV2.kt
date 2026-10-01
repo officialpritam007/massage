@@ -284,15 +284,20 @@ fun ConversationScreenV2(
     fun startRecording() {
         if (recording || other.uid in blocked) return
         runCatching {
-            val file = File.createTempFile("voice-", ".m4a", context.cacheDir)
+            // AAC/ADTS keeps the stored media unambiguously audio/* in Appwrite.
+            // Some Appwrite/MP4 sniffers classify .m4a containers as video/mp4,
+            // which caused valid voice notes to fail the VOICE attachment check.
+            val file = File.createTempFile("voice-", ".aac", context.cacheDir)
             val active = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(context) else {
                 @Suppress("DEPRECATION")
                 MediaRecorder()
             }
             active.setAudioSource(MediaRecorder.AudioSource.MIC)
-            active.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            active.setOutputFormat(MediaRecorder.OutputFormat.AAC_ADTS)
             active.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
             active.setAudioEncodingBitRate(64000)
+            active.setAudioSamplingRate(44100)
+            active.setAudioChannels(1)
             active.setOutputFile(file.absolutePath)
             active.prepare()
             active.start()
@@ -313,12 +318,10 @@ fun ConversationScreenV2(
     val lockedCurrent by rememberUpdatedState(locked)
 
     val recordPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) {
-            locked = true
-            keyboard?.hide()
-            focus.clearFocus()
-            startRecording()
-        }
+        // Permission sheets interrupt the original press gesture. Starting a locked
+        // recording here felt accidental; after granting, the user simply holds mic again.
+        val message = if (granted) "Microphone ready — hold the mic to record" else "Microphone permission is required for voice messages"
+        android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
     }
 
     fun requestRecording() {
