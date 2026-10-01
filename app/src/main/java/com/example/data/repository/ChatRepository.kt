@@ -209,6 +209,7 @@ class ChatRepository(
     uploadJob?.cancel()
     retryUpload = null
     LiquidApi.clear()
+    java.io.File(LiquidApi.context.filesDir, "voice-drafts").deleteRecursively()
     prefs.edit().clear().apply()
     auth.signOut()
     deletedBefore.clear()
@@ -685,6 +686,7 @@ class ChatRepository(
         data.remove("localVoicePath")
         try {
           val response = LiquidApi.call("send", data)
+          if (response.optBoolean("notificationPending")) com.example.notifications.NotificationRetryWorker.enqueue(LiquidApi.context, uid, cid, id)
           deleteVoiceSource(j.optString("localVoicePath"))
           prefs.edit().remove(key).apply()
           if (response.optBoolean("tombstoned")) removeLocalMessage(cid, id)
@@ -865,7 +867,7 @@ class ChatRepository(
     prefs.all.filterKeys { it.startsWith("outbox:$uid:") }.forEach { (key, raw) ->
       runCatching {
         val j = JSONObject(raw as String)
-        if (j.optString("conversationId") == cid) edit.remove(key)
+        if (j.optString("conversationId") == cid) { deleteVoiceSource(j.optString("localVoicePath")); edit.remove(key) }
       }
     }
     edit.apply()

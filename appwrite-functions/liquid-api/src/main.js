@@ -168,7 +168,7 @@ async function notify(db, cid, id) {
     const stale = new Set(delivery.responses.flatMap((r, i) => !r.success && ['messaging/registration-token-not-registered', 'messaging/invalid-registration-token'].includes(r.error?.code) ? [tokens[i]] : []));
     const tokenPatch = Object.fromEntries(Object.entries(u.tokens || {}).filter(([, token]) => stale.has(token)).map(([key]) => [`tokens.${key}`, FieldValue.delete()]));
     if (Object.keys(tokenPatch).length) await db.doc('users/' + uid).update(tokenPatch);
-    if (delivery.responses.some((r, i) => !r.success && !stale.has(tokens[i]))) throw new Error('Notification delivery pending');
+    if (!delivery.successCount || delivery.responses.some((r, i) => !r.success && !stale.has(tokens[i]))) throw new Error('Notification delivery pending');
   } else { throw new Error('Notification token pending'); }
   await ref.update({notifiedAt: Date.now()});
 }
@@ -571,7 +571,7 @@ export default async ({req, res, error}) => {
       if (created.exists) {
         await notify(db, p.conversationId, p.id).then(() => mref.update({notificationPending: false})).catch(() => {});
       }
-      return res.json({ok: true, tombstoned: !created.exists});
+      return res.json({ok: true, tombstoned: !created.exists, notificationPending: created.exists && (await mref.get()).data()?.notificationPending === true});
     }
 
     if (p.action === 'receipts') {
@@ -587,7 +587,7 @@ export default async ({req, res, error}) => {
           const m = doc.data();
           if (!m || m.senderId === uid || m.deletedForEveryone || (m.hiddenFor || []).includes(uid)) continue;
           if (m.status !== 'READ') t.update(doc.ref, {status});
-          if (p.status === 'READ' && !(m.seenBy || []).includes(uid)) {
+          if (p.status === 'READ' && Number(m.createdAt || 0) > Number(current.deletedBefore?.[uid] || 0) && !(m.seenBy || []).includes(uid)) {
             t.update(doc.ref, {seenBy: FieldValue.arrayUnion(uid)}); newlyRead++;
           }
         }
@@ -596,10 +596,11 @@ export default async ({req, res, error}) => {
       return res.json({ok: true});
     }
     if (p.action === 'retryNotifications') {
-      const pending = await ref.collection('messages').orderBy('createdAt', 'desc').limit(60).get();
-      for (const doc of pending.docs.filter(d => d.data().senderId === uid && d.data().notificationPending)) {
-        await notify(db, p.conversationId, doc.id).then(() => doc.ref.update({notificationPending: false})).catch(() => {});
-      }
+      if (!/^[a-zA-Z0-9_-]{8,80}$/.test(String(p.messageId || ''))) throw new Error('Invalid message id');
+      const doc = await ref.collection('messages').doc(p.messageId).get();
+      if (!doc.exists || doc.data().senderId !== uid || !doc.data().notificationPending) return res.json({ok: true});
+      await notify(db, p.conversationId, doc.id);
+      await doc.ref.update({notificationPending: false});
       return res.json({ok: true});
     }
 

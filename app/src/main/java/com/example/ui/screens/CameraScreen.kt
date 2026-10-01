@@ -1,5 +1,8 @@
 package com.example.ui.screens
 
+import com.example.data.DeletionCoordinator
+import com.example.ui.components.DustDelete
+import kotlinx.coroutines.launch
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -117,6 +120,7 @@ fun CameraScreen(
   var isCapturing by remember { mutableStateOf(false) }
 
   // Review Captured Photo State
+  val deleteScope = rememberCoroutineScope()
   var capturedPhotoUri by remember { mutableStateOf<Uri?>(null) }
   var captionText by remember { mutableStateOf("") }
 
@@ -205,7 +209,7 @@ fun CameraScreen(
       }
     } else if (capturedPhotoUri != null) {
       // Photo Review Screen
-      Box(
+      DustDelete("camera-preview") { Box(
         modifier = Modifier
           .fillMaxSize()
           .background(Color.Black)
@@ -227,7 +231,7 @@ fun CameraScreen(
           verticalAlignment = Alignment.CenterVertically
         ) {
           IconButton(
-            onClick = { capturedPhotoUri = null },
+            onClick = { deleteScope.launch { DeletionCoordinator.perform("camera-preview") { capturedPhotoUri?.path?.let { java.io.File(it).delete() }; capturedPhotoUri = null } } },
             modifier = Modifier
               .size(44.dp)
               .clip(CircleShape)
@@ -260,7 +264,7 @@ fun CameraScreen(
               Row(
                 modifier = Modifier
                   .clip(RoundedCornerShape(12.dp))
-                  .clickable { capturedPhotoUri = null }
+                  .clickable { deleteScope.launch { DeletionCoordinator.perform("camera-preview") { capturedPhotoUri?.path?.let { java.io.File(it).delete() }; capturedPhotoUri = null } } }
                   .padding(horizontal = 16.dp, vertical = 10.dp)
                   .testTag("camera_retake_button"),
                 verticalAlignment = Alignment.CenterVertically
@@ -308,6 +312,7 @@ fun CameraScreen(
             }
           }
         }
+      }
       }
     } else {
       // Live Camera Preview

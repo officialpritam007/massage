@@ -33,7 +33,6 @@ data class MessageReaction(
 )
 
 data class Message(
- val seenByMe: Boolean = false,
   val id: String = "",
   val conversationId: String = "",
   val senderId: String = "",
@@ -53,7 +52,8 @@ data class Message(
   val isDeleted: Boolean = false,
   val isPinned: Boolean = false,
   val isStarred: Boolean = false,
-  val expiresAt: Long? = null
+  val expiresAt: Long? = null,
+  val seenByMe: Boolean = false
 )
 
 data class Conversation(

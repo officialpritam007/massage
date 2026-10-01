@@ -25,7 +25,7 @@ class ReceiptWorker(context: Context, params: WorkerParameters) : CoroutineWorke
       // A push preview alone is not proof that the full message reached the device.
       val received = ids.filter { id ->
         val doc = FirebaseFirestore.getInstance().document("conversations/$cid/messages/$id").get(Source.SERVER).await()
-        doc.exists() && doc.getString("senderId") != uid && doc.getBoolean("deletedForEveryone") != true &&
+        doc.exists() && doc.getString("senderId") != uid && doc.get("deletedForEveryone") != true &&
           (doc.get("hiddenFor") as? List<*>)?.contains(uid) != true
       }
       if (received.isNotEmpty()) LiquidApi.call("receipts", mapOf("conversationId" to cid, "messageIds" to received, "status" to status))

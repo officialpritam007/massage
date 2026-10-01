@@ -85,6 +85,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -289,7 +290,7 @@ fun ConversationScreen(
     var tailId by remember(conversationId) { mutableStateOf<String?>(null) }
     var lastRemoteId by remember(conversationId) { mutableStateOf<String?>(null) }
     var typingSeen by remember { mutableLongStateOf(0L) }
-    var initial by remember { mutableStateOf(true) }
+    var initial by rememberSaveable(conversationId) { mutableStateOf(true) }
 
     var recording by remember { mutableStateOf(false) }
     var locked by remember { mutableStateOf(false) }
@@ -475,8 +476,7 @@ fun ConversationScreen(
         onDispose {
             if (VisibleConversation.id == conversationId) VisibleConversation.id = null
             lifecycleOwner.lifecycle.removeObserver(observer)
-            runCatching { recorder?.release() }
-            voiceFile?.delete()
+            preserveRecording()
             repo.setTyping(conversationId, false)
         }
     }
@@ -674,7 +674,7 @@ fun ConversationScreen(
                     }
 
                     upload?.let { progress ->
-                        GlassCard(
+                        DustDelete("upload:$conversationId") { GlassCard(
                             Modifier.fillMaxWidth().padding(bottom = 6.dp),
                             shape = RoundedCornerShape(20.dp),
                             backgroundColor = config.accentColor.copy(alpha = .08f),
@@ -687,11 +687,12 @@ fun ConversationScreen(
                                         style = MaterialTheme.typography.labelMedium,
                                         modifier = Modifier.weight(1f)
                                     )
-                                    TextButton(onClick = { repo.cancelUpload() }) { Text("Cancel") }
+                                    TextButton(onClick = { scope.launch { DeletionCoordinator.perform("upload:$conversationId") { repo.cancelUpload() } } }) { Text("Cancel") }
                                 }
                                 LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
                             }
                         }
+                    }
                     }
 
                     if (voiceDraft != null && !showVoicePreview && !voiceUploading) {
@@ -731,9 +732,9 @@ fun ConversationScreen(
                                 }
                                 GlassIconButton(Icons.Default.Delete, "Cancel recording", { cancelRecording() }, size = 38.dp)
                                 GlassIconButton(
-                                    Icons.Default.Send,
-                                    "Send voice message",
-                                    { stopRecording(true) },
+                                    Icons.Default.Stop,
+                                    "Stop and preview recording",
+                                    { stopRecording(true, preview = true) },
                                     tint = Color.White,
                                     backgroundColor = config.accentColor.copy(alpha = .86f),
                                     size = 38.dp
@@ -788,7 +789,7 @@ fun ConversationScreen(
                                     }
                                     Box(
                                         modifier = Modifier.size(44.dp)
-                                            .offset { IntOffset(recordDragX.roundToInt(), recordDragY.roundToInt()) }
+
                                             .clip(CircleShape)
                                             .background(if (recording) config.accentColor.copy(alpha = .25f) else Color.Transparent)
                                             .pointerInput(conversationId) {
@@ -805,6 +806,8 @@ fun ConversationScreen(
                                                     recordDragX = 0f; recordDragY = 0f
                                                     requestCurrent()
                                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    var gestureLocked = false
+                                                    var gestureCancelled = false
                                                     var released = false
                                                     while (!released) {
                                                         val event = awaitPointerEvent()
@@ -813,8 +816,9 @@ fun ConversationScreen(
                                                             val delta = change.positionChange()
                                                             recordDragX = (recordDragX + delta.x).coerceIn(-threshold, 0f)
                                                             recordDragY = (recordDragY + delta.y).coerceIn(-threshold, 0f)
-                                                            if (recordDragX <= -threshold) cancelCurrent()
+                                                            if (recordDragX <= -threshold) { gestureCancelled = true; cancelCurrent() }
                                                             else if (recordDragY <= -threshold) {
+                                                                gestureLocked = true
                                                                 locked = true
                                                                 recordDragX = 0f; recordDragY = 0f
                                                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -823,7 +827,9 @@ fun ConversationScreen(
                                                         change.consume()
                                                         released = !change.pressed
                                                     }
-                                                    if (recordingCurrent && !lockedCurrent && !cancellingCurrent) stopCurrent(true)
+                                                    if (recordingCurrent && !gestureLocked && !gestureCancelled && !lockedCurrent && !cancellingCurrent) {
+                                                        if (released) stopCurrent(true) else preserveRecording()
+                                                    }
                                                 }
                                             }, contentAlignment = Alignment.Center
                                     ) { Icon(Icons.Default.Mic, "Hold to record", modifier = Modifier.size(23.dp)) }
