@@ -22,19 +22,19 @@ fun PrivateImage(
   modifier: Modifier = Modifier,
   contentScale: ContentScale = ContentScale.Crop
 ) {
-  var resolved by remember(model) { mutableStateOf<String?>(null) }
+  var resolved by remember(model) { mutableStateOf<Any?>(LiquidApi.peekCachedPrivateMedia(model)) }
   var failed by remember(model) { mutableStateOf(false) }
   var imageFailed by remember(model) { mutableStateOf(false) }
   var retry by remember(model) { mutableIntStateOf(0) }
 
   LaunchedEffect(model, retry) {
-    resolved = null
     failed = false
     imageFailed = false
     if (model.isNullOrBlank()) {
+      resolved = null
       failed = true
-    } else {
-      runCatching { LiquidApi.resolve(model, forceRefresh = retry > 0) }
+    } else if (resolved == null || retry > 0) {
+      runCatching { LiquidApi.cachedPrivateMedia(model, forceRefresh = retry > 0) }
         .onSuccess { resolved = it }
         .onFailure { failed = true }
     }
@@ -51,7 +51,6 @@ fun PrivateImage(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
           Text("Photo unavailable", style = MaterialTheme.typography.labelSmall)
           TextButton(onClick = {
-            model?.let { LiquidApi.invalidateMedia(it) }
             retry++
           }) {
             Icon(Icons.Default.Refresh, null, Modifier.size(16.dp))

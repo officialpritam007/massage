@@ -101,6 +101,14 @@ object LiquidApi {
     }
   }
 
+  /** Returns an already-downloaded private media file synchronously so Compose can avoid a spinner. */
+  fun peekCachedPrivateMedia(url: String?): File? {
+    if (!::context.isInitialized || url.isNullOrBlank()) return null
+    val id = if (url.startsWith("appwrite:")) url.removePrefix("appwrite:") else Integer.toHexString(url.hashCode())
+    val cached = File(File(context.cacheDir, "private-media"), "$id.bin")
+    return cached.takeIf { it.exists() && it.length() > 0 }
+  }
+
   suspend fun cachedPrivateMedia(url: String, forceRefresh: Boolean = false): File = withContext(Dispatchers.IO) {
     require(::context.isInitialized) { "App context is unavailable" }
     if (!url.startsWith("appwrite:")) {
@@ -108,6 +116,7 @@ object LiquidApi {
       val dir = File(context.cacheDir, "private-media").apply { mkdirs() }
       val cached = File(dir, "$id.bin")
       if (cached.exists() && cached.length() > 0 && !forceRefresh) return@withContext cached
+      if (forceRefresh) cached.delete()
       val response = http.newCall(Request.Builder().url(url).get().build()).execute()
       response.use { r ->
         check(r.isSuccessful) { "Media download failed (${r.code})" }
