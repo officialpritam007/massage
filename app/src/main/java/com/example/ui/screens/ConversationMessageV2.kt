@@ -31,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -117,6 +118,13 @@ fun MessageBubbleV2(
     var drag by remember { mutableFloatStateOf(0f) }
     var expanded by rememberSaveable(message.id) { mutableStateOf(false) }
     var overflowed by remember(message.id, message.text) { mutableStateOf(false) }
+
+    LaunchedEffect(message.text) {
+        // Edited/replaced text always returns to the predictable collapsed state.
+        expanded = false
+        overflowed = false
+    }
+
     val offset by animateFloatAsState(
         targetValue = drag,
         animationSpec = if (reduced) tween(0) else spring(dampingRatio = .72f, stiffness = 430f),
@@ -193,8 +201,10 @@ fun MessageBubbleV2(
                             style = MaterialTheme.typography.bodyMedium,
                             color = contentColor,
                             maxLines = if (expanded) Int.MAX_VALUE else 6,
-                            overflow = TextOverflow.Ellipsis,
-                            onTextLayout = { if (!expanded) overflowed = it.hasVisualOverflow }
+                            overflow = if (expanded) TextOverflow.Clip else TextOverflow.Ellipsis,
+                            onTextLayout = { layout ->
+                                if (!expanded) overflowed = layout.hasVisualOverflow
+                            }
                         )
                         if (overflowed || expanded) {
                             Text(
@@ -202,7 +212,12 @@ fun MessageBubbleV2(
                                 color = if (isMe) Color.White.copy(alpha = .92f) else config.accentColor,
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.clickable { expanded = !expanded }.padding(vertical = 2.dp)
+                                modifier = Modifier
+                                    .clickable {
+                                        expanded = if (expanded) false else overflowed
+                                        if (!expanded) overflowed = true
+                                    }
+                                    .padding(horizontal = 2.dp, vertical = 6.dp)
                             )
                         }
                     }
