@@ -44,8 +44,9 @@ class LiquidFirebaseMessagingService : FirebaseMessagingService() {
     val prefs = getSharedPreferences("liquid-private", 0)
     val id = message.data["messageId"] ?: message.messageId ?: return
     val conversationId = message.data["conversationId"].orEmpty()
+    val dataType = message.data["type"].orEmpty()
 
-    if (message.data["type"] == "message_deleted") {
+    if (dataType == "message_deleted") {
       NotificationManagerCompat.from(this).cancel(id.hashCode())
       prefs.edit().remove("notified:$id").apply()
 
@@ -56,6 +57,13 @@ class LiquidFirebaseMessagingService : FirebaseMessagingService() {
       coil.Coil.imageLoader(this).memoryCache?.clear()
       coil.Coil.imageLoader(this).diskCache?.clear()
       return
+    }
+
+    // Delivery is independent from notification visibility. Persist the acknowledgement before
+    // checking notification settings/permission, then let WorkManager retry until the backend
+    // accepts it. This never writes presence, so a background receive does not make the user Online.
+    if (dataType == "message" && conversationId.isNotBlank()) {
+      DeliveryReceiptWorker.enqueue(this, conversationId, id)
     }
 
     if (!prefs.getBoolean("notifications", true)) return
