@@ -4,11 +4,13 @@
 
 GitHub Actions workflow `Build APK` on branch `chatgpt/ios26-liquid-glass`:
 
-- Run `36817107062` (commit `5fd7d99`) — **success**, all steps green:
+- Run `36821131815` (commit `4a5a70f`) — **success**, all steps green:
   - `Run unit tests` (`gradle testDebugUnitTest`) ✅
   - `Build Debug APK` (`gradle assembleDebug`) ✅
-  - `Upload APK` ✅ — artifact `liquid-chat-debug-apk` (~25.8 MB, not expired)
-- Earlier run `36815085820` (commit `c29c481`) verified the same three steps after the initial compile fix.
+  - `Upload APK` ✅ — artifact `liquid-chat-debug-apk` (~27.1 MB, not expired)
+- Earlier runs `36817107062` (commit `5fd7d99`) and `36815085820` (commit `c29c481`) verified the same three steps for the config-driven chrome pass and the initial compile fix.
+
+The `4a5a70f` run covers the final review pass: per-group bubble spacing, search hit jump/highlight, privacy-gated media loading, cached video frames, grabber swipe-dismiss on sheets, sheet-based edit/forward/voice-preview/delete-chat surfaces, persisted auto-save ids, the `syncIssue` listener diagnostic, the directory identity fallback helper, and grouped read-only list rows (`frost = false`).
 
 Static checks run locally before each push (no Android SDK in this workspace, so Gradle is CI-only):
 

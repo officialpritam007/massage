@@ -10,14 +10,15 @@
 - **Save to Gallery:** viewer-এর Download button, message long-press → **Save to gallery**, আর Settings → Privacy-তে **Auto-save received media** (default বন্ধ)। Android 10+ এ MediaStore ব্যবহার করে; media আগের মতোই Appwrite-এ private থাকে, Firebase Storage-এ কিছু যায় না।
 - **Reply UI:** compact translucent quote block — accent edge, sender name, এক লাইনে truncate, original photo/video হলে thumbnail।
 - **Composer ও attachment sheet:** floating glass composer, text লিখলে mic → send orb morph; `+` চাপলে iOS-ঘরানার frosted bottom sheet (Photo / Camera / Video / File)।
-- **Chat list ও search:** compact glass rows (pin, draft, delivery tick, unread badge, timestamp), thinner floating bottom nav with liquid capsule, search results-এ match highlight।
+- **Chat list ও search:** compact glass rows (pin, draft, delivery tick, unread badge, timestamp), thinner floating bottom nav with liquid capsule, search results-এ match highlight। Search-এ কোনো message-এ tap করলে সেই chat খুলে ঠিক ওই message-এ scroll হয়ে সাময়িকভাবে accent highlight হয়।
+- **শেষ polish pass:** grouped bubble-এর spacing আলাদা (একই sender-এর bubble কাছাকাছি, নতুন sender-এর আগে ফাঁকা), swipe-to-reply করার সময় পাশে reply glyph, sent/received bubble দুই দিক থেকে animate হয়ে ঢোকে, bottom sheet grabber টেনে নিচে swipe করলে dismiss, Locked recording chip, Settings-এ duplicate auto-save toggle সরানো, diagnostics-এ realtime listener health দেখানো।
 - **Typography, scrim, haptics:** হালকা system-font hierarchy, wallpaper-এর উপর adaptive readability scrim, send/reaction/swipe/delete/sheet/tab-এ haptics, Reduced Motion দিলে ভারী animation বন্ধ।
 - **অপরিবর্তিত:** Firebase (Auth/Firestore/presence/typing/FCM) + Appwrite (private media) split, server-authoritative deletion, developer diagnostics ও startup recovery, 1-to-1 scope (group/call নেই)।
 
 ## Push / merge অবস্থা
 
-- Commit **`5fd7d99`** branch **`chatgpt/ios26-liquid-glass`**-এ push করা আছে; `main` (`327368b`) অপরিবর্তিত।
-- GitHub Actions run **`36817107062`** সম্পূর্ণ সবুজ: Run unit tests ✅, Build Debug APK ✅, Upload APK ✅ (artifact `liquid-chat-debug-apk`, ~25.8 MB)।
+- Commit **`4a5a70f`** branch **`chatgpt/ios26-liquid-glass`**-এ push করা আছে; `main` (`327368b`) অপরিবর্তিত।
+- GitHub Actions run **`36821131815`** সম্পূর্ণ সবুজ: Run unit tests ✅, Build Debug APK ✅, Upload APK ✅ (artifact `liquid-chat-debug-apk`, ~27.1 MB)।
 - Merge/PR আপনার সিদ্ধান্ত — আমি কোনো PR খুলিনি বা `main`-এ merge করিনি। Branch merge করলে հետের commits-ও একসাথে যাবে (এই release-এর সব UI কাজ এই branch-এ)।
 
 ## Repository-এ আগেই হয়ে যাওয়া cleanup
