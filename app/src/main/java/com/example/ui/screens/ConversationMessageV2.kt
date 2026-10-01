@@ -66,10 +66,23 @@ import com.example.ui.components.PrivateImage
 import com.example.ui.components.PrivateVideoThumbnail
 import com.example.ui.components.VoiceWaveformPlayer
 import com.example.ui.theme.LocalLiquidGlass
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
+
+private object ReplyHighlightBusV2 {
+    val targetId = mutableStateOf<String?>(null)
+
+    fun show(messageId: String) {
+        targetId.value = messageId
+    }
+
+    fun clear(messageId: String) {
+        if (targetId.value == messageId) targetId.value = null
+    }
+}
 
 @Composable
 fun DustDeleteContainerV2(
@@ -137,10 +150,18 @@ fun MessageBubbleV2(
     var drag by remember { mutableFloatStateOf(0f) }
     var expanded by rememberSaveable(message.id) { mutableStateOf(false) }
     var overflowed by remember(message.id, message.text) { mutableStateOf(false) }
+    val globalHighlightId by ReplyHighlightBusV2.targetId
+    val effectiveHighlighted = highlighted || globalHighlightId == message.id
 
     LaunchedEffect(message.text) {
         expanded = false
         overflowed = false
+    }
+    LaunchedEffect(globalHighlightId, message.id) {
+        if (globalHighlightId == message.id) {
+            delay(if (reduced) 220 else 900)
+            ReplyHighlightBusV2.clear(message.id)
+        }
     }
 
     val offset by animateFloatAsState(
@@ -149,7 +170,7 @@ fun MessageBubbleV2(
         label = "reply-v2"
     )
     val highlightAmount by animateFloatAsState(
-        targetValue = if (highlighted) 1f else 0f,
+        targetValue = if (effectiveHighlighted) 1f else 0f,
         animationSpec = if (reduced) tween(0) else spring(dampingRatio = .55f, stiffness = 360f),
         label = "reply_target_highlight"
     )
@@ -192,7 +213,7 @@ fun MessageBubbleV2(
                 }
                 .combinedClickable(onClick = { if (message.mediaUrl.isNotBlank()) onMedia() }, onLongClick = onLongClick)
         ) {
-            GlassCard(shape = shape, backgroundColor = bg, borderColor = borderColor, elevation = if (highlighted) 6.dp else 1.dp) {
+            GlassCard(shape = shape, backgroundColor = bg, borderColor = borderColor, elevation = if (effectiveHighlighted) 6.dp else 1.dp) {
                 Column(
                     Modifier.animateContentSize(if (reduced) tween(0) else spring(dampingRatio = .78f, stiffness = 410f)).padding(10.dp),
                     verticalArrangement = Arrangement.spacedBy(5.dp)
@@ -202,7 +223,12 @@ fun MessageBubbleV2(
                             Modifier
                                 .widthIn(min = 120.dp)
                                 .background(if (isMe) Color.White.copy(alpha = .10f) else config.accentColor.copy(alpha = .08f), RoundedCornerShape(14.dp))
-                                .clickable { message.replyToId?.let(onReplyPreviewClick) }
+                                .clickable {
+                                    message.replyToId?.let { replyId ->
+                                        ReplyHighlightBusV2.show(replyId)
+                                        onReplyPreviewClick(replyId)
+                                    }
+                                }
                                 .padding(horizontal = 9.dp, vertical = 7.dp)
                         ) {
                             Column {
