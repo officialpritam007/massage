@@ -33,6 +33,7 @@ data class MessageReaction(
 )
 
 data class Message(
+ val seenByMe: Boolean = false,
   val id: String = "",
   val conversationId: String = "",
   val senderId: String = "",
@@ -95,3 +96,9 @@ data class PrivacySettings(
   val profilePhotoVisibility: String = "Everyone",
   val readReceipts: Boolean = true
 )
+
+/** A delayed send response must never downgrade a delivered/read snapshot. */
+fun acknowledgedStatus(current: MessageDeliveryStatus): MessageDeliveryStatus = when (current) {
+  MessageDeliveryStatus.READ, MessageDeliveryStatus.DELIVERED -> current
+  else -> MessageDeliveryStatus.SENT
+}

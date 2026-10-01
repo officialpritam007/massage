@@ -40,7 +40,8 @@ class LiquidFirebaseMessagingService : FirebaseMessagingService() {
   }
 
   override fun onMessageReceived(message: RemoteMessage) {
-    if (FirebaseAuth.getInstance().currentUser == null) return
+    val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
+    if (message.data["recipientId"]?.let { it != uid } == true) return
     val prefs = getSharedPreferences("liquid-private", 0)
     val id = message.data["messageId"] ?: message.messageId ?: return
     val conversationId = message.data["conversationId"].orEmpty()
@@ -51,13 +52,14 @@ class LiquidFirebaseMessagingService : FirebaseMessagingService() {
 
       // Remote permanent deletion must invalidate every local media surface. The exact private
       // media reference is deliberately not included in FCM, so clear resolved/download caches.
-      runCatching { LiquidApi.clearMediaCachesOnly() }
-      runCatching { File(cacheDir, "private-media").deleteRecursively() }
-      coil.Coil.imageLoader(this).memoryCache?.clear()
-      coil.Coil.imageLoader(this).diskCache?.clear()
+      val media = message.data["mediaUrl"].orEmpty()
+      if (media.isNotBlank()) runCatching { LiquidApi.invalidateMedia(media) }
+      else runCatching { LiquidApi.clearMediaCachesOnly() }
       return
     }
 
+    ReceiptWorker.enqueue(this, uid, conversationId, listOf(id), "DELIVERED", urgent = message.data["silent"] != "true")
+    if (message.data["silent"] == "true" || VisibleConversation.id == conversationId) return
     if (!prefs.getBoolean("notifications", true)) return
     if (Build.VERSION.SDK_INT >= 33 &&
       ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED

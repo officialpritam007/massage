@@ -56,6 +56,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.Conversation
+import com.example.ui.components.DustDelete
 import com.example.ui.components.GlassAvatar
 import com.example.ui.components.GlassBadge
 import com.example.ui.components.GlassCard
@@ -204,6 +205,7 @@ fun ChatsHomeScreen(
                 }
 
                 items(visible, key = { it.id }) { conversation ->
+                  DustDelete("chat:${conversation.id}", Modifier.animateItem()) {
                     GlassCard(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(24.dp),
@@ -285,6 +287,7 @@ fun ChatsHomeScreen(
                             }
                         }
                     }
+                  }
                 }
 
                 if (!loading && visible.isEmpty()) {

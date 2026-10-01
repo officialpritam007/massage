@@ -13,6 +13,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import androidx.compose.ui.platform.LocalContext
+import java.io.File
+import kotlinx.coroutines.CancellationException
 import com.example.data.network.LiquidApi
 
 @Composable
@@ -22,21 +26,20 @@ fun PrivateImage(
   modifier: Modifier = Modifier,
   contentScale: ContentScale = ContentScale.Crop
 ) {
-  var resolved by remember(model) { mutableStateOf<String?>(null) }
-  var failed by remember(model) { mutableStateOf(false) }
-  var imageFailed by remember(model) { mutableStateOf(false) }
+  val context = LocalContext.current
+  val versions by LiquidApi.mediaVersions.collectAsState()
+  val version = versions[model] ?: 0
+  var resolved by remember(model, version) { mutableStateOf<File?>(model?.let { LiquidApi.peekCachedMedia(it) }) }
+  var failed by remember(model, version) { mutableStateOf(false) }
+  var imageFailed by remember(model, version) { mutableStateOf(false) }
   var retry by remember(model) { mutableIntStateOf(0) }
-
-  LaunchedEffect(model, retry) {
-    resolved = null
+  LaunchedEffect(model, retry, version) {
     failed = false
     imageFailed = false
-    if (model.isNullOrBlank()) {
-      failed = true
-    } else {
-      runCatching { LiquidApi.resolve(model, forceRefresh = retry > 0) }
-        .onSuccess { resolved = it }
-        .onFailure { failed = true }
+    if (model.isNullOrBlank()) failed = true else {
+      try { resolved = LiquidApi.cachedPrivateMedia(model, forceRefresh = retry > 0) }
+      catch (e: CancellationException) { throw e }
+      catch (_: Exception) { failed = true }
     }
   }
 
@@ -65,7 +68,10 @@ fun PrivateImage(
       }
       else -> {
         AsyncImage(
-          model = resolved,
+          model = ImageRequest.Builder(context).data(resolved)
+            .memoryCacheKey(model?.let(LiquidApi::mediaCacheKey))
+            .diskCacheKey(model?.let(LiquidApi::mediaCacheKey))
+            .crossfade(false).build(),
           contentDescription = contentDescription,
           modifier = Modifier.fillMaxSize(),
           contentScale = contentScale,

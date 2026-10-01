@@ -2,6 +2,7 @@ import {initializeApp, cert, getApps} from 'firebase-admin/app';
 import {getAuth} from 'firebase-admin/auth';
 import {getFirestore, FieldValue} from 'firebase-admin/firestore';
 import {getMessaging} from 'firebase-admin/messaging';
+import {isAudioOnlyMp4} from './media-policy.js';
 import {randomUUID} from 'node:crypto';
 import {appUser, assertPair, validateMessage} from './policy.js';
 
@@ -28,6 +29,17 @@ async function aw(path, method = 'GET', body, session) {
     throw e;
   }
   return j;
+}
+
+async function normalizeVoiceMedia(fileId, mime) {
+  // Every VOICE upload is produced as AAC/M4A. Validate its tracks server-side.
+  const response = await fetch(`${env.APPWRITE_ENDPOINT.replace(/\/$/, '')}/storage/buckets/${env.APPWRITE_BUCKET_ID}/files/${fileId}/download`, {
+    headers: {'X-Appwrite-Project': env.APPWRITE_PROJECT_ID, 'X-Appwrite-Key': env.APPWRITE_API_KEY}
+  });
+  if (!response.ok) throw new Error('Unable to validate voice recording');
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.length > 25 * 1024 * 1024 || !isAudioOnlyMp4(bytes)) throw new Error('Voice recording must contain audio only');
+  return 'audio/mp4';
 }
 
 async function ensureUser(uid) {
@@ -127,18 +139,21 @@ async function notify(db, cid, id) {
     return;
   }
   const u = (await db.doc('users/' + uid).get()).data();
-  if (!u || u.notifications?.messages === false || (c.mutedFor || []).includes(uid) || (u.blockedUserIds || []).includes(m.senderId)) {
+  if (!u || (u.blockedUserIds || []).includes(m.senderId)) {
     await ref.update({notifiedAt: Date.now()});
     return;
   }
   const tokens = Object.values(u.tokens || {}).filter(x => typeof x === 'string').slice(0, 10);
   if (tokens.length) {
     const showPreview = u.notifications?.showPreview !== false;
-    await getMessaging().sendEachForMulticast({
+    const silent = u.notifications?.messages === false || (c.mutedFor || []).includes(uid);
+    const delivery = await getMessaging().sendEachForMulticast({
       tokens,
-      android: {priority: 'high'},
+      android: {priority: silent ? 'normal' : 'high'},
       data: {
         type: 'message',
+        recipientId: uid,
+        silent: String(silent),
         conversationId: cid,
         messageId: id,
         title: showPreview ? (m.senderName || 'Liquid Chat') : 'Liquid Chat',
@@ -149,21 +164,26 @@ async function notify(db, cid, id) {
         preview: String(showPreview)
       }
     });
-  }
+    // Preserve a retryable pending push when FCM rejects any transient delivery.
+    const stale = new Set(delivery.responses.flatMap((r, i) => !r.success && ['messaging/registration-token-not-registered', 'messaging/invalid-registration-token'].includes(r.error?.code) ? [tokens[i]] : []));
+    const tokenPatch = Object.fromEntries(Object.entries(u.tokens || {}).filter(([, token]) => stale.has(token)).map(([key]) => [`tokens.${key}`, FieldValue.delete()]));
+    if (Object.keys(tokenPatch).length) await db.doc('users/' + uid).update(tokenPatch);
+    if (delivery.responses.some((r, i) => !r.success && !stale.has(tokens[i]))) throw new Error('Notification delivery pending');
+  } else { throw new Error('Notification token pending'); }
   await ref.update({notifiedAt: Date.now()});
 }
 
-async function notifyDeletion(db, cid, id, actorUid) {
+async function notifyDeletion(db, cid, id, actorUid, mediaUrl = '') {
   const c = (await db.doc('conversations/' + cid).get()).data();
   if (!c?.participantIds) return;
   for (const targetUid of c.participantIds.filter(x => x !== actorUid)) {
     const u = (await db.doc('users/' + targetUid).get()).data();
     const tokens = Object.values(u?.tokens || {}).filter(x => typeof x === 'string').slice(0, 10);
     if (!tokens.length) continue;
-    await getMessaging().sendEachForMulticast({
+    const delivery = await getMessaging().sendEachForMulticast({
       tokens,
-      android: {priority: 'high'},
-      data: {type: 'message_deleted', conversationId: cid, messageId: id}
+      android: {priority: silent ? 'normal' : 'high'},
+      data: {type: 'message_deleted', recipientId: targetUid, conversationId: cid, messageId: id, mediaUrl}
     }).catch(() => {});
   }
 }
@@ -271,6 +291,7 @@ export default async ({req, res, error}) => {
         conversationId: p.conversationId || null,
         createdAt: now,
         ready: false,
+        kind: ['IMAGE', 'VIDEO', 'VOICE', 'FILE'].includes(p.type) ? p.type : '',
         forwardedTo: [],
         revokedFrom: []
       });
@@ -288,7 +309,8 @@ export default async ({req, res, error}) => {
       if (!meta.conversationId && !String(file.mimeType).startsWith('image/')) throw new Error('Profile photo must be an image');
       if (meta.conversationId) await allowed(db, meta.conversationId, uid);
       await aw(path, 'PUT', {name: file.name, permissions: []});
-      await metaRef.update({ready: true, mimeType: file.mimeType || '', size: file.sizeOriginal || 0});
+      const mimeType = meta.kind === 'VOICE' ? await normalizeVoiceMedia(p.fileId, file.mimeType) : file.mimeType || '';
+      await metaRef.update({ready: true, mimeType, voiceValidated: meta.kind === 'VOICE', size: file.sizeOriginal || 0});
       if (!meta.conversationId) {
         await own.set({photoUrl: 'appwrite:' + p.fileId}, {merge: true});
         await db.doc('directory/' + uid).set({photoUrl: 'appwrite:' + p.fileId}, {merge: true});
@@ -336,6 +358,20 @@ export default async ({req, res, error}) => {
       return res.json({
         url: `${env.APPWRITE_ENDPOINT}/storage/buckets/${env.APPWRITE_BUCKET_ID}/files/${p.fileId}/view?project=${env.APPWRITE_PROJECT_ID}&token=${encodeURIComponent(fileToken.secret)}`
       });
+    }
+
+    if (p.action === 'removeProfilePhoto') {
+      const old = (await own.get()).data()?.photoUrl;
+      const batch = db.batch();
+      batch.set(own, {photoUrl: ''}, {merge: true});
+      batch.set(db.doc('directory/' + uid), {photoUrl: ''}, {merge: true});
+      await batch.commit();
+      if (String(old || '').startsWith('appwrite:')) {
+        const id = old.slice(9);
+        await db.doc('media/' + id).set({deleted: true}, {merge: true});
+        await aw(`/storage/buckets/${env.APPWRITE_BUCKET_ID}/files/${id}`, 'DELETE').catch(() => {});
+      }
+      return res.json({ok: true});
     }
 
     if (p.action === 'report') {
@@ -468,7 +504,12 @@ export default async ({req, res, error}) => {
         const mm = (await db.doc('media/' + String(p.mediaUrl).replace('appwrite:', '')).get()).data();
         if (!mm?.ready || mm.owner !== uid || mm.conversationId !== p.conversationId) throw new Error('Invalid media attachment');
         const prefix = expectedMimePrefix(p.type);
-        const mime = String(mm.mimeType || '').toLowerCase();
+        let mime = String(mm.mimeType || '').toLowerCase();
+        if (p.type === 'VOICE' && !mm.voiceValidated) {
+          const fileId = String(p.mediaUrl).replace('appwrite:', '');
+          mime = await normalizeVoiceMedia(fileId, mime);
+          await db.doc('media/' + fileId).update({mimeType: mime, voiceValidated: true});
+        }
         if (prefix && !mime.startsWith(prefix)) throw new Error(`Attachment type does not match ${p.type.toLowerCase()} message`);
         if (p.type === 'FILE' && !mime) throw new Error('Unknown attachment type');
       }
@@ -533,6 +574,35 @@ export default async ({req, res, error}) => {
       return res.json({ok: true, tombstoned: !created.exists});
     }
 
+    if (p.action === 'receipts') {
+      const ids = [...new Set(Array.isArray(p.messageIds) ? p.messageIds : [])].filter(id => typeof id === 'string' && /^[a-zA-Z0-9_-]{8,80}$/.test(id)).slice(0, 60);
+      if (!ids.length) return res.json({ok: true});
+      await db.runTransaction(async t => {
+        const user = (await t.get(own)).data();
+        const current = (await t.get(ref)).data();
+        const docs = await t.getAll(...ids.map(id => ref.collection('messages').doc(id)));
+        const status = p.status === 'READ' && user?.privacy?.readReceipts !== false ? 'READ' : 'DELIVERED';
+        let newlyRead = 0;
+        for (const doc of docs) {
+          const m = doc.data();
+          if (!m || m.senderId === uid || m.deletedForEveryone || (m.hiddenFor || []).includes(uid)) continue;
+          if (m.status !== 'READ') t.update(doc.ref, {status});
+          if (p.status === 'READ' && !(m.seenBy || []).includes(uid)) {
+            t.update(doc.ref, {seenBy: FieldValue.arrayUnion(uid)}); newlyRead++;
+          }
+        }
+        if (newlyRead) t.update(ref, {[`unreadCounts.${uid}`]: Math.max(0, Number(current.unreadCounts?.[uid] || 0) - newlyRead)});
+      });
+      return res.json({ok: true});
+    }
+    if (p.action === 'retryNotifications') {
+      const pending = await ref.collection('messages').orderBy('createdAt', 'desc').limit(60).get();
+      for (const doc of pending.docs.filter(d => d.data().senderId === uid && d.data().notificationPending)) {
+        await notify(db, p.conversationId, doc.id).then(() => doc.ref.update({notificationPending: false})).catch(() => {});
+      }
+      return res.json({ok: true});
+    }
+
     const mref = ref.collection('messages').doc(String(p.messageId));
 
     if (p.action === 'deleteForMe') {
@@ -575,7 +645,7 @@ export default async ({req, res, error}) => {
       });
       await revokeMediaFromConversation(db, mediaUrl, p.conversationId);
       await refreshConversationSummary(ref);
-      await notifyDeletion(db, p.conversationId, String(p.messageId), uid);
+      await notifyDeletion(db, p.conversationId, String(p.messageId), uid, mediaUrl);
       return res.json({ok: true});
     }
 
@@ -587,8 +657,8 @@ export default async ({req, res, error}) => {
         if (p.action === 'edit') {
           if (m.senderId !== uid) throw new Error('Only the sender can do this');
           if (m.type !== 'TEXT' || !String(p.text).trim() || String(p.text).length > 8000) throw new Error('Invalid edit');
-          t.update(mref, {text: p.text, isEdited: true});
           const current = await t.get(ref);
+          t.update(mref, {text: p.text, isEdited: true});
           if (current.data()?.lastMessageId === String(p.messageId)) t.update(ref, {lastMessageText: String(p.text).slice(0, 500)});
         } else if (p.action === 'receipt') {
           if (m.senderId === uid) return;
