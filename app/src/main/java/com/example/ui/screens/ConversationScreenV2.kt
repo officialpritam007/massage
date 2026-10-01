@@ -197,6 +197,8 @@ fun ConversationScreenV2(
     var recordingFile by remember { mutableStateOf<File?>(null) }
     var waveform by remember { mutableStateOf<List<Float>>(emptyList()) }
     var voiceDraft by remember { mutableStateOf<VoiceDraftV2?>(null) }
+    var voiceDraftDeleting by remember { mutableStateOf(false) }
+    var voiceDraftDeleteFailed by remember { mutableStateOf(false) }
 
     var morphId by remember(conversationId) { mutableStateOf<String?>(null) }
     var typingAt by remember(conversationId) { mutableLongStateOf(0L) }
@@ -214,8 +216,9 @@ fun ConversationScreenV2(
     }
 
     fun sendVoiceDraft(draft: VoiceDraftV2) {
-        if (draft.uploading || !draft.file.exists() || draft.file.length() <= 0L) return
+        if (draft.uploading || voiceDraftDeleting || !draft.file.exists() || draft.file.length() <= 0L) return
         voiceDraft = draft.copy(uploading = true, failed = false)
+        voiceDraftDeleteFailed = false
         repo.uploadChatMedia(conversationId, Uri.fromFile(draft.file), MessageType.VOICE) { result ->
             result.onSuccess { url ->
                 viewModel.sendMessage(
@@ -231,6 +234,22 @@ fun ConversationScreenV2(
             }.onFailure {
                 if (draft.file.exists()) voiceDraft = draft.copy(uploading = false, failed = true)
             }
+        }
+    }
+
+    fun discardVoiceDraft(draft: VoiceDraftV2) {
+        if (draft.uploading || voiceDraftDeleting) return
+        voiceDraftDeleting = true
+        voiceDraftDeleteFailed = false
+        scope.launch {
+            delay(if (config.isReducedMotion) 80 else 420)
+            val removed = !draft.file.exists() || draft.file.delete()
+            if (removed) {
+                if (voiceDraft?.file == draft.file) voiceDraft = null
+            } else {
+                voiceDraftDeleteFailed = true
+            }
+            voiceDraftDeleting = false
         }
     }
 
@@ -252,6 +271,7 @@ fun ConversationScreenV2(
             voiceDraft?.takeUnless { it.uploading }?.file?.delete()
             val draft = VoiceDraftV2(file, seconds, samples)
             voiceDraft = draft
+            voiceDraftDeleteFailed = false
             if (autoSend) sendVoiceDraft(draft)
         } else {
             file?.delete()
@@ -505,41 +525,48 @@ fun ConversationScreenV2(
                     }
 
                     voiceDraft?.let { draft ->
-                        GlassCard(
-                            shape = RoundedCornerShape(22.dp),
-                            backgroundColor = if (draft.failed) MaterialTheme.colorScheme.error.copy(alpha = .09f) else config.accentColor.copy(alpha = .08f),
-                            elevation = 1.dp
+                        DustDeleteContainerV2(
+                            active = voiceDraftDeleting,
+                            reduced = config.isReducedMotion,
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        when {
-                                            draft.uploading -> "Uploading voice message…"
-                                            draft.failed -> "Upload failed — recording kept"
-                                            else -> "Voice preview"
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = if (draft.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text("${draft.seconds / 60}:${(draft.seconds % 60).toString().padStart(2, '0')}", style = MaterialTheme.typography.labelSmall)
-                                }
-                                VoiceWaveformPlayer(draft.seconds, Uri.fromFile(draft.file).toString(), draft.waveform, isOutgoing = true)
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    GlassButton(
-                                        "Discard",
-                                        onClick = { draft.file.delete(); if (voiceDraft?.file == draft.file) voiceDraft = null },
-                                        modifier = Modifier.weight(1f),
-                                        isPrimary = false,
-                                        enabled = !draft.uploading
-                                    )
-                                    GlassButton(
-                                        if (draft.failed) "Retry" else "Send",
-                                        onClick = { sendVoiceDraft(draft.copy(uploading = false)) },
-                                        modifier = Modifier.weight(1f),
-                                        isLoading = draft.uploading,
-                                        enabled = !draft.uploading
-                                    )
+                            GlassCard(
+                                shape = RoundedCornerShape(22.dp),
+                                backgroundColor = if (draft.failed || voiceDraftDeleteFailed) MaterialTheme.colorScheme.error.copy(alpha = .09f) else config.accentColor.copy(alpha = .08f),
+                                elevation = 1.dp
+                            ) {
+                                Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            when {
+                                                draft.uploading -> "Uploading voice message…"
+                                                voiceDraftDeleteFailed -> "Discard failed — recording kept"
+                                                draft.failed -> "Upload failed — recording kept"
+                                                else -> "Voice preview"
+                                            },
+                                            modifier = Modifier.weight(1f),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = if (draft.failed || voiceDraftDeleteFailed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text("${draft.seconds / 60}:${(draft.seconds % 60).toString().padStart(2, '0')}", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                    VoiceWaveformPlayer(draft.seconds, Uri.fromFile(draft.file).toString(), draft.waveform, isOutgoing = true)
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        GlassButton(
+                                            if (voiceDraftDeleteFailed) "Retry discard" else "Discard",
+                                            onClick = { discardVoiceDraft(draft) },
+                                            modifier = Modifier.weight(1f),
+                                            isPrimary = false,
+                                            enabled = !draft.uploading && !voiceDraftDeleting
+                                        )
+                                        GlassButton(
+                                            if (draft.failed) "Retry" else "Send",
+                                            onClick = { sendVoiceDraft(draft.copy(uploading = false)) },
+                                            modifier = Modifier.weight(1f),
+                                            isLoading = draft.uploading,
+                                            enabled = !draft.uploading && !voiceDraftDeleting
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -703,7 +730,11 @@ fun ConversationScreenV2(
 
                     itemsIndexed(rows, key = { _, item -> item.id }) { _, message ->
                         if (message.id == unreadAnchorId) UnreadSeparatorV2()
-                        DustDeleteContainerV2(active = deletingId == message.id, reduced = config.isReducedMotion) {
+                        DustDeleteContainerV2(
+                            active = deletingId == message.id,
+                            reduced = config.isReducedMotion,
+                            modifier = Modifier.animateItem().fillMaxWidth()
+                        ) {
                             MessageBubbleV2(
                                 message = message,
                                 isMe = message.senderId == me.uid,
