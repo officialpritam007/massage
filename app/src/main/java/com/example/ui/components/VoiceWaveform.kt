@@ -1,23 +1,72 @@
 package com.example.ui.components
 
+import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.os.Build
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.weight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RowScope
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import com.example.data.network.LiquidApi
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.sin
+
+/**
+ * Small process-local coordinator so two visible voice bubbles never play over each other.
+ * MediaPlayer audio focus is still handled by Android, but this guarantees Liquid Chat itself
+ * has a single active voice message at a time.
+ */
+private object VoicePlaybackBus {
+  val activeKey = mutableStateOf<String?>(null)
+
+  fun activate(key: String) {
+    activeKey.value = key
+  }
+
+  fun release(key: String) {
+    if (activeKey.value == key) activeKey.value = null
+  }
+}
 
 @Composable
 fun VoiceWaveformPlayer(
@@ -28,7 +77,16 @@ fun VoiceWaveformPlayer(
   isOutgoing: Boolean = false
 ) {
   var retry by remember(mediaUrl) { mutableIntStateOf(0) }
-  val player = remember(mediaUrl, retry) { MediaPlayer() }
+  val player = remember(mediaUrl, retry) {
+    MediaPlayer().apply {
+      setAudioAttributes(
+        AudioAttributes.Builder()
+          .setUsage(AudioAttributes.USAGE_MEDIA)
+          .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+          .build()
+      )
+    }
+  }
   var ready by remember(mediaUrl, retry) { mutableStateOf(false) }
   var playing by remember(mediaUrl, retry) { mutableStateOf(false) }
   var pos by remember(mediaUrl, retry) { mutableFloatStateOf(0f) }
@@ -37,23 +95,28 @@ fun VoiceWaveformPlayer(
   }
   var error by remember(mediaUrl, retry) { mutableStateOf(false) }
   var speedIndex by remember(mediaUrl) { mutableIntStateOf(0) }
+  val activeKey by VoicePlaybackBus.activeKey
   val speeds = remember { listOf(1f, 1.5f, 2f) }
   val speed = speeds[speedIndex]
 
   val bars = remember(mediaUrl, waveform) {
-    val source = if (waveform.isNotEmpty()) waveform else List(38) { index ->
+    val source = if (waveform.isNotEmpty()) waveform else List(40) { index ->
       val seed = abs(mediaUrl.hashCode() % 97) / 97f
       (0.18f + abs(sin(index * .63 + seed * 4.7)).toFloat() * .78f)
     }
-    val compact = if (source.size <= 42) source else {
-      val step = source.size.toFloat() / 42f
-      List(42) { i -> source[(i * step).toInt().coerceIn(source.indices)] }
+    val compact = if (source.size <= 44) source else {
+      val step = source.size.toFloat() / 44f
+      List(44) { i -> source[(i * step).toInt().coerceIn(source.indices)] }
     }
     val max = compact.maxOrNull()?.coerceAtLeast(.01f) ?: 1f
     compact.map { (it / max).coerceIn(.12f, 1f) }
   }
 
   LaunchedEffect(mediaUrl, retry) {
+    ready = false
+    error = false
+    playing = false
+    pos = 0f
     if (mediaUrl.isBlank()) {
       error = true
       return@LaunchedEffect
@@ -68,15 +131,30 @@ fun VoiceWaveformPlayer(
       player.setOnCompletionListener {
         playing = false
         pos = 0f
-        it.seekTo(0)
+        runCatching { it.seekTo(0) }
+        VoicePlaybackBus.release(mediaUrl)
       }
       player.setOnErrorListener { _, _, _ ->
         error = true
+        ready = false
         playing = false
+        VoicePlaybackBus.release(mediaUrl)
         true
       }
       player.prepareAsync()
-    }.onFailure { error = true }
+    }.onFailure {
+      error = true
+      ready = false
+      playing = false
+      VoicePlaybackBus.release(mediaUrl)
+    }
+  }
+
+  LaunchedEffect(activeKey) {
+    if (activeKey != null && activeKey != mediaUrl && playing) {
+      runCatching { player.pause() }
+      playing = false
+    }
   }
 
   LaunchedEffect(speed, ready) {
@@ -92,37 +170,66 @@ fun VoiceWaveformPlayer(
   LaunchedEffect(playing) {
     while (playing) {
       pos = runCatching { player.currentPosition.toFloat() }.getOrDefault(pos)
-      delay(100)
+      delay(80)
     }
   }
 
   DisposableEffect(player) {
-    onDispose { runCatching { player.release() } }
+    onDispose {
+      VoicePlaybackBus.release(mediaUrl)
+      runCatching { player.release() }
+    }
   }
 
   val active = if (isOutgoing) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary
-  val inactive = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .28f)
+  val inactive = if (isOutgoing) {
+    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .28f)
+  } else {
+    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .28f)
+  }
   val fraction = (pos / duration.coerceAtLeast(1)).coerceIn(0f, 1f)
+  val playScale by animateFloatAsState(
+    targetValue = if (playing) 1.06f else 1f,
+    animationSpec = spring(dampingRatio = .7f, stiffness = 520f),
+    label = "voice_play_scale"
+  )
 
-  Column(modifier.widthIn(min = 220.dp, max = 285.dp)) {
-    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-      IconButton(
-        onClick = {
-          if (ready && !error) {
-            if (playing) player.pause() else player.start()
-            playing = !playing
+  Column(modifier.widthIn(min = 195.dp, max = 285.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+      Box(Modifier.size(42.dp), contentAlignment = Alignment.Center) {
+        when {
+          !ready && !error -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+          else -> IconButton(
+            onClick = {
+              if (!ready || error) return@IconButton
+              if (playing) {
+                runCatching { player.pause() }
+                playing = false
+                VoicePlaybackBus.release(mediaUrl)
+              } else {
+                VoicePlaybackBus.activate(mediaUrl)
+                runCatching { player.start() }
+                  .onSuccess { playing = true }
+                  .onFailure { error = true }
+              }
+            },
+            enabled = ready && !error,
+            modifier = Modifier.graphicsLayer { scaleX = playScale; scaleY = playScale }
+          ) {
+            Icon(
+              if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+              if (playing) "Pause voice message" else "Play voice message",
+              tint = active
+            )
           }
-        },
-        enabled = ready && !error
-      ) {
-        Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) "Pause" else "Play")
+        }
       }
 
-      Box(Modifier.weight(1f).height(42.dp)) {
-        Canvas(Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 8.dp)) {
+      Box(Modifier.weight(1f).height(44.dp)) {
+        Canvas(Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 9.dp)) {
           if (bars.isEmpty()) return@Canvas
-          val gap = 3.dp.toPx()
-          val width = ((size.width - gap * (bars.size - 1)) / bars.size).coerceAtLeast(2.dp.toPx())
+          val gap = 2.2.dp.toPx()
+          val width = ((size.width - gap * (bars.size - 1)) / bars.size).coerceAtLeast(1.6.dp.toPx())
           bars.forEachIndexed { index, amp ->
             val x = index * (width + gap)
             val h = size.height * amp
@@ -138,11 +245,11 @@ fun VoiceWaveformPlayer(
         Slider(
           value = pos.coerceIn(0f, duration.toFloat()),
           onValueChange = { pos = it },
-          onValueChangeFinished = { if (ready) player.seekTo(pos.toInt()) },
+          onValueChangeFinished = { if (ready) runCatching { player.seekTo(pos.toInt()) } },
           valueRange = 0f..duration.coerceAtLeast(1).toFloat(),
           enabled = ready && !error,
           colors = SliderDefaults.colors(
-            thumbColor = active.copy(alpha = .9f),
+            thumbColor = active.copy(alpha = .92f),
             activeTrackColor = Color.Transparent,
             inactiveTrackColor = Color.Transparent,
             disabledActiveTrackColor = Color.Transparent,
@@ -155,34 +262,57 @@ fun VoiceWaveformPlayer(
       TextButton(
         onClick = { speedIndex = (speedIndex + 1) % speeds.size },
         enabled = ready && Build.VERSION.SDK_INT >= 23,
-        contentPadding = PaddingValues(horizontal = 6.dp)
+        contentPadding = PaddingValues(horizontal = 5.dp)
       ) {
-        Text("${speed}x", style = MaterialTheme.typography.labelSmall)
+        Text(speedLabel(speed), style = MaterialTheme.typography.labelSmall, color = active)
       }
     }
 
     when {
-      error -> Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-        Text("Unable to play recording", style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
-        TextButton(onClick = {
-          LiquidApi.invalidateMedia(mediaUrl)
-          retry++
-        }) {
-          Icon(Icons.Default.Refresh, null, Modifier.size(15.dp))
+      error -> Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+          "Unable to play recording",
+          style = MaterialTheme.typography.labelSmall,
+          color = MaterialTheme.colorScheme.error,
+          modifier = Modifier.weight(1f)
+        )
+        TextButton(
+          onClick = {
+            LiquidApi.invalidateMedia(mediaUrl)
+            retry++
+          },
+          contentPadding = PaddingValues(horizontal = 6.dp)
+        ) {
+          Icon(Icons.Default.Refresh, null, Modifier.size(14.dp))
+          Spacer(Modifier.width(3.dp))
           Text("Retry")
         }
       }
-      !ready -> Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-        CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
-        Spacer(Modifier.width(6.dp))
-        Text("Loading audio…", style = MaterialTheme.typography.labelSmall)
+      else -> Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+          formatVoiceTime(if (playing || pos > 0f) (pos / 1000).toInt() else durationSeconds.coerceAtLeast(0)),
+          style = MaterialTheme.typography.labelSmall,
+          color = if (isOutgoing) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .78f)
+          else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.weight(1f))
+        if (ready) {
+          Text(
+            formatVoiceTime(duration / 1000),
+            style = MaterialTheme.typography.labelSmall,
+            color = if (isOutgoing) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .70f)
+            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .82f)
+          )
+        }
       }
-      else -> Text(
-        "${formatVoiceTime((pos / 1000).toInt())} / ${formatVoiceTime(duration / 1000)}",
-        style = MaterialTheme.typography.labelSmall
-      )
     }
   }
+}
+
+private fun speedLabel(speed: Float): String = when (speed) {
+  1f -> "1×"
+  1.5f -> "1.5×"
+  else -> "2×"
 }
 
 private fun formatVoiceTime(seconds: Int): String =
