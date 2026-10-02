@@ -220,25 +220,27 @@ fun MessageBubbleV2(
         ) {
             GlassCard(shape = shape, backgroundColor = bg, borderColor = borderColor, elevation = if (effectiveHighlighted) 6.dp else 1.dp) {
                 Column(
-                    Modifier.animateContentSize(if (reduced) tween(0) else spring(dampingRatio = .78f, stiffness = 410f)).padding(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                    Modifier
+                        .animateContentSize(if (reduced) tween(0) else spring(dampingRatio = .78f, stiffness = 410f))
+                        .padding(horizontal = 9.dp, vertical = 7.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     if (message.replyToText != null) {
                         Row(
                             Modifier
-                                .widthIn(min = 120.dp)
-                                .background(if (isMe) Color.White.copy(alpha = .10f) else config.accentColor.copy(alpha = .08f), RoundedCornerShape(14.dp))
+                                .widthIn(max = 260.dp)
+                                .background(if (isMe) Color.White.copy(alpha = .10f) else config.accentColor.copy(alpha = .08f), RoundedCornerShape(13.dp))
                                 .clickable {
                                     message.replyToId?.let { replyId ->
                                         ReplyHighlightBusV2.show(replyId)
                                         onReplyPreviewClick(replyId)
                                     }
                                 }
-                                .padding(horizontal = 9.dp, vertical = 7.dp)
+                                .padding(horizontal = 8.dp, vertical = 5.dp)
                         ) {
                             Column {
                                 Text(message.replyToSender.orEmpty().ifBlank { "Reply" }, style = MaterialTheme.typography.labelSmall, color = if (isMe) Color.White else config.accentColor)
-                                Text(message.replyToText.orEmpty(), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = contentColor.copy(alpha = .82f))
+                                Text(message.replyToText.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = contentColor.copy(alpha = .82f))
                             }
                         }
                     }
@@ -295,10 +297,10 @@ fun MessageBubbleV2(
                         }
                     }
 
-                    Row(Modifier.align(Alignment.End), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.align(Alignment.End), horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (message.isStarred) Text("★", fontSize = 10.sp, color = metaColor)
                         if (message.isEdited) Text("edited", style = MaterialTheme.typography.labelSmall, color = metaColor)
-                        Text(SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(message.createdAt)), style = MaterialTheme.typography.labelSmall, color = metaColor)
+                        Text(SimpleDateFormat("h:mm", Locale.getDefault()).format(Date(message.createdAt)), style = MaterialTheme.typography.labelSmall, color = metaColor)
                         if (isMe) {
                             AnimatedContent(
                                 targetState = message.status,
