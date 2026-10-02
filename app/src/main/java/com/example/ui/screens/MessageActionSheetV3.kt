@@ -1,8 +1,11 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,9 +26,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -117,11 +123,25 @@ fun MessageActionSheetV3(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             listOf("❤️", "👍", "😂", "😮", "😢", "🙏").forEach { emoji ->
+                                val interaction = remember(emoji) { MutableInteractionSource() }
+                                val pressed by interaction.collectIsPressedAsState()
+                                val scale by animateFloatAsState(
+                                    targetValue = if (pressed && !glass.isReducedMotion) 1.22f else 1f,
+                                    animationSpec = spring(dampingRatio = .52f, stiffness = 520f),
+                                    label = "reaction_" + emoji
+                                )
                                 Text(
                                     emoji,
                                     fontSize = 23.sp,
                                     modifier = Modifier
-                                        .clickable { act { onReaction(emoji) } }
+                                        .graphicsLayer {
+                                            scaleX = scale
+                                            scaleY = scale
+                                        }
+                                        .clickable(
+                                            interactionSource = interaction,
+                                            indication = null
+                                        ) { act { onReaction(emoji) } }
                                         .padding(horizontal = 4.dp, vertical = 6.dp)
                                 )
                             }
