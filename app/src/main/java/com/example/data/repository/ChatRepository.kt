@@ -717,6 +717,12 @@ class ChatRepository(
     val pubPhoto = snapshot.safeString("photoUrl")
       .takeUnless { it.contains("images.unsplash.com") }
       .orEmpty()
+    if (!own) {
+      val peerKeyId = snapshot.safeString("e2eeKeyId")
+      if (peerKeyId.isNotBlank()) {
+        prefs.edit().putString("peerE2eeKey:${snapshot.id}", peerKeyId).apply()
+      }
+    }
     return User(
       uid = snapshot.id,
       displayName = snapshot.safeString("displayName", "Contact").ifBlank { "Contact" },
