@@ -1417,11 +1417,62 @@ class ChatRepository(
   fun editMessage(cid: String, id: String, text: String) = runAction {
     val clean = text.trim()
     require(clean.isNotBlank() && clean.length <= 8000) { "Invalid edit" }
+
     val ref = db.document("conversations/$cid/messages/$id")
-    ref.update(mapOf("text" to clean, "isEdited" to true)).await()
-    val conversation = db.document("conversations/$cid").get().await()
-    if (conversation.safeString("lastMessageId") == id) {
-      db.document("conversations/$cid").update("lastMessageText", clean.take(500)).await()
+    val current = ref.get().await()
+    check(current.exists()) { "Message unavailable" }
+    check(current.safeString("senderId") == uid) { "Only the sender can do this" }
+
+    val conversationRef = db.document("conversations/$cid")
+    val conversation = conversationRef.get().await()
+    val encrypted = current.get("e2ee") is Map<*, *>
+
+    if (encrypted) {
+      val existing = toMessage(cid, current)
+        ?: error("Message unavailable")
+      val participantIds = (conversation.get("participantIds") as? List<*>)
+        ?.filterIsInstance<String>()
+        .orEmpty()
+      val otherUid = participantIds.firstOrNull { it != uid }
+        ?: error("Contact unavailable")
+      val recipient = db.document("directory/$otherUid").get().await()
+      val recipientPublicKey = recipient.safeString("e2eePublicKey")
+      val recipientKeyId = recipient.safeString("e2eeKeyId")
+      require(recipientPublicKey.isNotBlank() && recipientKeyId.isNotBlank()) {
+        "Contact encryption key unavailable"
+      }
+
+      val payload = E2eeCrypto.encryptText(
+        context = LiquidApi.context,
+        uid = uid,
+        recipientPublicKeyBase64 = recipientPublicKey,
+        recipientKeyId = recipientKeyId,
+        conversationId = cid,
+        messageId = id,
+        plaintextJson = E2eeCrypto.payloadJson(
+          text = clean,
+          replyToId = existing.replyToId,
+          replyToText = existing.replyToText,
+          replyToSender = existing.replyToSender
+        )
+      )
+
+      ref.update(
+        mapOf(
+          "text" to "",
+          "e2ee" to payload.fields,
+          "isEdited" to true
+        )
+      ).await()
+      if (conversation.safeString("lastMessageId") == id) {
+        conversationRef.update("lastMessageText", "Encrypted message").await()
+      }
+    } else {
+      // Legacy pre-E2EE messages remain editable without rewriting history.
+      ref.update(mapOf("text" to clean, "isEdited" to true)).await()
+      if (conversation.safeString("lastMessageId") == id) {
+        conversationRef.update("lastMessageText", clean.take(500)).await()
+      }
     }
   }
 
