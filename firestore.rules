@@ -160,8 +160,10 @@ service cloud.firestore {
     }
 
     match /conversations/{cid} {
+      // Keep the collection-query predicate exactly aligned with
+      // whereArrayContains("participantIds", request.auth.uid). Extra type guards can
+      // make Firestore unable to prove a collection query is safe.
       allow read: if signedIn()
-        && resource.data.participantIds is list
         && request.auth.uid in resource.data.participantIds;
 
       // Core chat remains available even when the optional Appwrite bridge is unavailable.
