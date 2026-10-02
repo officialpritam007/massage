@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.liquidchat.vwnxkp"
     minSdk = 24
     targetSdk = 36
-    versionCode = 400
-    versionName = "4.0.0"
+    versionCode = 410
+    versionName = "4.1.0"
 
     fun config(name: String, fallback: String = "") = providers.gradleProperty(name).orElse(providers.environmentVariable(name)).getOrElse(fallback)
     buildConfigField("String", "APPWRITE_ENDPOINT", "\"${config("APPWRITE_ENDPOINT", "https://sgp.cloud.appwrite.io/v1")}\"")
