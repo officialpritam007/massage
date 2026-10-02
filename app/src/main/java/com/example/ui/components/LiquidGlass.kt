@@ -238,6 +238,9 @@ fun GlassTextField(
   singleLine: Boolean = true,
   maxLines: Int = 1,
   shape: Shape? = null,
+  minHeight: Dp = 48.dp,
+  horizontalPadding: Dp = 14.dp,
+  verticalPadding: Dp = 10.dp,
   testTag: String = "glass_text_field"
 ) {
   val config = LocalLiquidGlass.current
@@ -246,11 +249,11 @@ fun GlassTextField(
   val resolvedShape = shape ?: RoundedCornerShape(config.cornerRadiusDp.coerceIn(0f, 64f).dp)
   Box(
     modifier = modifier
-      .defaultMinSize(minHeight = 48.dp)
+      .defaultMinSize(minHeight = minHeight)
       .clip(resolvedShape)
       .background(if (config.isDark) Color.White.copy(alpha = 0.055f) else Color.White.copy(alpha = 0.48f))
       .border(1.dp, if (config.isDark) GlassBorderStrokeDark else GlassBorderStrokeLight, resolvedShape)
-      .padding(horizontal = 14.dp, vertical = 10.dp)
+      .padding(horizontal = horizontalPadding, vertical = verticalPadding)
       .testTag(testTag),
     contentAlignment = Alignment.CenterStart
   ) {
