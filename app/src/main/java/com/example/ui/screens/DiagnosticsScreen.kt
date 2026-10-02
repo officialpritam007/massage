@@ -80,14 +80,13 @@ fun DiagnosticsScreen(
     }
 
     result += DiagnosticItem(
-      "Appwrite endpoint",
-      BuildConfig.APPWRITE_ENDPOINT.startsWith("https://") && BuildConfig.APPWRITE_PROJECT_ID.isNotBlank(),
-      "${BuildConfig.APPWRITE_ENDPOINT} • ${BuildConfig.APPWRITE_PROJECT_ID.take(8)}…"
-    )
-    result += DiagnosticItem(
-      "Media bucket",
-      BuildConfig.APPWRITE_BUCKET_ID.isNotBlank(),
-      BuildConfig.APPWRITE_BUCKET_ID.ifBlank { "Missing bucket ID" }
+      "Cloudinary media",
+      BuildConfig.LIQUID_API_URL.startsWith("https://"),
+      if (BuildConfig.LIQUID_API_URL.startsWith("https://")) {
+        "Signed Cloudinary access is provided by the Firebase backend"
+      } else {
+        "Firebase backend URL missing"
+      }
     )
     result += DiagnosticItem(
       "Backend configuration",
@@ -120,7 +119,7 @@ fun DiagnosticsScreen(
         .padding(20.dp),
       verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-      GlassHeader("Diagnostics", subtitle = "Firebase • Appwrite • FCM", onBackClick = onBackClick)
+      GlassHeader("Diagnostics", subtitle = "Firebase • Cloudinary • FCM", onBackClick = onBackClick)
 
       if (running) {
         GlassCard(Modifier.fillMaxWidth()) {
@@ -178,7 +177,7 @@ fun DiagnosticsScreen(
       )
 
       Text(
-        "Diagnostics never displays Firebase private keys or Appwrite server API keys.",
+        "Diagnostics never displays Firebase private keys or Cloudinary API secrets.",
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
       )
