@@ -180,16 +180,21 @@ fun MessageBubbleV2(
     )
     val shape = if (isMe) RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp)
     else RoundedCornerShape(22.dp, 22.dp, 22.dp, 6.dp)
-    val bg = if (isMe) config.accentColor.copy(alpha = if (config.isDark) .58f else .82f)
-    else if (config.isDark) Color.White.copy(alpha = .07f) else Color.White.copy(alpha = .70f)
+    val bg = if (isMe) {
+        config.accentColor.copy(alpha = if (config.isDark) .44f else .66f)
+    } else {
+        if (config.isDark) Color(0xFFB8D9FF).copy(alpha = .075f)
+        else Color.White.copy(alpha = .56f)
+    }
     val contentColor = if (isMe) Color.White else MaterialTheme.colorScheme.onSurface
-    val metaColor = if (isMe) Color.White.copy(alpha = .78f) else MaterialTheme.colorScheme.onSurfaceVariant
+    val metaColor = if (isMe) Color.White.copy(alpha = .76f) else MaterialTheme.colorScheme.onSurfaceVariant
     val genericLabels = setOf("Photo", "Video", "Voice message", "Document")
     val caption = message.text.trim().takeUnless { it in genericLabels }.orEmpty()
     val borderColor = when {
-        highlightAmount > .01f -> config.accentColor.copy(alpha = .28f + highlightAmount * .66f)
-        isMe -> Color.White.copy(alpha = .30f)
-        else -> null
+        highlightAmount > .01f -> config.accentColor.copy(alpha = .32f + highlightAmount * .62f)
+        isMe -> Color.White.copy(alpha = if (config.isDark) .24f else .42f)
+        config.isDark -> Color.White.copy(alpha = .10f)
+        else -> Color.White.copy(alpha = .72f)
     }
 
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start) {
@@ -218,7 +223,12 @@ fun MessageBubbleV2(
                 }
                 .combinedClickable(onClick = { if (message.mediaUrl.isNotBlank()) onMedia() }, onLongClick = onLongClick)
         ) {
-            GlassCard(shape = shape, backgroundColor = bg, borderColor = borderColor, elevation = if (effectiveHighlighted) 6.dp else 1.dp) {
+            GlassCard(
+                shape = shape,
+                backgroundColor = bg,
+                borderColor = borderColor,
+                elevation = if (effectiveHighlighted) 7.dp else 2.dp
+            ) {
                 Column(
                     Modifier
                         .animateContentSize(if (reduced) tween(0) else spring(dampingRatio = .78f, stiffness = 410f))
