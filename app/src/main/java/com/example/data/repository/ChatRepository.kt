@@ -820,6 +820,29 @@ class ChatRepository(
     }
 
     val createdAt = snapshot.safeLong("createdAt")
+    val senderId = snapshot.safeString("senderId")
+    val encryptedMap = (snapshot.get("e2ee") as? Map<*, *>)
+      ?.entries
+      ?.filter { it.key is String }
+      ?.associate { it.key as String to it.value }
+
+    val decrypted = encryptedMap?.let { fields ->
+      E2eeCrypto.decryptText(
+        context = LiquidApi.context,
+        uid = uid,
+        senderId = senderId,
+        conversationId = cid,
+        messageId = snapshot.id,
+        fields = fields
+      )
+    }?.let { raw ->
+      runCatching { JSONObject(raw) }.getOrNull()
+    }
+
+    val decryptedText = decrypted?.optString("text")
+      ?.takeIf { it.isNotBlank() }
+    val encryptedUnavailable = encryptedMap != null && decrypted == null
+
     val cutoff = deletedBefore[cid] ?: 0L
     if (cutoff > 0 && createdAt <= cutoff) return null
     val rawExpires = snapshot.get("expiresAt")
@@ -829,9 +852,13 @@ class ChatRepository(
     return Message(
       id = snapshot.id,
       conversationId = cid,
-      senderId = snapshot.safeString("senderId"),
+      senderId = senderId,
       senderName = snapshot.safeString("senderName"),
-      text = snapshot.safeString("text"),
+      text = when {
+        decryptedText != null -> decryptedText
+        encryptedUnavailable -> "🔒 Encrypted message unavailable"
+        else -> snapshot.safeString("text")
+      },
       type = runCatching { MessageType.valueOf(snapshot.safeString("type", "TEXT")) }.getOrDefault(MessageType.TEXT),
       mediaUrl = snapshot.safeString("mediaUrl"),
       voiceDurationSeconds = snapshot.safeLong("voiceDurationSeconds").toInt().coerceAtLeast(0),
@@ -839,9 +866,15 @@ class ChatRepository(
       createdAt = createdAt,
       status = runCatching { MessageDeliveryStatus.valueOf(snapshot.safeString("status", "SENT")) }
         .getOrDefault(MessageDeliveryStatus.SENT),
-      replyToId = snapshot.get("replyToId") as? String,
-      replyToText = snapshot.get("replyToText") as? String,
-      replyToSender = snapshot.get("replyToSender") as? String,
+      replyToId = decrypted?.optString("replyToId")
+        ?.takeIf { it.isNotBlank() && it != "null" }
+        ?: (snapshot.get("replyToId") as? String),
+      replyToText = decrypted?.optString("replyToText")
+        ?.takeIf { it.isNotBlank() && it != "null" }
+        ?: (snapshot.get("replyToText") as? String),
+      replyToSender = decrypted?.optString("replyToSender")
+        ?.takeIf { it.isNotBlank() && it != "null" }
+        ?: (snapshot.get("replyToSender") as? String),
       isEdited = snapshot.safeBoolean("isEdited"),
       isDeleted = snapshot.safeBoolean("isDeleted"),
       isPinned = snapshot.safeBoolean("isPinned"),
@@ -928,13 +961,42 @@ class ChatRepository(
       "hiddenFor" to emptyList<String>(),
       "isEdited" to false,
       "isPinned" to false,
-      "reactions" to emptyList<Map<String, Any>>()
+      "reactions" to emptyList<Map<String, Any>>(),
+      "notificationPending" to true
     )
 
-    (data["replyToId"] as? String)?.takeIf { it.isNotBlank() }?.let {
-      message["replyToId"] = it
-      message["replyToText"] = (data["replyToText"] as? String).orEmpty().take(500)
-      message["replyToSender"] = (data["replyToSender"] as? String).orEmpty().take(60)
+    var encryptedText = false
+    if (type == "TEXT") {
+      val recipient = db.document("directory/$otherUid").get().await()
+      val recipientPublicKey = recipient.safeString("e2eePublicKey")
+      val recipientKeyId = recipient.safeString("e2eeKeyId")
+      require(recipientPublicKey.isNotBlank() && recipientKeyId.isNotBlank()) {
+        "This contact must update Liquid Chat before encrypted messaging can start"
+      }
+
+      val encrypted = E2eeCrypto.encryptText(
+        context = LiquidApi.context,
+        uid = uid,
+        recipientPublicKeyBase64 = recipientPublicKey,
+        recipientKeyId = recipientKeyId,
+        conversationId = cid,
+        messageId = id,
+        plaintextJson = E2eeCrypto.payloadJson(
+          text = text,
+          replyToId = data["replyToId"] as? String,
+          replyToText = (data["replyToText"] as? String)?.take(500),
+          replyToSender = (data["replyToSender"] as? String)?.take(60)
+        )
+      )
+      message["text"] = ""
+      message["e2ee"] = encrypted.fields
+      encryptedText = true
+    } else {
+      (data["replyToId"] as? String)?.takeIf { it.isNotBlank() }?.let {
+        message["replyToId"] = it
+        message["replyToText"] = (data["replyToText"] as? String).orEmpty().take(500)
+        message["replyToSender"] = (data["replyToSender"] as? String).orEmpty().take(60)
+      }
     }
 
     val conversationSnap = cref.get().await()
@@ -951,7 +1013,7 @@ class ChatRepository(
         mapOf(
           "lastMessageId" to id,
           "lastMessageText" to when (type) {
-            "TEXT" -> text.take(500)
+            "TEXT" -> if (encryptedText) "Encrypted message" else text.take(500)
             "IMAGE" -> "Photo"
             "VIDEO" -> "Video"
             "VOICE", "AUDIO" -> "Voice message"
@@ -1016,7 +1078,8 @@ class ChatRepository(
 
     val type = latest.safeString("type", "TEXT")
     val preview = when (type) {
-      "TEXT" -> latest.safeString("text").take(500)
+      "TEXT" -> if (latest.get("e2ee") is Map<*, *>) "Encrypted message"
+        else latest.safeString("text").take(500)
       "IMAGE" -> "Photo"
       "VIDEO" -> "Video"
       "VOICE", "AUDIO" -> "Voice message"
@@ -1169,11 +1232,15 @@ class ChatRepository(
             removeLocalMessage(cid, id)
           } else {
             updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.SENT) }
-            // Core delivery is already committed to Firestore. When the optional
-            // bridge is available, replaying the same id is idempotent and lets
-            // the server send FCM without making message delivery depend on Appwrite.
+            // Never send plaintext to the notification bridge. It receives only
+            // identifiers and reads the already-encrypted Firestore document.
             scope.launch {
-              runCatching { LiquidApi.call("send", data) }
+              runCatching {
+                LiquidApi.call(
+                  "notifyExisting",
+                  mapOf("conversationId" to cid, "messageId" to id)
+                )
+              }
             }
           }
         } catch (e: Exception) {
