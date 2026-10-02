@@ -144,7 +144,7 @@ fun presenceLabel(u: User): String {
 
     val now = Calendar.getInstance()
     val whenSeen = Calendar.getInstance().apply { timeInMillis = u.lastSeen }
-    val time = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(u.lastSeen))
+    val time = com.example.ui.util.TimeFormat.messageTime(u.lastSeen)
     val today = now.get(Calendar.YEAR) == whenSeen.get(Calendar.YEAR) &&
         now.get(Calendar.DAY_OF_YEAR) == whenSeen.get(Calendar.DAY_OF_YEAR)
 
@@ -1164,7 +1164,7 @@ private fun MorphingTypingBubble(
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Text(
-                    SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(message.createdAt)),
+                    com.example.ui.util.TimeFormat.messageTime(message.createdAt),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.align(Alignment.End)
@@ -1380,7 +1380,7 @@ fun MessageBubble(
                         if (message.isStarred) Text("★", fontSize = 10.sp, color = metadataColor)
                         if (message.isEdited) Text("edited", style = MaterialTheme.typography.labelSmall, color = metadataColor)
                         Text(
-                            SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(message.createdAt)),
+                            com.example.ui.util.TimeFormat.messageTime(message.createdAt),
                             style = MaterialTheme.typography.labelSmall,
                             color = metadataColor
                         )

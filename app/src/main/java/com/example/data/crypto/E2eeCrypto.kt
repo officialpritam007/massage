@@ -434,6 +434,7 @@ object E2eeCrypto {
       .put("replyToSender", replyToSender ?: JSONObject.NULL)
       .toString()
 
+  @Synchronized
   private fun loadOrCreateIdentity(context: Context, uid: String): Identity {
     require(uid.isNotBlank()) { "Missing E2EE account identity" }
     val prefs = context.getSharedPreferences(STORE, 0)

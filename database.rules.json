@@ -6,9 +6,27 @@
       "$uid": {
         ".read": "auth != null",
         ".write": "auth != null && auth.uid === $uid",
-        ".validate": "newData.hasChildren(['uid','isOnline','onlineVisible','lastSeenVisible','heartbeatAt','lastSeen']) && newData.child('uid').val() === $uid && newData.child('isOnline').isBoolean() && newData.child('onlineVisible').isBoolean() && newData.child('lastSeenVisible').isBoolean() && newData.child('heartbeatAt').isNumber() && newData.child('lastSeen').isNumber()",
+        ".validate": "newData.hasChildren(['uid','isOnline','onlineVisible','lastSeenVisible','heartbeatAt','lastSeen']) && newData.child('uid').val() === $uid && newData.child('isOnline').isBoolean() && newData.child('onlineVisible').isBoolean() && newData.child('lastSeenVisible').isBoolean() && newData.child('heartbeatAt').isNumber() && newData.child('lastSeen').isNumber() && newData.child('heartbeatAt').val() <= now + 60000 && newData.child('lastSeen').val() <= now + 60000 && (newData.child('onlineVisible').val() === true || newData.child('isOnline').val() === false) && (newData.child('lastSeenVisible').val() === true || newData.child('lastSeen').val() === 0)",
         "$other": {
           ".validate": false
+        },
+        "uid": {
+          ".validate": true
+        },
+        "isOnline": {
+          ".validate": true
+        },
+        "onlineVisible": {
+          ".validate": true
+        },
+        "lastSeenVisible": {
+          ".validate": true
+        },
+        "heartbeatAt": {
+          ".validate": true
+        },
+        "lastSeen": {
+          ".validate": true
         }
       }
     }

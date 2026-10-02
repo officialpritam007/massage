@@ -22,6 +22,7 @@ android {
     fun config(name: String, fallback: String = "") = providers.gradleProperty(name).orElse(providers.environmentVariable(name)).getOrElse(fallback)
     buildConfigField("String", "CLOUDINARY_CLOUD_NAME", "\"${config("CLOUDINARY_CLOUD_NAME", "mthzgqhv")}\"")
     buildConfigField("String", "CLOUDINARY_UPLOAD_PRESET", "\"${config("CLOUDINARY_UPLOAD_PRESET", "liquid_chat_unsigned")}\"")
+    buildConfigField("String", "FIREBASE_DATABASE_URL", "\"${config("FIREBASE_DATABASE_URL")}\"")
     buildConfigField("String", "APP_CHECK_PROVIDER", "\"${config("APP_CHECK_PROVIDER", "none")}\"")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

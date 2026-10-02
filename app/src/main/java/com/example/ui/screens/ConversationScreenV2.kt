@@ -178,6 +178,7 @@ fun ConversationScreenV2(
     val messageMap by viewModel.messages.collectAsState()
     val me by viewModel.currentUser.collectAsState()
     val upload by viewModel.upload.collectAsState()
+    val decrypting by viewModel.repository.decrypting.collectAsState()
     val blocked by viewModel.blockedUserIds.collectAsState()
     val messageJump by viewModel.messageJump.collectAsState()
     val config = LocalLiquidGlass.current
@@ -1066,6 +1067,9 @@ fun ConversationScreenV2(
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.Bottom)
                 ) {
+                    if (conversationId in decrypting && messages.isEmpty()) {
+                        item(key = "decrypting") { com.example.ui.components.MessageShimmer() }
+                    }
                     if (loadingOlder) {
                         item(key = "history-loading") {
                             Box(
@@ -1219,8 +1223,8 @@ private fun TypingMorphBubbleV2(message: Message?, reduced: Boolean) {
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
             if (message == null) TypingDotsV2(reduced) else Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(message.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-                Text(SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(message.createdAt)), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.align(Alignment.End))
+                Text(message.text, maxLines = 6, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                Text(com.example.ui.util.TimeFormat.messageTime(message.createdAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.align(Alignment.End))
             }
         }
     }

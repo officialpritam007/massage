@@ -1,0 +1,9 @@
+.gradle/
+.kotlin/
+**/build/
+local.properties
+.env
+**/node_modules/
+*-debug.log
+*-debug.log.*
+.idea/

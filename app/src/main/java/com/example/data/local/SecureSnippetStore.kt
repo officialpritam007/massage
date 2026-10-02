@@ -55,9 +55,6 @@ object SecureSnippetStore {
   }
 
   fun getLast(context: Context, uid: String, conversationId: String, expectedMessageId: String): String? {
-    val prefs = context.applicationContext.getSharedPreferences(STORE, Context.MODE_PRIVATE)
-    val lastId = prefs.getString(last(uid, conversationId), null)
-    if (lastId != expectedMessageId) return null
     return get(context, uid, conversationId, expectedMessageId)
   }
 
@@ -73,6 +70,7 @@ object SecureSnippetStore {
   private fun entry(uid: String, cid: String, mid: String) = "$uid|$cid|$mid"
   private fun last(uid: String, cid: String) = "$uid|$cid|last"
 
+  @Synchronized
   private fun key(): SecretKey {
     val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
     (store.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }

@@ -13,7 +13,8 @@ import {
   query,
   setDoc,
   updateDoc,
-  where
+  where,
+  serverTimestamp
 } from 'firebase/firestore';
 
 let env;
@@ -302,4 +303,12 @@ test('signed-in user can submit a constrained report but cannot spoof reporter',
     reason: 'Forged report',
     createdAt: Date.now()
   }));
+});
+
+test('server timestamps accepted and forged ordering timestamps rejected', async () => {
+  const db = env.authenticatedContext('alice').firestore();
+  await assertSucceeds(setDoc(doc(db, 'conversations/pair/messages/server-time'),
+    baseMessage({createdAt: serverTimestamp(), serverCreatedAt: serverTimestamp()})));
+  await assertFails(setDoc(doc(db, 'conversations/pair/messages/forged-time'),
+    baseMessage({serverCreatedAt: 9999999999999})));
 });

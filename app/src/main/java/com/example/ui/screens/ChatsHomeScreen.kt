@@ -286,8 +286,7 @@ fun ChatsHomeScreen(
                                         )
                                         Text(
                                             if (conversation.lastMessageTime > 0) {
-                                                SimpleDateFormat("h:mm a", Locale.getDefault())
-                                                    .format(Date(conversation.lastMessageTime))
+                                                com.example.ui.util.TimeFormat.messageTime(conversation.lastMessageTime)
                                             } else "",
                                             style = MaterialTheme.typography.labelMedium,
                                             color = if (conversation.unreadCount > 0) {

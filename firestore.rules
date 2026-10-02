@@ -194,9 +194,14 @@ service cloud.firestore {
             )
           )
           && request.resource.data.status == 'SENT'
-          && request.resource.data.createdAt is int
-          && request.resource.data.createdAt <= request.time.toMillis() + 60000
-          && request.resource.data.createdAt >= request.time.toMillis() - 300000
+          && (
+            request.resource.data.createdAt == request.time
+            || (request.resource.data.createdAt is int
+              && request.resource.data.createdAt <= request.time.toMillis() + 60000
+              && request.resource.data.createdAt >= request.time.toMillis() - 300000)
+          )
+          && (!request.resource.data.keys().hasAny(['serverCreatedAt'])
+            || request.resource.data.serverCreatedAt == request.time)
           && request.resource.data.deletedForEveryone == false
           && request.resource.data.isDeleted == false
           && request.resource.data.isEdited == false

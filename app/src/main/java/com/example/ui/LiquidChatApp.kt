@@ -198,7 +198,7 @@ fun LiquidChatApp(
       composable(Screen.Search.route) {
         SearchScreen(
           viewModel = chatViewModel,
-          onNavigateToConversation = { navController.navigate(Screen.Conversation.createRoute(it)) },
+          onNavigateToConversation = { navController.navigate(Screen.Conversation.createRoute(it)) { launchSingleTop = true } },
           onNavigateToProfile = { navController.navigate(Screen.ContactProfile.createRoute(it)) },
           onBackClick = { navController.popBackStack() }
         )
@@ -213,7 +213,7 @@ fun LiquidChatApp(
           userId = userId,
           viewModel = chatViewModel,
           onBackClick = { navController.popBackStack() },
-          onNavigateToConversation = { navController.navigate(Screen.Conversation.createRoute(it)) }
+          onNavigateToConversation = { navController.navigate(Screen.Conversation.createRoute(it)) { launchSingleTop = true } }
         )
       }
 
