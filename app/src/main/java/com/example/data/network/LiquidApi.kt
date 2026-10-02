@@ -17,6 +17,11 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 object LiquidApi {
+  const val MAX_ENCRYPTED_ATTACHMENT_MB = 9
+  private const val MAX_SOURCE_ATTACHMENT_BYTES = 25L * 1024 * 1024
+  private const val MAX_ENCRYPTED_ATTACHMENT_BYTES = MAX_ENCRYPTED_ATTACHMENT_MB.toLong() * 1024 * 1024
+  private const val MAX_PROFILE_IMAGE_BYTES = 10L * 1024 * 1024
+
   lateinit var context: Context
   private val http = OkHttpClient.Builder()
     .connectTimeout(20, TimeUnit.SECONDS)
@@ -228,7 +233,9 @@ object LiquidApi {
             val n = input.read(buffer)
             if (n < 0) break
             total += n
-            require(total <= 25L * 1024 * 1024) { "Maximum attachment size is 25 MB" }
+            require(total <= MAX_SOURCE_ATTACHMENT_BYTES) {
+              "This file is too large. Select a file under 25 MB."
+            }
             output.write(buffer, 0, n)
           }
         }
@@ -252,6 +259,11 @@ object LiquidApi {
 
       require(file.length() > 0) { "Empty file" }
       val encryptedChatMedia = conversationId != null
+      if (encryptedChatMedia && !mime.startsWith("image/")) {
+        require(file.length() <= MAX_ENCRYPTED_ATTACHMENT_BYTES) {
+          "Encrypted attachments are limited to $MAX_ENCRYPTED_ATTACHMENT_MB MB on the current storage plan."
+        }
+      }
       val begin = call("uploadBegin", mapOf(
         "conversationId" to conversationId,
         "encrypted" to encryptedChatMedia,
@@ -285,6 +297,14 @@ object LiquidApi {
       }
 
       try {
+        val uploadLimit = if (encryptedChatMedia) MAX_ENCRYPTED_ATTACHMENT_BYTES else MAX_PROFILE_IMAGE_BYTES
+        require(uploadFile.length() <= uploadLimit) {
+          if (encryptedChatMedia) {
+            "Encrypted attachments are limited to $MAX_ENCRYPTED_ATTACHMENT_MB MB on the current storage plan."
+          } else {
+            "Profile image is too large after optimization."
+          }
+        }
         progress(0f)
         val body = MultipartBody.Builder().setType(MultipartBody.FORM)
           .addFormDataPart("api_key", apiKey)
@@ -308,6 +328,13 @@ object LiquidApi {
           "resourceType" to uploaded.optString("resource_type"),
           "version" to uploaded.optLong("version", 0L)
         )).getString("url")
+      } catch (t: Throwable) {
+        runCatching { call("uploadAbort", mapOf("fileId" to id)) }
+        mediaSecrets.remove(id)
+        FirebaseAuth.getInstance().currentUser?.uid?.let { account ->
+          E2eeCrypto.deletePendingMediaSecret(context, account, id)
+        }
+        throw t
       } finally {
         encryptedFile?.delete()
       }
