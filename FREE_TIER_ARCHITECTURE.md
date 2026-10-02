@@ -1,37 +1,37 @@
-# Liquid Chat — Free-tier hybrid architecture
+# Liquid Chat — cost-aware Firebase + Cloudinary architecture
 
-Liquid Chat uses Firebase and Appwrite for different responsibilities so the same workload is not duplicated across providers.
+## Responsibilities
 
-## Firebase
+### Firebase
 
-- Firebase Authentication: account/session identity.
-- Cloud Firestore: 1-to-1 conversation metadata, realtime message snapshots, presence and typing state.
-- Firebase Cloud Messaging: push delivery.
-- Firebase App Check: abuse protection for supported Firebase client traffic.
-- Firebase Storage is intentionally not used by the Android client.
-- Firebase Cloud Functions are not required for the core chat backend.
+- Authentication: account/session identity.
+- Cloud Firestore: realtime users, directory, conversations, messages, presence and typing.
+- FCM: push notification delivery.
+- App Check: client abuse protection when enabled for the build.
+- Firebase Functions: authenticated `liquidApi` backend for server-authoritative operations.
 
-## Appwrite
+### Cloudinary
 
-- Appwrite Function `liquid-api`: authenticated server-authoritative chat mutations and profile/media operations.
-- Appwrite Storage: image, video, voice and file payloads.
-- Private media is resolved through short-lived authorized access; permanent deletion revokes/removes media server-side.
+- Authenticated profile images.
+- Encrypted chat attachment bytes.
+- Expiring signed downloads generated only after Firebase-backed authorization.
 
-## Free-tier guardrails
+Firebase Storage is intentionally not used by the Android client.
 
-1. Only the open conversation keeps the heavy message + typing realtime streams active. The chat list itself relies on the lightweight conversation summary listener.
-2. Initial message history is bounded to 60 messages and older messages are loaded in 60-message increments.
-3. Presence writes use a 60-second foreground heartbeat; moving to background still writes offline immediately. The freshness timeout exists only as a stale-session/crash fallback, not as a background grace period.
-4. Typing writes stay throttled and expire automatically.
-5. Large binary payloads never go into Firestore. Firestore stores metadata and Appwrite media identifiers/URLs only.
-6. Firebase token registration uses merge-safe writes so legacy/missing private user documents do not require an update-only write.
-7. Do not add Firebase Storage or Firebase Functions dependencies unless the architecture is deliberately changed.
-8. Server secrets (Firebase Admin service account and Appwrite API key) must never be committed to the Android app or public repository.
+## Cost guardrails
 
-## Security boundary
+- Only the active conversation keeps message and typing streams hot.
+- Initial history is bounded and older messages page on demand.
+- Presence heartbeat is throttled and background transition writes offline immediately.
+- Typing state is short-lived and throttled.
+- Binary media never goes into Firestore.
+- Chat media is capped at 9 MB because encrypted media uses Cloudinary raw assets and the connected Free plan raw-file ceiling is 10 MB.
+- Repeated chat rows and message bubbles use lightweight translucent rendering instead of independent backdrop blur.
 
-Android reads permitted Firestore data under `firestore.rules`. Conversation/message mutations go through the authenticated Appwrite API, which verifies the Firebase ID token and participant authorization. Appwrite credentials and Firebase Admin credentials remain server-side.
+## Billing requirement
 
-## Current optimization
+Cloud Functions for Firebase requires a Firebase Blaze project for deployment. Blaze includes no-cost usage quotas, but a billing account must be linked. Treat budget alerts/spend caps as deployment prerequisites if strict cost control is required.
 
-The free-tier realtime optimization is applied on `main`. CI must remain green before an APK from this revision is treated as verified.
+## Secrets
+
+`CLOUDINARY_API_SECRET`, Firebase service-account credentials and other server credentials must never be committed to source, embedded in BuildConfig or shipped in the APK.
