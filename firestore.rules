@@ -37,7 +37,8 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly([
           'uid', 'displayName', 'username', 'bio', 'email', 'phoneNumber',
           'createdAt', 'appearance', 'privacy', 'notifications',
-          'blockedUserIds', 'tokens'
+          'blockedUserIds', 'tokens', 'installationId', 'dataEpoch',
+          'e2eePublicKey', 'e2eeKeyId'
         ])
         && request.resource.data.uid == uid;
     }
@@ -46,7 +47,8 @@ service cloud.firestore {
       return owner(uid)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'displayName', 'username', 'bio', 'email', 'phoneNumber',
-          'appearance', 'privacy', 'notifications', 'blockedUserIds', 'tokens'
+          'appearance', 'privacy', 'notifications', 'blockedUserIds', 'tokens',
+          'installationId', 'dataEpoch', 'e2eePublicKey', 'e2eeKeyId'
         ]);
     }
 
@@ -77,6 +79,7 @@ service cloud.firestore {
       allow create: if owner(uid)
         && request.resource.data.keys().hasOnly([
           'uid', 'displayName', 'username', 'bio', 'photoUrl', 'createdAt',
+          'e2eePublicKey', 'e2eeKeyId',
           'isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'
         ])
         && (!request.resource.data.keys().hasAny(['uid']) || request.resource.data.uid == uid)
@@ -89,7 +92,7 @@ service cloud.firestore {
 
       allow update: if owner(uid)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'displayName', 'username', 'bio', 'photoUrl',
+          'displayName', 'username', 'bio', 'photoUrl', 'e2eePublicKey', 'e2eeKeyId',
           'isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'
         ])
         && (
