@@ -199,6 +199,7 @@ fun ConversationScreenV2(
     var deleteTarget by remember { mutableStateOf<Pair<Message, DeleteModeV2>?>(null) }
     var deletingId by remember { mutableStateOf<String?>(null) }
     var deleteRetry by remember { mutableStateOf<Pair<Message, DeleteModeV2>?>(null) }
+    var locallyHiddenDeletes by remember(conversationId) { mutableStateOf<Set<String>>(emptySet()) }
 
     var recording by remember { mutableStateOf(false) }
     var locked by remember { mutableStateOf(false) }
@@ -446,23 +447,32 @@ fun ConversationScreenV2(
     }
 
     fun performDelete(message: Message, mode: DeleteModeV2) {
-        if (deletingId != null) return
+        if (deletingId != null || message.id in locallyHiddenDeletes) return
         deletingId = message.id
         deleteRetry = null
         scope.launch {
             delay(if (config.isReducedMotion) 90 else 520)
+            locallyHiddenDeletes = locallyHiddenDeletes + message.id
+            deletingId = null
+
             val result = when (mode) {
                 DeleteModeV2.FOR_ME -> repo.deleteMessageForMeAwait(conversationId, message.id)
                 DeleteModeV2.FOR_EVERYONE -> repo.deleteMessageForEveryoneAwait(conversationId, message.id)
             }
-            deletingId = null
-            deleteRetry = if (result.isFailure) message to mode else null
+
+            if (result.isFailure) {
+                locallyHiddenDeletes = locallyHiddenDeletes - message.id
+                deleteRetry = message to mode
+            } else {
+                locallyHiddenDeletes = locallyHiddenDeletes - message.id
+                deleteRetry = null
+            }
         }
     }
 
     val filtered = messages.filter { query.isBlank() || it.text.contains(query, ignoreCase = true) }
     val morphMessage = filtered.firstOrNull { it.id == morphId }
-    val rows = filtered.filterNot { it.id == morphId }
+    val rows = filtered.filterNot { it.id == morphId || it.id in locallyHiddenDeletes }
     val latestRemoteId = rows.lastOrNull { it.senderId != me.uid && !it.isDeleted }?.id
 
     LaunchedEffect(loadingOlder, rows.size, canLoadOlder) {
@@ -745,11 +755,12 @@ fun ConversationScreenV2(
                     }
                     itemsIndexed(rows, key = { _, item -> item.id }) { _, message ->
                         if (message.id == unreadAnchorId) UnreadSeparatorV2()
-                        DustDeleteContainerV2(active = deletingId == message.id, reduced = config.isReducedMotion, modifier = Modifier.animateItem().fillMaxWidth()) {
+                        Box(Modifier.animateItem().fillMaxWidth()) {
                             MessageBubbleV2(
                                 message = message,
                                 isMe = message.senderId == me.uid,
                                 reduced = config.isReducedMotion,
+                                deleting = deletingId == message.id,
                                 highlighted = message.id == searchHighlightId,
                                 voiceAvatarUrl = if (message.senderId == me.uid) me.photoUrl else other.photoUrl,
                                 voiceAvatarName = if (message.senderId == me.uid) me.displayName else other.displayName,
