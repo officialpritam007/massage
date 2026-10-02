@@ -539,6 +539,7 @@ class ChatRepository(
       replyToText = snapshot.get("replyToText") as? String,
       replyToSender = snapshot.get("replyToSender") as? String,
       isEdited = snapshot.safeBoolean("isEdited"),
+      isViewed = (snapshot.get("viewedBy") as? List<*>)?.contains(uid) == true,
       isDeleted = snapshot.safeBoolean("isDeleted"),
       isPinned = snapshot.safeBoolean("isPinned"),
       isStarred = prefs.getBoolean("star:$uid:${snapshot.id}", false),
@@ -666,7 +667,9 @@ class ChatRepository(
     if (uid.isBlank() || !sending.tryLock()) return
     val account = uid
     try {
-      for ((key, raw) in prefs.all.filterKeys { it.startsWith("outbox:$account:") }) {
+      for ((key, raw) in prefs.all.filterKeys { it.startsWith("outbox:$account:") }.toList().sortedBy { (_, raw) ->
+        runCatching { JSONObject(raw as String).optLong("createdAt") }.getOrDefault(0L)
+      }) {
         if (uid != account) break
         val j = JSONObject(raw as String)
         val id = j.getString("id")
@@ -690,7 +693,7 @@ class ChatRepository(
           val response = LiquidApi.call("send", data)
           prefs.edit().remove(key).apply()
           if (response.optBoolean("tombstoned")) removeLocalMessage(cid, id)
-          else updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.SENT) }
+          else updateLocal(cid, id) { it.copy(status = com.example.domain.reconcileDelivery(it.status, MessageDeliveryStatus.SENT)) }
         } catch (e: Exception) {
           if (e is CancellationException) throw e
           if (e !is java.io.IOException) {
@@ -856,12 +859,22 @@ class ChatRepository(
     }
   }
 
-  fun clearUnread(cid: String) {
-    _messages.value[cid].orEmpty()
-      .filter { it.senderId != uid && it.status != MessageDeliveryStatus.READ }
-      .forEach { receipt(cid, it.id, if (_privacy.value.readReceipts) "READ" else "DELIVERED") }
-    if (_conversations.value.find { it.id == cid }?.unreadCount != 0) setting(cid, "read", true)
+  fun wasViewed(cid: String, id: String) = prefs.getBoolean("viewed:$uid:$cid:$id", false)
+
+  fun markVisibleRead(cid: String, visibleIds: Set<String>) {
+    if (!resumed || uid.isBlank()) return
+    val visible = _messages.value[cid].orEmpty().filter {
+      it.id in visibleIds && it.senderId != uid && !it.isDeleted
+    }
+    visible.forEach { message ->
+      receipt(cid, message.id, "READ")
+      prefs.edit().putBoolean("viewed:$uid:$cid:${message.id}", true).apply()
+      androidx.core.app.NotificationManagerCompat.from(LiquidApi.context).cancel(message.id.hashCode())
+    }
   }
+
+  // Kept for the legacy screen; never infer visibility from opening a conversation.
+  fun clearUnread(cid: String) = Unit
 
   private fun setting(cid: String, field: String, value: Any) = runAction {
     LiquidApi.call("conversationSetting", mapOf("conversationId" to cid, "field" to field, "value" to value))

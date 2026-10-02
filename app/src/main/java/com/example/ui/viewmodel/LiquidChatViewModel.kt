@@ -24,8 +24,8 @@ class LiquidChatViewModel(
         val oldById = previous[conversationId].orEmpty().associateBy { it.id }
         list.map { message ->
           val old = oldById[message.id]
-          if (old != null && deliveryRank(old.status) > deliveryRank(message.status)) {
-            message.copy(status = old.status)
+          if (old != null) {
+            message.copy(status = com.example.domain.reconcileDelivery(old.status, message.status))
           } else message
         }
       }

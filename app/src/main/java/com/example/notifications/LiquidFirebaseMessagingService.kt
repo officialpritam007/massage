@@ -66,7 +66,7 @@ class LiquidFirebaseMessagingService : FirebaseMessagingService() {
       DeliveryReceiptWorker.enqueue(this, conversationId, id)
     }
 
-    if (!prefs.getBoolean("notifications", true)) return
+    if (message.data["silent"] == "true" || !prefs.getBoolean("notifications", true)) return
     if (Build.VERSION.SDK_INT >= 33 &&
       ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
     ) return

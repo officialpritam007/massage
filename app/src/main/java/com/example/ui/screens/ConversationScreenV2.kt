@@ -101,6 +101,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.repeatOnLifecycle
 import com.example.data.model.Message
 import com.example.data.model.MessageType
 import com.example.data.model.User
@@ -204,6 +205,8 @@ fun ConversationScreenV2(
     var morphId by remember(conversationId) { mutableStateOf<String?>(null) }
     var typingAt by remember(conversationId) { mutableLongStateOf(0L) }
     var lastRemoteId by remember(conversationId) { mutableStateOf<String?>(null) }
+    var previousLastId by remember(conversationId) { mutableStateOf<String?>(null) }
+    var newMessageCount by remember(conversationId) { mutableIntStateOf(0) }
     var initialOpen by remember(conversationId) { mutableStateOf(true) }
     var unreadAnchorId by rememberSaveable(conversationId) { mutableStateOf<String?>(null) }
     var stickToBottom by remember(conversationId) { mutableStateOf(true) }
@@ -391,8 +394,8 @@ fun ConversationScreenV2(
         if (unreadAnchorId == null) {
             val unread = conversation?.unreadCount ?: 0
             if (unread > 0 && messages.isNotEmpty()) {
-                val incoming = messages.filter { it.senderId != me.uid && !it.isDeleted }
-                unreadAnchorId = incoming.takeLast(minOf(unread, incoming.size)).firstOrNull()?.id
+                unreadAnchorId = messages.firstOrNull { it.senderId != me.uid && !it.isDeleted &&
+                    !it.isViewed && it.status != com.example.data.model.MessageDeliveryStatus.READ && !repo.wasViewed(conversationId, it.id) }?.id
             }
         }
     }
@@ -400,18 +403,27 @@ fun ConversationScreenV2(
         snapshotFlow { listState.isScrollInProgress to nearBottom }
             .distinctUntilChanged()
             .collect { (scrolling, atBottom) ->
-                if (scrolling) stickToBottom = atBottom else if (atBottom) stickToBottom = true
+                if (scrolling) stickToBottom = atBottom
+                if (atBottom) newMessageCount = 0
             }
     }
-    LaunchedEffect(messages.lastOrNull()?.id, messages.size) {
-        if (messages.isEmpty()) return@LaunchedEffect
-        val last = messages.last()
-        val shouldFollow = initialOpen || last.senderId == me.uid || stickToBottom
-        if (shouldFollow) {
-            delay(50)
-            val target = (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
-            if (config.isReducedMotion) listState.scrollToItem(target) else listState.animateScrollToItem(target)
-        } else if (last.senderId != me.uid && unreadAnchorId == null) unreadAnchorId = last.id
+    LaunchedEffect(messages.lastOrNull()?.id) {
+        val last = messages.lastOrNull() ?: return@LaunchedEffect
+        val follow = com.example.domain.shouldFollowMessages(initialOpen, previousLastId, last.id, stickToBottom)
+        val appended = previousLastId != null && previousLastId != last.id
+        previousLastId = last.id
+        if (follow && messageJump?.first != conversationId && query.isBlank()) {
+            androidx.compose.runtime.withFrameNanos { }
+            if (stickToBottom && !listState.isScrollInProgress) {
+                val target = (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
+                if (config.isReducedMotion || initialOpen) listState.scrollToItem(target)
+                else listState.animateScrollToItem(target)
+                newMessageCount = 0
+            }
+        } else if (appended && last.senderId != me.uid) {
+            newMessageCount++
+            if (unreadAnchorId == null) unreadAnchorId = last.id
+        }
         initialOpen = false
     }
 
@@ -459,6 +471,8 @@ fun ConversationScreenV2(
         val messageId = jump.second
         val target = rows.indexOfFirst { it.id == messageId }
         if (target >= 0) {
+            stickToBottom = false
+            initialOpen = false
             delay(90)
             if (config.isReducedMotion) listState.scrollToItem(target + 1)
             else listState.animateScrollToItem(target + 1)
@@ -466,19 +480,21 @@ fun ConversationScreenV2(
             delay(if (config.isReducedMotion) 250 else 900)
             if (searchHighlightId == messageId) searchHighlightId = null
             viewModel.clearMessageJump(conversationId, messageId)
+        } else {
+            repo.loadOlder(conversationId)
         }
     }
 
-    LaunchedEffect(conversationId, latestRemoteId, conversation?.unreadCount) {
-        if ((conversation?.unreadCount ?: 0) <= 0 || latestRemoteId == null) return@LaunchedEffect
-        snapshotFlow { listState.layoutInfo.visibleItemsInfo.any { item -> item.key == latestRemoteId } }
-            .distinctUntilChanged()
-            .collect { latestIncomingVisible ->
-                if (latestIncomingVisible) {
-                    viewModel.clearUnread(conversationId)
-                    unreadAnchorId = null
-                }
+    LaunchedEffect(conversationId, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            snapshotFlow {
+                listState.layoutInfo.visibleItemsInfo.filter {
+                    it.offset < listState.layoutInfo.viewportEndOffset && it.offset + it.size > listState.layoutInfo.viewportStartOffset
+                }.mapNotNull { it.key as? String }.toSet()
+            }.distinctUntilChanged().collect { visible ->
+                repo.markVisibleRead(conversationId, visible)
             }
+        }
     }
 
     LiquidBackground(modifier = modifier, crystal = conversation?.wallpaperIndex != 1) {
@@ -664,6 +680,7 @@ fun ConversationScreenV2(
                             } else {
                                 GlassIconButton(Icons.Default.Send, "Send", {
                                     if (text.isNotBlank() && other.uid !in blocked) {
+                                        stickToBottom = true
                                         viewModel.sendMessage(conversationId, text.trim(), replyToId = reply?.id, replyToText = reply?.text, replyToSender = reply?.senderName)
                                         text = ""; reply = null
                                     }
@@ -679,7 +696,8 @@ fun ConversationScreenV2(
                     item(key = "load-earlier") {
                         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { TextButton(onClick = { repo.loadOlder(conversationId) }) { Text("Load earlier messages") } }
                     }
-                    itemsIndexed(rows, key = { _, item -> item.id }) { _, message ->
+                    itemsIndexed(rows, key = { _, item -> item.id }) { index, message ->
+                        if (index == 0 || dayKeyV3(rows[index - 1].createdAt) != dayKeyV3(message.createdAt)) DateSeparatorV3(message.createdAt)
                         if (message.id == unreadAnchorId) UnreadSeparatorV2()
                         DustDeleteContainerV2(active = deletingId == message.id, reduced = config.isReducedMotion, modifier = Modifier.animateItem().fillMaxWidth()) {
                             MessageBubbleV2(
@@ -693,7 +711,13 @@ fun ConversationScreenV2(
                                 onReply = { reply = message; haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
                                 onReplyPreviewClick = { replyId ->
                                     val target = rows.indexOfFirst { it.id == replyId }
-                                    if (target >= 0) scope.launch { listState.animateScrollToItem(target + 1) }
+                                    if (target >= 0) scope.launch {
+                                        stickToBottom = false
+                                        listState.animateScrollToItem(target + 1)
+                                        searchHighlightId = replyId
+                                        delay(900)
+                                        searchHighlightId = null
+                                    } else viewModel.requestMessageJump(conversationId, replyId)
                                 },
                                 onMedia = { viewer = message },
                                 onReaction = { emoji -> viewModel.addReaction(conversationId, message.id, emoji) },
@@ -715,8 +739,12 @@ fun ConversationScreenV2(
                 if (!stickToBottom && listState.layoutInfo.totalItemsCount > 0) {
                     SmallFloatingActionButton(onClick = {
                         stickToBottom = true
+                        newMessageCount = 0
                         scope.launch { listState.animateScrollToItem((listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)) }
-                    }, modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp)) { Icon(Icons.Default.KeyboardArrowDown, "Jump to newest") }
+                    }, modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp)) { Row(Modifier.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.KeyboardArrowDown, "Jump to newest")
+                        if (newMessageCount > 0) Text("New messages ($newMessageCount)")
+                    } }
                 }
             }
         }
@@ -816,6 +844,23 @@ private fun TypingDotsV2(reduced: Boolean) {
                 value
             }
             Box(Modifier.offset(y = y.dp).size(6.dp).clip(CircleShape).background(accent.copy(alpha = .9f)))
+        }
+    }
+}
+
+private fun dayKeyV3(time: Long): String = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(time))
+
+@Composable
+private fun DateSeparatorV3(time: Long) {
+    val yesterday = java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, -1) }.timeInMillis
+    val label = when (dayKeyV3(time)) {
+        dayKeyV3(System.currentTimeMillis()) -> "Today"
+        dayKeyV3(yesterday) -> "Yesterday"
+        else -> SimpleDateFormat("d MMM yyyy", Locale.getDefault()).format(Date(time))
+    }
+    Box(Modifier.fillMaxWidth().padding(vertical = 9.dp), contentAlignment = Alignment.Center) {
+        GlassCard(shape = RoundedCornerShape(99.dp), elevation = 0.dp) {
+            Text(label, Modifier.padding(horizontal = 13.dp, vertical = 5.dp), style = MaterialTheme.typography.labelSmall)
         }
     }
 }

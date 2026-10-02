@@ -149,7 +149,7 @@ async function notify(db, cid, id) {
   }
   const userRef = db.doc('users/' + uid);
   const u = (await userRef.get()).data();
-  if (!u || u.notifications?.messages === false || (c.mutedFor || []).includes(uid) || (u.blockedUserIds || []).includes(m.senderId)) {
+  if (!u || (u.blockedUserIds || []).includes(m.senderId)) {
     await ref.update({notifiedAt: Date.now()});
     return;
   }
@@ -163,11 +163,13 @@ async function notify(db, cid, id) {
 
   const tokens = tokenEntries.map(([, token]) => token);
   const showPreview = u.notifications?.showPreview !== false;
+  const silent = u.notifications?.messages === false || (c.mutedFor || []).includes(uid);
   const result = await getMessaging().sendEachForMulticast({
     tokens,
     android: {priority: 'high'},
     data: {
       type: 'message',
+      silent: String(silent),
       conversationId: cid,
       messageId: id,
       title: showPreview ? (m.senderName || 'Liquid Chat') : 'Liquid Chat',
@@ -192,7 +194,7 @@ async function notify(db, cid, id) {
   });
   if (Object.keys(tokenDeletes).length) await userRef.update(tokenDeletes).catch(() => {});
 
-  if (result.successCount === 0 && transientFailures > 0) throw new Error('Push delivery temporarily unavailable');
+  if (transientFailures > 0) throw new Error('Push delivery temporarily unavailable');
   await ref.update({notifiedAt: Date.now()});
 }
 
@@ -643,7 +645,7 @@ export default async ({req, res, error}) => {
         const s = await t.get(mref);
         const m = s.data();
         if (!m || m.deletedForEveryone || (m.hiddenFor || []).includes(uid)) throw new Error('Message unavailable');
-        const currentConversation = p.action === 'edit' ? await t.get(ref) : null;
+        const currentConversation = ['edit', 'receipt'].includes(p.action) ? await t.get(ref) : null;
 
         if (p.action === 'edit') {
           if (m.senderId !== uid) throw new Error('Only the sender can do this');
@@ -658,7 +660,17 @@ export default async ({req, res, error}) => {
           const nextStatus = p.status === 'READ' && u?.privacy?.readReceipts !== false ? 'READ' : 'DELIVERED';
           const rank = {SENT: 1, DELIVERED: 2, READ: 3};
           const currentStatus = Object.hasOwn(rank, m.status) ? m.status : 'SENT';
-          if (rank[nextStatus] > rank[currentStatus]) t.update(mref, {status: nextStatus});
+          const update = {};
+          if (rank[nextStatus] > rank[currentStatus]) update.status = nextStatus;
+          if (p.status === 'READ' && !(m.viewedBy || []).includes(uid)) {
+            update.viewedBy = FieldValue.arrayUnion(uid);
+            // Private read bookkeeping is independent from sharing blue ticks.
+            if (currentStatus !== 'READ') {
+              const count = Number(currentConversation?.data()?.unreadCounts?.[uid] || 0);
+              t.update(ref, {[`unreadCounts.${uid}`]: Math.max(0, count - 1)});
+            }
+          }
+          if (Object.keys(update).length) t.update(mref, update);
         } else if (p.action === 'pin') {
           t.update(mref, {isPinned: !m.isPinned});
         } else {
@@ -685,7 +697,13 @@ export default async ({req, res, error}) => {
       } else if (p.field === 'disappearingSeconds' && [0, 86400, 604800, 7776000].includes(p.value)) {
         await ref.update({disappearingSeconds: p.value});
       } else if (p.field === 'read') {
-        await ref.update({[`unreadCounts.${uid}`]: 0});
+        await db.runTransaction(async t => {
+          const current = (await t.get(ref)).data();
+          // Legacy clients lack the guard; do not erase newer unread arrivals for them.
+          if (p.lastMessageId && current?.lastMessageId === p.lastMessageId) {
+            t.update(ref, {[`unreadCounts.${uid}`]: 0});
+          }
+        });
       } else {
         throw new Error('Invalid setting');
       }

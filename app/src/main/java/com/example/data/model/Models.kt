@@ -49,6 +49,7 @@ data class Message(
   val replyToSender: String? = null,
   val reactions: List<MessageReaction> = emptyList(),
   val isEdited: Boolean = false,
+  val isViewed: Boolean = false,
   val isDeleted: Boolean = false,
   val isPinned: Boolean = false,
   val isStarred: Boolean = false,
