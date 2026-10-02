@@ -75,20 +75,80 @@ service cloud.firestore {
     }
 
     match /conversations/{cid} {
-      // Firestore evaluates query rules against the query constraints, not by post-filtering
-      // individual documents. The Android chat-list query constrains participantIds with
-      // array-contains(currentUid), so membership is the rule predicate here. The app parser and
-      // authenticated backend still enforce the product's 1-to-1 (exactly two participants) model.
       allow read: if signedIn()
         && resource.data.participantIds is list
         && request.auth.uid in resource.data.participantIds;
 
-      // Conversation/message mutation is server-authoritative via the authenticated API.
-      allow create, update, delete: if false;
+      // Core chat remains available even when the optional Appwrite bridge is unavailable.
+      // Creation is limited to a 1-to-1 conversation containing the authenticated user.
+      allow create: if signedIn()
+        && request.resource.data.participantIds is list
+        && request.resource.data.participantIds.size() == 2
+        && request.auth.uid in request.resource.data.participantIds
+        && request.resource.data.keys().hasOnly([
+          'participantIds', 'lastMessageId', 'lastMessageTime', 'lastMessageText',
+          'lastMessageSenderId', 'unreadCounts', 'deletedFor', 'deletedBefore',
+          'hiddenLastFor', 'archivedFor', 'mutedFor', 'favoriteFor',
+          'disappearingSeconds'
+        ]);
+
+      // Participant clients may update only conversation presentation/summary fields.
+      allow update: if participant(cid)
+        && request.resource.data.participantIds == resource.data.participantIds
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'lastMessageId', 'lastMessageTime', 'lastMessageText',
+          'lastMessageSenderId', 'unreadCounts', 'deletedFor', 'deletedBefore',
+          'hiddenLastFor', 'archivedFor', 'mutedFor', 'favoriteFor',
+          'disappearingSeconds'
+        ]);
+
+      allow delete: if false;
 
       match /messages/{mid} {
         allow read: if participant(cid);
-        allow create, update, delete: if false;
+
+        allow create: if participant(cid)
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() <= 8000
+          && request.resource.data.type in ['TEXT', 'IMAGE', 'VIDEO', 'AUDIO', 'VOICE', 'FILE', 'LOCATION']
+          && request.resource.data.status == 'SENT'
+          && request.resource.data.createdAt is int
+          && request.resource.data.createdAt <= request.time.toMillis() + 60000
+          && request.resource.data.createdAt >= request.time.toMillis() - 300000
+          && request.resource.data.deletedForEveryone == false
+          && request.resource.data.isDeleted == false
+          && request.resource.data.isEdited == false
+          && request.resource.data.isPinned == false
+          && request.resource.data.hiddenFor is list
+          && request.resource.data.hiddenFor.size() == 0
+          && request.resource.data.reactions is list
+          && request.resource.data.reactions.size() == 0;
+
+        allow update: if participant(cid) && (
+          (
+            resource.data.senderId == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'isEdited'])
+            && request.resource.data.text is string
+            && request.resource.data.text.size() > 0
+            && request.resource.data.text.size() <= 8000
+            && request.resource.data.isEdited == true
+          )
+          ||
+          (
+            resource.data.senderId != request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+            && request.resource.data.status in ['DELIVERED', 'READ']
+          )
+          ||
+          (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned'])
+            && request.resource.data.isPinned is bool
+          )
+        );
+
+        // Only the original sender may permanently delete a message.
+        allow delete: if participant(cid) && resource.data.senderId == request.auth.uid;
       }
 
       match /typing/{uid} {
