@@ -1298,7 +1298,16 @@ class ChatRepository(
             removeLocalMessage(cid, id)
             continue
           }
-          val created = sendMessageDirect(data)
+          val created = try {
+            withTimeout(20_000) {
+              sendMessageDirect(data)
+            }
+          } catch (timeout: TimeoutCancellationException) {
+            failed += id
+            updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.FAILED) }
+            _error.value = "Message send timed out. Tap the failed message to retry."
+            continue
+          }
           val committedMediaUrl = (data["mediaUrl"] as? String).orEmpty()
           if (committedMediaUrl.isNotBlank()) {
             LiquidApi.forgetPendingMediaSecret(committedMediaUrl)
