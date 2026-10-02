@@ -3,6 +3,7 @@ package com.example.data.network
 import android.content.Context
 import android.net.Uri
 import com.example.BuildConfig
+import com.example.data.crypto.E2eeCrypto
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
@@ -29,6 +30,18 @@ object LiquidApi {
   private var jwtUntil = 0L
   private data class ResolvedMedia(val url: String, val validUntil: Long)
   private val resolvedMedia = ConcurrentHashMap<String, ResolvedMedia>()
+  private val mediaSecrets = ConcurrentHashMap<String, E2eeCrypto.MediaSecret>()
+
+  fun registerMediaSecret(url: String, secret: E2eeCrypto.MediaSecret) {
+    if (!url.startsWith("appwrite:")) return
+    mediaSecrets[url.removePrefix("appwrite:")] = secret
+  }
+
+  fun mediaSecret(url: String): E2eeCrypto.MediaSecret? {
+    if (!url.startsWith("appwrite:")) return null
+    return mediaSecrets[url.removePrefix("appwrite:")]
+  }
+
 
   suspend fun call(action: String, data: Map<String, Any?> = emptyMap()): JSONObject = withContext(Dispatchers.IO) {
     check(BuildConfig.LIQUID_API_URL.startsWith("https://")) {
@@ -134,6 +147,7 @@ object LiquidApi {
 
   fun clearMediaCachesOnly() {
     resolvedMedia.clear()
+    mediaSecrets.clear()
     if (::context.isInitialized) {
       File(context.cacheDir, "private-media").deleteRecursively()
       coil.Coil.imageLoader(context).memoryCache?.clear()
@@ -151,6 +165,7 @@ object LiquidApi {
     if (url.startsWith("appwrite:")) {
       val fileId = url.removePrefix("appwrite:")
       resolvedMedia.remove(fileId)
+      mediaSecrets.remove(fileId)
       if (::context.isInitialized) File(File(context.cacheDir, "private-media"), "$fileId.bin").delete()
     }
     if (purgeCaches && ::context.isInitialized) {
@@ -204,15 +219,36 @@ object LiquidApi {
 
     val resolved = resolve(url, forceRefresh = forceRefresh)
     val response = http.newCall(Request.Builder().url(resolved).get().build()).execute()
-    response.use { r ->
-      check(r.isSuccessful) { "Media download failed (${r.code})" }
-      val temp = File(dir, "$fileId.tmp")
-      temp.outputStream().use { output ->
-        r.body?.byteStream()?.use { input -> input.copyTo(output) }
+    response.use { responseValue ->
+      check(responseValue.isSuccessful) { "Media download failed (${responseValue.code})" }
+      val encryptedTemp = File(dir, "$fileId.download")
+      encryptedTemp.outputStream().use { output ->
+        responseValue.body?.byteStream()?.use { input -> input.copyTo(output) }
       }
-      check(temp.length() > 0) { "Downloaded media is empty" }
-      if (cached.exists()) cached.delete()
-      check(temp.renameTo(cached)) { "Unable to cache media" }
+      check(encryptedTemp.length() > 0) { "Downloaded media is empty" }
+
+      val secret = mediaSecrets[fileId]
+      if (secret != null) {
+        val plainTemp = File(dir, "$fileId.plain.tmp")
+        try {
+          E2eeCrypto.decryptMediaFile(
+            input = encryptedTemp,
+            output = plainTemp,
+            fileId = fileId,
+            secret = secret
+          )
+          encryptedTemp.delete()
+          if (cached.exists()) cached.delete()
+          check(plainTemp.renameTo(cached)) { "Unable to cache decrypted media" }
+        } catch (t: Throwable) {
+          plainTemp.delete()
+          encryptedTemp.delete()
+          throw IllegalStateException("Encrypted media could not be decrypted", t)
+        }
+      } else {
+        if (cached.exists()) cached.delete()
+        check(encryptedTemp.renameTo(cached)) { "Unable to cache media" }
+      }
     }
     cached
   }
@@ -272,51 +308,94 @@ object LiquidApi {
       }
 
       require(file.length() > 0) { "Empty file" }
-      val begin = call("uploadBegin", mapOf("conversationId" to conversationId))
+      val encryptedChatMedia = conversationId != null
+      val begin = call(
+        "uploadBegin",
+        mapOf(
+          "conversationId" to conversationId,
+          "encrypted" to encryptedChatMedia,
+          "originalMime" to mime
+        )
+      )
       val id = begin.getString("fileId")
       val owner = begin.getString("ownerId")
       val auth = session()
-      val suffix = when {
-        mime.startsWith("image/") -> "jpg"
-        mime == "audio/aac" -> "aac"
-        mime.startsWith("audio/") -> "m4a"
-        mime.startsWith("video/") -> "mp4"
-        else -> "bin"
-      }
 
-      var offset = 0L
-      file.inputStream().use { input ->
-        while (offset < file.length()) {
-          kotlinx.coroutines.currentCoroutineContext().ensureActiveCompat()
-          val bytes = ByteArray(minOf(5L * 1024 * 1024, file.length() - offset).toInt())
-          var read = 0
-          while (read < bytes.size) {
-            val n = input.read(bytes, read, bytes.size - read)
-            if (n < 0) break
-            read += n
-          }
-          require(read > 0) { "Upload stream ended unexpectedly" }
-          val body = MultipartBody.Builder().setType(MultipartBody.FORM)
-            .addFormDataPart("fileId", id)
-            .addFormDataPart("permissions[]", "read(\"user:$owner\")")
-            .addFormDataPart("permissions[]", "update(\"user:$owner\")")
-            .addFormDataPart("permissions[]", "delete(\"user:$owner\")")
-            .addFormDataPart("file", "$id.$suffix", bytes.copyOf(read).toRequestBody(mime.toMediaType()))
-            .build()
-          val request = Request.Builder()
-            .url("${BuildConfig.APPWRITE_ENDPOINT}/storage/buckets/${BuildConfig.APPWRITE_BUCKET_ID}/files")
-            .header("X-Appwrite-Project", BuildConfig.APPWRITE_PROJECT_ID)
-            .header("X-Appwrite-JWT", auth)
-            .header("Content-Range", "bytes $offset-${offset + read - 1}/${file.length()}")
-          if (offset > 0) request.header("X-Appwrite-ID", id)
-          http.newCall(request.post(body).build()).execute().use { r ->
-            check(r.isSuccessful) { "Upload failed (${r.code}). Check bucket permissions and file limits." }
-          }
-          offset += read
-          progress(offset.toFloat() / file.length())
+      val encryptedFile = if (encryptedChatMedia) {
+        File.createTempFile("upload-e2ee-", ".bin", context.cacheDir)
+      } else {
+        null
+      }
+      val uploadFile: File
+      val uploadMime: String
+      val suffix: String
+
+      if (encryptedFile != null) {
+        val secret = E2eeCrypto.encryptMediaFile(file, encryptedFile, id)
+        mediaSecrets[id] = secret
+        uploadFile = encryptedFile
+        uploadMime = "application/octet-stream"
+        suffix = "bin"
+      } else {
+        uploadFile = file
+        uploadMime = mime
+        suffix = when {
+          mime.startsWith("image/") -> "jpg"
+          mime == "audio/aac" -> "aac"
+          mime.startsWith("audio/") -> "m4a"
+          mime.startsWith("video/") -> "mp4"
+          else -> "bin"
         }
       }
-      call("uploadFinish", mapOf("fileId" to id)).getString("url")
+
+      try {
+        var offset = 0L
+        uploadFile.inputStream().use { input ->
+          while (offset < uploadFile.length()) {
+            kotlinx.coroutines.currentCoroutineContext().ensureActiveCompat()
+            val bytes = ByteArray(
+              minOf(5L * 1024 * 1024, uploadFile.length() - offset).toInt()
+            )
+            var read = 0
+            while (read < bytes.size) {
+              val n = input.read(bytes, read, bytes.size - read)
+              if (n < 0) break
+              read += n
+            }
+            require(read > 0) { "Upload stream ended unexpectedly" }
+            val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+              .addFormDataPart("fileId", id)
+              .addFormDataPart("permissions[]", "read(\"user:$owner\")")
+              .addFormDataPart("permissions[]", "update(\"user:$owner\")")
+              .addFormDataPart("permissions[]", "delete(\"user:$owner\")")
+              .addFormDataPart(
+                "file",
+                "$id.$suffix",
+                bytes.copyOf(read).toRequestBody(uploadMime.toMediaType())
+              )
+              .build()
+            val request = Request.Builder()
+              .url("${BuildConfig.APPWRITE_ENDPOINT}/storage/buckets/${BuildConfig.APPWRITE_BUCKET_ID}/files")
+              .header("X-Appwrite-Project", BuildConfig.APPWRITE_PROJECT_ID)
+              .header("X-Appwrite-JWT", auth)
+              .header(
+                "Content-Range",
+                "bytes $offset-${offset + read - 1}/${uploadFile.length()}"
+              )
+            if (offset > 0) request.header("X-Appwrite-ID", id)
+            http.newCall(request.post(body).build()).execute().use { responseValue ->
+              check(responseValue.isSuccessful) {
+                "Upload failed (${responseValue.code}). Check bucket permissions and file limits."
+              }
+            }
+            offset += read
+            progress(offset.toFloat() / uploadFile.length())
+          }
+        }
+        call("uploadFinish", mapOf("fileId" to id)).getString("url")
+      } finally {
+        encryptedFile?.delete()
+      }
     } finally {
       file.delete()
     }
