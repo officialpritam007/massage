@@ -408,11 +408,12 @@ class ChatRepository(
     _error.value = "Verification email sent"
   }
 
-  fun logout() {
+  fun logout(onResult: (Result<Unit>) -> Unit = {}) {
     setPresence(false)
     val account = uid
     if (account.isBlank()) {
       finishLocalLogout()
+      onResult(Result.success(Unit))
       return
     }
 
@@ -426,13 +427,15 @@ class ChatRepository(
       }
       if (wiped.isFailure) {
         _loading.value = false
-        _error.value = "Secure logout could not erase server data: " +
-          friendlyError(wiped.exceptionOrNull() ?: IllegalStateException("Unknown error"))
+        val failure = wiped.exceptionOrNull() ?: IllegalStateException("Unknown error")
+        _error.value = "Secure logout could not erase server data: " + friendlyError(failure)
+        onResult(Result.failure(failure))
         return@launch
       }
 
       LiquidApi.clearMediaCachesOnly()
       finishLocalLogout()
+      onResult(Result.success(Unit))
     }
   }
 
