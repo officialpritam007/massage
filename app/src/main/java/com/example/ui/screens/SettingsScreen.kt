@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import com.example.BuildConfig
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -336,7 +338,7 @@ fun SettingsScreen(
           }
 
           "About & Support" -> {
-            Text("Liquid Chat 4.0.0")
+            Text("Liquid Chat ${BuildConfig.VERSION_NAME}")
             Text("Developed by Pritam Pal")
             Text("© 2026 Pritam Pal")
             Text("Firebase authentication + Firestore realtime transport + Appwrite encrypted media storage.")
