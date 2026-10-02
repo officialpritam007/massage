@@ -12,6 +12,7 @@ import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.RepeatMode
@@ -24,6 +25,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -561,18 +563,6 @@ fun ConversationScreenV2(
                     Modifier.imePadding().navigationBarsPadding().padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    reply?.let { target ->
-                        GlassCard(shape = RoundedCornerShape(20.dp), elevation = 1.dp) {
-                            Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(target.senderName.ifBlank { "Reply" }, color = config.accentColor, style = MaterialTheme.typography.labelMedium)
-                                    Text(target.text, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
-                                }
-                                GlassIconButton(Icons.Default.Close, "Cancel reply", { reply = null }, size = 34.dp)
-                            }
-                        }
-                    }
-
                     voiceDraft?.let { draft ->
                         DustDeleteContainerV2(active = voiceDraftDeleting, reduced = config.isReducedMotion, modifier = Modifier.fillMaxWidth()) {
                             GlassCard(shape = RoundedCornerShape(22.dp), backgroundColor = if (draft.failed || voiceDraftDeleteFailed) MaterialTheme.colorScheme.error.copy(alpha = .09f) else config.accentColor.copy(alpha = .08f), elevation = 1.dp) {
@@ -662,56 +652,193 @@ fun ConversationScreenV2(
                         }
                     }
 
-                    GlassCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(30.dp), backgroundColor = if (config.isDark) Color(0xFF0C1620).copy(alpha = .78f) else Color.White.copy(alpha = .72f), elevation = 8.dp) {
-                        Row(Modifier.padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            GlassIconButton(Icons.Default.Add, "Attach", { attachmentSheet = true }, size = 40.dp)
-                            Spacer(Modifier.width(3.dp))
-                            GlassTextField(text, { if (it.length <= 8000) text = it }, placeholder = if (other.uid in blocked) "Contact blocked" else "Message…", modifier = Modifier.weight(1f), keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None), singleLine = false, maxLines = 5, shape = RoundedCornerShape(24.dp))
-                            Spacer(Modifier.width(3.dp))
-                            if (text.isBlank()) {
-                                GlassIconButton(Icons.Default.PhotoCamera, "Camera", onNavigateToCamera, size = 40.dp)
-                                var dx by remember { mutableFloatStateOf(0f) }
-                                var dy by remember { mutableFloatStateOf(0f) }
-                                val micX = if (recording && !locked) dx.coerceIn(-120f, 0f) else 0f
-                                val micY = if (recording && !locked) dy.coerceIn(-120f, 0f) else 0f
-                                Box(
-                                    Modifier.size(40.dp).offset { IntOffset(micX.roundToInt(), micY.roundToInt()) }.clip(CircleShape)
-                                        .background(if (config.isDark) Color.White.copy(alpha = .08f) else Color.White.copy(alpha = .58f))
-                                        .pointerInput(other.uid, blocked) {
-                                            detectDragGesturesAfterLongPress(
-                                                onDragStart = {
-                                                    dx = 0f; dy = 0f; locked = false
-                                                    keyboard?.hide(); focus.clearFocus(); requestCurrent()
-                                                },
-                                                onDragEnd = {
-                                                    if (recordingCurrent && !lockedCurrent) finishCurrent(true, true)
-                                                    dx = 0f; dy = 0f
-                                                },
-                                                onDragCancel = {
-                                                    if (recordingCurrent && !lockedCurrent) finishCurrent(false, false)
-                                                    dx = 0f; dy = 0f
-                                                },
-                                                onDrag = { change, amount ->
-                                                    change.consume(); dx += amount.x; dy += amount.y
-                                                    if (dx < -100f && recordingCurrent) {
-                                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                        finishCurrent(false, false); dx = 0f; dy = 0f
-                                                    } else if (dy < -100f && recordingCurrent && !lockedCurrent) {
-                                                        locked = true; dx = 0f; dy = 0f
-                                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                    }
-                                                }
-                                            )
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) { Icon(Icons.Default.Mic, "Press and hold to record", Modifier.size(21.dp), tint = MaterialTheme.colorScheme.onSurface) }
-                            } else {
-                                GlassIconButton(Icons.Default.Send, "Send", {
-                                    if (text.isNotBlank() && other.uid !in blocked) {
-                                        viewModel.sendMessage(conversationId, text.trim(), replyToId = reply?.id, replyToText = reply?.text, replyToSender = reply?.senderName)
-                                        text = ""; reply = null
+                    GlassCard(
+                        Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(27.dp),
+                        backgroundColor = if (config.isDark) {
+                            Color(0xFF0A1420).copy(alpha = .74f)
+                        } else {
+                            Color.White.copy(alpha = .62f)
+                        },
+                        elevation = 7.dp
+                    ) {
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .animateContentSize(
+                                    if (config.isReducedMotion) tween(0)
+                                    else spring(dampingRatio = .76f, stiffness = 420f)
+                                )
+                        ) {
+                            reply?.let { target ->
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .background(config.accentColor.copy(alpha = .075f))
+                                        .padding(start = 10.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        Modifier
+                                            .width(3.dp)
+                                            .size(width = 3.dp, height = 32.dp)
+                                            .clip(RoundedCornerShape(999.dp))
+                                            .background(config.accentColor)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            target.senderName.ifBlank { "Reply" },
+                                            color = config.accentColor,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text(
+                                            target.text,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
                                     }
-                                }, tint = Color.White, backgroundColor = config.accentColor.copy(alpha = .90f), size = 40.dp)
+                                    GlassIconButton(
+                                        Icons.Default.Close,
+                                        "Cancel reply",
+                                        { reply = null },
+                                        size = 30.dp
+                                    )
+                                }
+                            }
+
+                            Row(
+                                Modifier.padding(horizontal = 3.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                GlassIconButton(
+                                    Icons.Default.Add,
+                                    "Attach",
+                                    { attachmentSheet = true },
+                                    size = 36.dp
+                                )
+                                Spacer(Modifier.width(3.dp))
+                                GlassTextField(
+                                    value = text,
+                                    onValueChange = { if (it.length <= 8000) text = it },
+                                    placeholder = if (other.uid in blocked) "Contact blocked" else "Message…",
+                                    modifier = Modifier.weight(1f),
+                                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
+                                    singleLine = false,
+                                    maxLines = 5,
+                                    shape = RoundedCornerShape(22.dp),
+                                    minHeight = 40.dp,
+                                    horizontalPadding = 11.dp,
+                                    verticalPadding = 7.dp
+                                )
+                                Spacer(Modifier.width(3.dp))
+                                AnimatedContent(
+                                    targetState = text.isBlank(),
+                                    transitionSpec = {
+                                        fadeIn(tween(if (config.isReducedMotion) 0 else 140)) togetherWith
+                                            fadeOut(tween(if (config.isReducedMotion) 0 else 100))
+                                    },
+                                    label = "composer_action"
+                                ) { blank ->
+                                    if (blank) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            GlassIconButton(
+                                                Icons.Default.PhotoCamera,
+                                                "Camera",
+                                                onNavigateToCamera,
+                                                size = 36.dp
+                                            )
+                                            var dx by remember { mutableFloatStateOf(0f) }
+                                            var dy by remember { mutableFloatStateOf(0f) }
+                                            val micX = if (recording && !locked) dx.coerceIn(-120f, 0f) else 0f
+                                            val micY = if (recording && !locked) dy.coerceIn(-120f, 0f) else 0f
+                                            Box(
+                                                Modifier
+                                                    .size(36.dp)
+                                                    .offset { IntOffset(micX.roundToInt(), micY.roundToInt()) }
+                                                    .clip(CircleShape)
+                                                    .background(
+                                                        if (config.isDark) Color.White.copy(alpha = .08f)
+                                                        else Color.White.copy(alpha = .50f)
+                                                    )
+                                                    .pointerInput(other.uid, blocked) {
+                                                        detectDragGesturesAfterLongPress(
+                                                            onDragStart = {
+                                                                dx = 0f
+                                                                dy = 0f
+                                                                locked = false
+                                                                keyboard?.hide()
+                                                                focus.clearFocus()
+                                                                requestCurrent()
+                                                            },
+                                                            onDragEnd = {
+                                                                if (recordingCurrent && !lockedCurrent) {
+                                                                    finishCurrent(true, true)
+                                                                }
+                                                                dx = 0f
+                                                                dy = 0f
+                                                            },
+                                                            onDragCancel = {
+                                                                if (recordingCurrent && !lockedCurrent) {
+                                                                    finishCurrent(false, false)
+                                                                }
+                                                                dx = 0f
+                                                                dy = 0f
+                                                            },
+                                                            onDrag = { change, amount ->
+                                                                change.consume()
+                                                                dx += amount.x
+                                                                dy += amount.y
+                                                                if (dx < -100f && recordingCurrent) {
+                                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                                    finishCurrent(false, false)
+                                                                    dx = 0f
+                                                                    dy = 0f
+                                                                } else if (dy < -100f && recordingCurrent && !lockedCurrent) {
+                                                                    locked = true
+                                                                    dx = 0f
+                                                                    dy = 0f
+                                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                                }
+                                                            }
+                                                        )
+                                                    },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Mic,
+                                                    "Press and hold to record",
+                                                    Modifier.size(20.dp),
+                                                    tint = MaterialTheme.colorScheme.onSurface
+                                                )
+                                            }
+                                        }
+                                    } else {
+                                        GlassIconButton(
+                                            Icons.Default.Send,
+                                            "Send",
+                                            {
+                                                if (text.isNotBlank() && other.uid !in blocked) {
+                                                    viewModel.sendMessage(
+                                                        conversationId,
+                                                        text.trim(),
+                                                        replyToId = reply?.id,
+                                                        replyToText = reply?.text,
+                                                        replyToSender = reply?.senderName
+                                                    )
+                                                    text = ""
+                                                    reply = null
+                                                }
+                                            },
+                                            tint = Color.White,
+                                            backgroundColor = config.accentColor.copy(alpha = .92f),
+                                            size = 36.dp
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
