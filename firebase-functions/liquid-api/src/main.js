@@ -448,7 +448,7 @@ export default async ({req, res, error}) => {
         resource_type: meta.resourceType,
         type: meta.deliveryType || 'authenticated'
       });
-      const maxStoredSize = 25 * 1024 * 1024 + (meta.encrypted ? 2048 : 0);
+      const maxStoredSize = 10 * 1024 * 1024;
       if (!asset?.bytes || asset.bytes > maxStoredSize) throw new Error('Incomplete or oversized file');
       if (!meta.conversationId && !String(meta.originalMime || '').startsWith('image/')) {
         throw new Error('Profile photo must be an image');
@@ -459,7 +459,8 @@ export default async ({req, res, error}) => {
         mimeType: String(meta.originalMime || ''),
         storageMimeType: meta.encrypted ? 'application/octet-stream' : String(meta.originalMime || ''),
         size: Number(asset.bytes || 0),
-        version: Number(asset.version || p.version || 0)
+        version: Number(asset.version || p.version || 0),
+        format: String(asset.format || (meta.resourceType === 'raw' ? 'bin' : 'jpg'))
       });
       if (!meta.conversationId) {
         const previousPhoto = String((await own.get()).data()?.photoUrl || '');
@@ -471,6 +472,19 @@ export default async ({req, res, error}) => {
         }
       }
       return res.json({url: 'cloudinary:' + p.fileId});
+    }
+
+    if (p.action === 'uploadAbort') {
+      if (!/^[a-z0-9]{32}$/.test(p.fileId || '')) return res.json({ok: true});
+      const metaRef = db.doc('media/' + p.fileId);
+      const snap = await metaRef.get();
+      if (!snap.exists) return res.json({ok: true});
+      const meta = snap.data();
+      if (meta?.owner !== uid) throw new Error('File access denied');
+      if (meta.ready) throw new Error('Completed media cannot be aborted');
+      await destroyCloudinary(meta).catch(() => {});
+      await metaRef.delete().catch(() => {});
+      return res.json({ok: true});
     }
 
     if (p.action === 'mediaAccess') {
@@ -510,14 +524,18 @@ export default async ({req, res, error}) => {
           throw new Error('Photo is private');
         }
       }
-      const url = cloudinary.url(meta.publicId, {
-        resource_type: meta.resourceType || 'raw',
-        type: meta.deliveryType || 'authenticated',
-        secure: true,
-        sign_url: true,
-        version: meta.version || undefined
-      });
-      return res.json({url, validForMs: 45000});
+      const expiresAt = Math.floor(Date.now() / 1000) + 300;
+      const url = cloudinary.utils.private_download_url(
+        meta.publicId,
+        meta.format || (meta.resourceType === 'raw' ? 'bin' : 'jpg'),
+        {
+          resource_type: meta.resourceType || 'raw',
+          type: meta.deliveryType || 'authenticated',
+          expires_at: expiresAt,
+          attachment: false
+        }
+      );
+      return res.json({url, validForMs: 240000});
     }
     if (p.action === 'report') {
       if (!p.otherUid || p.otherUid === uid || String(p.reason || '').trim().length < 4) throw new Error('Please enter a report reason');
