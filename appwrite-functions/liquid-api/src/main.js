@@ -604,6 +604,34 @@ export default async ({req, res, error}) => {
       return res.json({ok: true, deletedBefore: now});
     }
 
+    if (p.action === 'authorizeForwardMedia') {
+      const source = await allowed(db, String(p.conversationId || ''), uid);
+      const target = await allowed(db, String(p.targetId || ''), uid);
+      const sourceMessage = await source.ref.collection('messages')
+        .doc(String(p.messageId || ''))
+        .get();
+      const message = sourceMessage.data();
+      if (
+        !message ||
+        message.deletedForEveryone ||
+        (message.hiddenFor || []).includes(uid) ||
+        !String(message.mediaUrl || '').startsWith('appwrite:')
+      ) {
+        throw new Error('Media unavailable');
+      }
+
+      const fileId = String(message.mediaUrl).slice(9);
+      const mediaRef = db.doc('media/' + fileId);
+      const media = (await mediaRef.get()).data();
+      if (!media?.ready) throw new Error('Media unavailable');
+
+      await mediaRef.update({
+        forwardedTo: FieldValue.arrayUnion(target.ref.id),
+        revokedFrom: FieldValue.arrayRemove(target.ref.id)
+      });
+      return res.json({ok: true});
+    }
+
     if (p.action === 'forward') {
       const sourceSnap = await ref.collection('messages').doc(String(p.messageId)).get();
       const source = sourceSnap.data();
