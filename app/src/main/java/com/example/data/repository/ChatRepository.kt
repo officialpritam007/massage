@@ -2,6 +2,7 @@ package com.example.data.repository
 
 import android.net.Uri
 import com.example.data.crypto.E2eeCrypto
+import com.example.data.local.SecureSnippetStore
 import com.example.data.model.*
 import com.example.data.network.LiquidApi
 import com.google.firebase.Timestamp
@@ -66,6 +67,8 @@ class ChatRepository(
   private var failedUpload: QueuedMediaUpload? = null
   private var retryUpload: (() -> Unit)? = null
   private var resumed = false
+  @Volatile private var lastPresenceWriteAt = 0L
+  private val previewHydration = mutableSetOf<String>()
 
   private val _currentUser = MutableStateFlow(User())
   val currentUser = _currentUser.asStateFlow()
@@ -261,7 +264,10 @@ class ChatRepository(
     retryUpload = null
     LiquidApi.clear()
     prefs.edit().clear().apply()
-    if (account.isNotBlank()) E2eeCrypto.deleteIdentity(LiquidApi.context, account)
+    if (account.isNotBlank()) {
+      SecureSnippetStore.clearUser(LiquidApi.context, account)
+      E2eeCrypto.deleteIdentity(LiquidApi.context, account)
+    }
     auth.signOut()
     deletedBefore.clear()
     legacyDeleteMigrations.clear()
@@ -523,7 +529,10 @@ class ChatRepository(
             showPreview = anyBoolean(n["showPreview"], true)
           )
         }
-        prefs.edit().putBoolean("notifications", _notifications.value.messages).apply()
+        prefs.edit()
+          .putBoolean("notifications", _notifications.value.messages)
+          .putBoolean("notificationPreview", _notifications.value.showPreview)
+          .apply()
       }
     }
 
@@ -573,7 +582,7 @@ class ChatRepository(
     heartbeat = scope.launch {
       var ticks = 0
       while (isActive && uid == account) {
-        if (resumed && ticks++ % 60 == 0) writePresence(true)
+        if (resumed && ticks++ % 15 == 0) writePresence(true)
         refreshUsers()
         refreshTyping()
         expireMessages()
@@ -596,7 +605,7 @@ class ChatRepository(
       phoneNumber = if (own) snapshot.safeString("phoneNumber") else "",
       photoUrl = pubPhoto,
       bio = snapshot.safeString("bio"),
-      isOnline = snapshot.safeBoolean("isOnline") && System.currentTimeMillis() - heartbeatAt < 90_000,
+      isOnline = snapshot.safeBoolean("isOnline") && System.currentTimeMillis() - heartbeatAt < 30_000,
       lastSeen = snapshot.safeLong("lastSeen"),
       lastActiveAt = heartbeatAt,
       onlineVisible = snapshot.safeBoolean("onlineVisible", true),
@@ -618,7 +627,18 @@ class ChatRepository(
     fun flag(name: String) = (snapshot.get(name) as? List<*>)?.contains(uid) == true
     val lastId = snapshot.safeString("lastMessageId")
     val hiddenLast = (snapshot.get("hiddenLastFor") as? Map<*, *>)?.get(uid) as? String
-    val preview = if (lastId.isNotBlank() && hiddenLast == lastId) "" else snapshot.safeString("lastMessageText")
+    val serverPreview = if (lastId.isNotBlank() && hiddenLast == lastId) "" else snapshot.safeString("lastMessageText")
+    val cachedPreview = lastId.takeIf { it.isNotBlank() }?.let {
+      SecureSnippetStore.getLast(LiquidApi.context, uid, snapshot.id, it)
+    }
+    if (serverPreview == "Encrypted message" && cachedPreview.isNullOrBlank() && lastId.isNotBlank()) {
+      hydrateEncryptedPreview(snapshot.id, lastId)
+    }
+    val preview = when {
+      !cachedPreview.isNullOrBlank() -> cachedPreview
+      serverPreview == "Encrypted message" -> "Decrypting…"
+      else -> serverPreview
+    }
     return Conversation(
       id = snapshot.id,
       participantIds = ids,
@@ -638,13 +658,61 @@ class ChatRepository(
 
   private fun refreshUsers() {
     _users.update { users ->
-      users.map { user -> user.copy(isOnline = user.isOnline && System.currentTimeMillis() - user.lastActiveAt < 90_000) }
+      users.map { user -> user.copy(isOnline = user.isOnline && System.currentTimeMillis() - user.lastActiveAt < 30_000) }
     }
     _conversations.update { conversations ->
       conversations.map { conversation ->
         val user = _users.value.find { it.uid == conversation.otherUser.uid } ?: conversation.otherUser
-        val online = user.isOnline && System.currentTimeMillis() - user.lastActiveAt < 90_000
+        val online = user.isOnline && System.currentTimeMillis() - user.lastActiveAt < 30_000
         conversation.copy(otherUser = user.copy(isOnline = online), isOnline = online)
+      }
+    }
+  }
+
+  private fun cacheConversationPreview(cid: String, messageId: String, text: String) {
+    if (text.isBlank()) return
+    _conversations.update { conversations ->
+      conversations.map { conversation ->
+        if (conversation.id == cid && conversation.lastMessageText in setOf("Encrypted message", "Decrypting…")) {
+          conversation.copy(lastMessageText = text.take(500))
+        } else conversation
+      }
+    }
+  }
+
+  private fun hydrateEncryptedPreview(cid: String, messageId: String) {
+    val token = "$cid:$messageId"
+    if (!previewHydration.add(token)) return
+    scope.launch(Dispatchers.IO) {
+      try {
+        val snapshot = db.document("conversations/$cid/messages/$messageId").get().await()
+        val message = if (snapshot.exists()) toMessage(cid, snapshot) else null
+        val text = message?.text
+          ?.takeIf { it.isNotBlank() && !it.startsWith("🔒") }
+        if (!text.isNullOrBlank()) {
+          SecureSnippetStore.put(LiquidApi.context, uid, cid, messageId, text)
+          cacheConversationPreview(cid, messageId, text)
+        }
+      } catch (_: CancellationException) {
+        throw
+      } catch (_: Throwable) {
+        // Leave the compact "Decrypting…" state; a later snapshot/open will retry.
+      } finally {
+        previewHydration.remove(token)
+      }
+    }
+  }
+
+  private fun markConversationActive(cid: String) {
+    val now = System.currentTimeMillis()
+    _conversations.update { conversations ->
+      conversations.map { conversation ->
+        if (conversation.id == cid) {
+          conversation.copy(
+            isOnline = true,
+            otherUser = conversation.otherUser.copy(isOnline = true, lastActiveAt = now)
+          )
+        } else conversation
       }
     }
   }
@@ -655,10 +723,13 @@ class ChatRepository(
       if (error != null) return@addSnapshotListener
       guardSnapshot("Typing") {
         val other = _conversations.value.find { it.id == cid }?.otherUser?.uid
-        val until = snapshot?.documents?.firstOrNull { it.id == other }?.safeLong("until") ?: 0L
+        val now = System.currentTimeMillis()
+        val remoteUntil = snapshot?.documents?.firstOrNull { it.id == other }?.safeLong("until") ?: 0L
+        val until = if (remoteUntil > now) minOf(remoteUntil, now + 3_000L) else 0L
+        if (until > now) markConversationActive(cid)
         _conversations.update { conversations ->
           conversations.map {
-            if (it.id == cid) it.copy(typingUntil = until, isTyping = until > System.currentTimeMillis()) else it
+            if (it.id == cid) it.copy(typingUntil = until, isTyping = until > now) else it
           }
         }
       }
@@ -692,7 +763,8 @@ class ChatRepository(
           scheduleSyncRecovery("Messages", error)
           return@addSnapshotListener
         }
-        if (snapshot != null) guardSnapshot("Messages") {
+        if (snapshot != null) scope.launch(Dispatchers.IO) {
+          guardSnapshot("Messages") {
           val pageDocuments = snapshot.documents.take(recentLimit.toInt())
           val extraDocument = snapshot.documents.getOrNull(recentLimit.toInt())
           if (cid !in historyPagingStarted) {
@@ -741,8 +813,10 @@ class ChatRepository(
             .sortedBy { it.createdAt }
 
           _messages.update { it + (cid to merged) }
+          if (recent.any { it.senderId != uid }) markConversationActive(cid)
           recent.filter { it.senderId != uid && it.status == MessageDeliveryStatus.SENT }
             .forEach { receipt(cid, it.id, "DELIVERED") }
+          }
         }
       }
   }
@@ -758,7 +832,7 @@ class ChatRepository(
     _historyLoading.update { it + (cid to true) }
     historyPagingStarted += cid
 
-    scope.launch {
+    scope.launch(Dispatchers.IO) {
       try {
         val pageSize = 60L
         val snapshot = db.collection("conversations/$cid/messages")
@@ -817,7 +891,7 @@ class ChatRepository(
       return null
     }
 
-    val createdAt = snapshot.safeLong("createdAt")
+    val createdAt = snapshot.safeLong("serverCreatedAt", snapshot.safeLong("createdAt"))
     val senderId = snapshot.safeString("senderId")
     val expectedSenderKeyId = if (senderId == uid) {
       E2eeCrypto.ensureIdentity(LiquidApi.context, uid).keyId
@@ -845,6 +919,10 @@ class ChatRepository(
 
     val decryptedText = decrypted?.optString("text")
       ?.takeIf { it.isNotBlank() }
+    if (!decryptedText.isNullOrBlank()) {
+      SecureSnippetStore.put(LiquidApi.context, uid, cid, snapshot.id, decryptedText)
+      cacheConversationPreview(cid, snapshot.id, decryptedText)
+    }
     val encryptedUnavailable = encryptedMap != null && decrypted == null
 
     val cutoff = deletedBefore[cid] ?: 0L
@@ -972,6 +1050,7 @@ class ChatRepository(
       "voiceDurationSeconds" to voiceSeconds,
       "waveform" to waveform,
       "createdAt" to now,
+      "serverCreatedAt" to FieldValue.serverTimestamp(),
       "status" to "SENT",
       "isDeleted" to false,
       "deletedForEveryone" to false,
@@ -1063,6 +1142,10 @@ class ChatRepository(
       )
       true
     }.await()
+    if (created && text.isNotBlank()) {
+      SecureSnippetStore.put(LiquidApi.context, uid, cid, id, text)
+      cacheConversationPreview(cid, id, text)
+    }
     return created
   }
 
@@ -1644,20 +1727,24 @@ class ChatRepository(
   fun setTyping(cid: String, value: Boolean) {
     if (uid.isBlank()) return
     val now = System.currentTimeMillis()
-    if (value && now - (lastTyping[cid] ?: 0) < 2_500) return
+    if (value && now - (lastTyping[cid] ?: 0) < 1_500) return
     lastTyping[cid] = if (value) now else 0
     db.document("conversations/$cid/typing/$uid")
-      .set(mapOf("until" to if (value) now + 6_000 else 0L))
+      .set(mapOf("until" to if (value) now + 3_000 else 0L))
       .addOnFailureListener { }
   }
 
   fun setPresence(value: Boolean) {
     resumed = value
-    if (uid.isNotBlank()) writePresence(value)
+    if (uid.isBlank()) return
+    val now = System.currentTimeMillis()
+    if (value && now - lastPresenceWriteAt < 15_000L) return
+    writePresence(value)
   }
 
   private fun writePresence(value: Boolean) {
     val now = System.currentTimeMillis()
+    lastPresenceWriteAt = now
     db.document("directory/$uid").set(
       mapOf(
         "isOnline" to (value && _privacy.value.onlineVisibility != "Nobody"),
