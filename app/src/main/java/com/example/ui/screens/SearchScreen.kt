@@ -257,7 +257,10 @@ fun SearchScreen(
               GlassCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(18.dp),
-                onClick = { onNavigateToConversation(msg.conversationId) }
+                onClick = {
+                  viewModel.requestMessageJump(msg.conversationId, msg.id)
+                  onNavigateToConversation(msg.conversationId)
+                }
               ) {
                 Row(
                   modifier = Modifier
