@@ -25,10 +25,15 @@ class LiquidChatApplication : Application() {
     if (firebaseReady) {
       StartupCrashStore.markStage(this, "firebase_ready")
       runCatching {
-        FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
-          if (BuildConfig.DEBUG) DebugAppCheckProviderFactory.getInstance()
-          else PlayIntegrityAppCheckProviderFactory.getInstance()
-        )
+        when (BuildConfig.APP_CHECK_PROVIDER.lowercase()) {
+          "debug" -> FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
+            DebugAppCheckProviderFactory.getInstance()
+          )
+          "play_integrity" -> FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
+            PlayIntegrityAppCheckProviderFactory.getInstance()
+          )
+          else -> Unit
+        }
       }
     } else {
       StartupCrashStore.markStage(this, "firebase_unavailable")
