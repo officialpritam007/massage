@@ -85,6 +85,10 @@ class ChatRepository(
   val loading = _loading.asStateFlow()
   private val _upload = MutableStateFlow<Float?>(null)
   val upload = _upload.asStateFlow()
+  private val _historyHasOlder = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+  val historyHasOlder = _historyHasOlder.asStateFlow()
+  private val _historyLoading = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+  val historyLoading = _historyLoading.asStateFlow()
 
   init {
     if (isUserLoggedIn()) startSync() else _loading.value = false
@@ -472,14 +476,19 @@ class ChatRepository(
     val limit = limits.getOrPut(cid) { 60 }
     messageListeners[cid] = db.collection("conversations/$cid/messages")
       .orderBy("createdAt", Query.Direction.DESCENDING)
-      .limit(limit)
+      .limit(limit + 1)
       .addSnapshotListener { snapshot, error ->
         if (error != null) {
+          _historyLoading.update { it + (cid to false) }
           _error.value = friendlyError(error)
           return@addSnapshotListener
         }
         if (snapshot != null) guardSnapshot("Messages") {
-          val list = snapshot.documents
+          val hasOlder = snapshot.documents.size.toLong() > limit
+          val pageDocuments = snapshot.documents.take(limit.toInt())
+          _historyHasOlder.update { it + (cid to hasOlder) }
+          _historyLoading.update { it + (cid to false) }
+          val list = pageDocuments
             .mapNotNull { doc -> runCatching { toMessage(cid, doc) }.getOrNull() }
             .sortedBy { it.createdAt }
           val pending = _messages.value[cid].orEmpty().filter {
@@ -493,6 +502,9 @@ class ChatRepository(
   }
 
   fun loadOlder(cid: String) {
+    if (_historyLoading.value[cid] == true) return
+    if (_historyHasOlder.value[cid] == false) return
+    _historyLoading.update { it + (cid to true) }
     limits[cid] = (limits[cid] ?: 60) + 60
     messageListeners.remove(cid)?.remove()
     observeConversation(cid)
