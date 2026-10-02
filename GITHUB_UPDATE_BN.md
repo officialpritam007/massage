@@ -1,51 +1,37 @@
-# GitHub update — Liquid Chat 4.1.1
+# GitHub update — Liquid Chat 4.2.0
 
-এই repository-তে current runtime architecture হলো **Firebase + Cloudinary**। পুরনো Appwrite backend source আর ব্যবহার করা হবে না।
+বর্তমান architecture:
 
-## Current source of truth
+**Firebase Auth + Cloud Firestore + Cloudinary direct upload**
 
-- Android app: `app/`
-- Firebase backend: `firebase-functions/liquid-api/`
-- Firestore rules: `firestore.rules`
-- Cloudinary setup: `CLOUDINARY_SETUP.md`
-- APK build: `.github/workflows/build-apk.yml`
-- Firebase Function deploy: `.github/workflows/deploy-firebase-function.yml`
-- Firestore rules deploy: `.github/workflows/deploy-firebase-rules.yml`
+Firebase Functions, Appwrite এবং Firebase Storage runtime থেকে বাদ দেওয়া হয়েছে।
 
-## GitHub configuration
+## GitHub variables
 
-Repository variable:
+চাইলে repository variables-এ দিন:
 
-- `LIQUID_API_URL` → deployed Firebase `liquidApi` HTTPS URL.
+- `CLOUDINARY_CLOUD_NAME=mthzgqhv`
+- `CLOUDINARY_UPLOAD_PRESET=liquid_chat_unsigned`
 
-Repository secret:
+এগুলো secret নয়।
 
-- `FIREBASE_SERVICE_ACCOUNT_JSON` → service account JSON used only by the deployment workflow.
+## Cloudinary-তে একবার যা করতে হবে
 
-Cloudinary API secret GitHub-এ দেবেন না।
+Cloudinary → Settings → Upload → Upload presets → Add upload preset:
 
-## Firebase Functions secrets
+- Signing mode: **Unsigned**
+- Preset name: **liquid_chat_unsigned**
+- Asset folder: **liquid-chat**
+- Allowed formats সীমিত রাখুন
 
-Firebase project `liquid-chat-v2`-এ একবার configure করুন:
+API Secret কখনও GitHub বা APK-তে দেবেন না।
 
-```bash
-firebase functions:secrets:set CLOUDINARY_CLOUD_NAME
-firebase functions:secrets:set CLOUDINARY_API_KEY
-firebase functions:secrets:set CLOUDINARY_API_SECRET
-```
+## Build
 
-এরপর `main` branch-এ backend change merge হলে Firebase Function deployment workflow চলবে।
+Actions → **Build Android APK** → Run workflow.
 
-## Media limit
+Workflow Firestore rules test, Android unit test এবং APK build করবে।
 
-Cloudinary Free plan-এর connected account-এ raw asset limit 10 MB। Encrypted chat attachment raw asset হিসেবে যায়, তাই Android client limit 9 MB রাখা হয়েছে যাতে encryption overhead-এর পরেও upload safe থাকে।
+## গুরুত্বপূর্ণ limitation
 
-## Release check
-
-1. GitHub Actions-এর Android build সবুজ হতে হবে।
-2. Firebase Function deployment সবুজ হতে হবে।
-3. দুইটি real account/device দিয়ে text + photo + voice/video media + delivered/read + background notification test করতে হবে।
-4. Cloudinary Media Library-তে `liquid-chat/` asset তৈরি হচ্ছে কিনা verify করতে হবে।
-5. Delete-for-everyone/profile-photo replacement-এর পরে Cloudinary asset cleanup verify করতে হবে।
-
-Private release keystore, service-account JSON, Cloudinary API secret বা local `.env` repository-তে commit করবেন না।
+Free backendless mode-এ killed-app push notification guarantee করা যায় না। Media public Cloudinary delivery URL ব্যবহার করে। Delete-for-everyone Firestore message সরায়, কিন্তু trusted Cloudinary Admin backend না থাকায় remote Cloudinary object delete guarantee করা যায় না।

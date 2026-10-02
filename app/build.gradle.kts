@@ -16,11 +16,12 @@ android {
     applicationId = "com.aistudio.liquidchat.vwnxkp"
     minSdk = 24
     targetSdk = 36
-    versionCode = 411
-    versionName = "4.1.1"
+    versionCode = 420
+    versionName = "4.2.0"
 
     fun config(name: String, fallback: String = "") = providers.gradleProperty(name).orElse(providers.environmentVariable(name)).getOrElse(fallback)
-    buildConfigField("String", "LIQUID_API_URL", "\"${config("LIQUID_API_URL")}\"")
+    buildConfigField("String", "CLOUDINARY_CLOUD_NAME", "\"${config("CLOUDINARY_CLOUD_NAME", "mthzgqhv")}\"")
+    buildConfigField("String", "CLOUDINARY_UPLOAD_PRESET", "\"${config("CLOUDINARY_UPLOAD_PRESET", "liquid_chat_unsigned")}\"")
     buildConfigField("String", "APP_CHECK_PROVIDER", "\"${config("APP_CHECK_PROVIDER", "none")}\"")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -102,7 +103,6 @@ dependencies {
 
   implementation(libs.firebase.firestore)
   implementation(libs.firebase.auth)
-  implementation(libs.firebase.messaging)
   implementation("com.google.firebase:firebase-appcheck-playintegrity")
   debugImplementation("com.google.firebase:firebase-appcheck-debug")
 

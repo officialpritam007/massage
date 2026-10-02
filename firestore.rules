@@ -20,46 +20,13 @@ service cloud.firestore {
         && request.auth.uid in get(/databases/$(database)/documents/conversations/$(cid)).data.participantIds;
     }
 
-    function validPrivateSettingsCreate() {
-      return request.resource.data.keys().hasOnly([
-        'appearance', 'privacy', 'notifications', 'blockedUserIds', 'tokens'
-      ]);
+    function validCloudinaryUrl(value) {
+      return value is string
+        && value.matches('^https://res\\.cloudinary\\.com/mthzgqhv/(image|video|raw)/upload/.*');
     }
 
-    function validPrivateSettingsUpdate() {
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-        'appearance', 'privacy', 'notifications', 'blockedUserIds', 'tokens'
-      ]);
-    }
-
-    function validOwnProfileCreate(uid) {
-      return owner(uid)
-        && request.resource.data.keys().hasOnly([
-          'uid', 'displayName', 'username', 'bio', 'email', 'phoneNumber',
-          'createdAt', 'appearance', 'privacy', 'notifications',
-          'blockedUserIds', 'tokens', 'installationId', 'dataEpoch',
-          'e2eePublicKey', 'e2eeKeyId'
-        ])
-        && request.resource.data.uid == uid;
-    }
-
-    function validOwnProfileUpdate(uid) {
-      return owner(uid)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'displayName', 'username', 'bio', 'email', 'phoneNumber',
-          'appearance', 'privacy', 'notifications', 'blockedUserIds', 'tokens',
-          'installationId', 'dataEpoch', 'e2eePublicKey', 'e2eeKeyId'
-        ]);
-    }
-
-    function validPresence() {
-      return request.resource.data.isOnline is bool
-        && request.resource.data.onlineVisible is bool
-        && request.resource.data.lastSeenVisible is bool
-        && request.resource.data.heartbeatAt is int
-        && request.resource.data.lastSeen is int
-        && request.resource.data.heartbeatAt <= request.time.toMillis() + 60000
-        && request.resource.data.lastSeen <= request.time.toMillis() + 60000;
+    function validOptionalCloudinaryPhoto(data) {
+      return !data.keys().hasAny(['photoUrl']) || validCloudinaryUrl(data.photoUrl);
     }
 
     function validE2eePayload(data) {
@@ -85,40 +52,40 @@ service cloud.firestore {
         && data.e2eeSignature is string;
     }
 
-    function validMediaE2eePayload(data) {
-      return data is map
-        && data.keys().hasOnly([
-          'e2eeVersion', 'e2eeEphemeralKey',
-          'e2eeSenderWrappedKey', 'e2eeSenderWrapIv',
-          'e2eeRecipientWrappedKey', 'e2eeRecipientWrapIv',
-          'e2eeSenderKeyId', 'e2eeRecipientKeyId', 'e2eeFileIv',
-          'e2eeSenderPublicKey', 'e2eeSignature'
-        ])
-        && data.e2eeVersion == 1
-        && data.e2eeEphemeralKey is string
-        && data.e2eeSenderWrappedKey is string
-        && data.e2eeSenderWrapIv is string
-        && data.e2eeRecipientWrappedKey is string
-        && data.e2eeRecipientWrapIv is string
-        && data.e2eeSenderKeyId is string
-        && data.e2eeRecipientKeyId is string
-        && data.e2eeFileIv is string
-        && data.e2eeSenderPublicKey is string
-        && data.e2eeSignature is string;
+    function validPresence() {
+      return request.resource.data.isOnline is bool
+        && request.resource.data.onlineVisible is bool
+        && request.resource.data.lastSeenVisible is bool
+        && request.resource.data.heartbeatAt is int
+        && request.resource.data.lastSeen is int
+        && request.resource.data.heartbeatAt <= request.time.toMillis() + 60000
+        && request.resource.data.lastSeen <= request.time.toMillis() + 60000;
     }
 
     match /users/{uid} {
-      // A private user document is readable only by its owner. Public contact data lives in /directory.
       allow read: if owner(uid);
 
-      // Owner-controlled profile + private settings. Public identity is mirrored to /directory.
-      allow create: if validOwnProfileCreate(uid) || (owner(uid) && validPrivateSettingsCreate());
-      allow update: if validOwnProfileUpdate(uid) || (owner(uid) && validPrivateSettingsUpdate());
-      allow delete: if false;
+      allow create: if owner(uid)
+        && request.resource.data.keys().hasOnly([
+          'uid', 'displayName', 'username', 'bio', 'email', 'phoneNumber', 'photoUrl',
+          'createdAt', 'appearance', 'privacy', 'notifications', 'blockedUserIds', 'tokens',
+          'installationId', 'dataEpoch', 'e2eePublicKey', 'e2eeKeyId'
+        ])
+        && (!request.resource.data.keys().hasAny(['uid']) || request.resource.data.uid == uid)
+        && validOptionalCloudinaryPhoto(request.resource.data);
+
+      allow update: if owner(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName', 'username', 'bio', 'email', 'phoneNumber', 'photoUrl',
+          'appearance', 'privacy', 'notifications', 'blockedUserIds', 'tokens',
+          'installationId', 'dataEpoch', 'e2eePublicKey', 'e2eeKeyId'
+        ])
+        && validOptionalCloudinaryPhoto(request.resource.data);
+
+      allow delete: if owner(uid);
     }
 
     match /directory/{uid} {
-      // Directory contains public identity plus privacy-filtered presence only.
       allow read: if signedIn();
 
       allow create: if owner(uid)
@@ -128,6 +95,7 @@ service cloud.firestore {
           'isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'
         ])
         && (!request.resource.data.keys().hasAny(['uid']) || request.resource.data.uid == uid)
+        && validOptionalCloudinaryPhoto(request.resource.data)
         && (
           !request.resource.data.keys().hasAll([
             'isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'
@@ -140,6 +108,7 @@ service cloud.firestore {
           'displayName', 'username', 'bio', 'photoUrl', 'e2eePublicKey', 'e2eeKeyId',
           'isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'
         ])
+        && validOptionalCloudinaryPhoto(request.resource.data)
         && (
           !request.resource.data.diff(resource.data).affectedKeys().hasAny([
             'isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'
@@ -147,27 +116,28 @@ service cloud.firestore {
           || validPresence()
         );
 
-      allow delete: if false;
+      allow delete: if owner(uid);
     }
 
     match /usernames/{username} {
       allow read: if signedIn();
+
       allow create: if signedIn()
         && request.resource.data.keys().hasOnly(['uid'])
         && request.resource.data.uid == request.auth.uid;
+
+      allow update: if signedIn()
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid'])
+        && request.resource.data.uid == request.auth.uid;
+
       allow delete: if signedIn() && resource.data.uid == request.auth.uid;
-      allow update: if false;
     }
 
     match /conversations/{cid} {
-      // Keep the collection-query predicate exactly aligned with
-      // whereArrayContains("participantIds", request.auth.uid). Extra type guards can
-      // make Firestore unable to prove a collection query is safe.
       allow read: if signedIn()
         && request.auth.uid in resource.data.participantIds;
 
-      // Core chat remains available even when the Firebase + Cloudinary media backend is unavailable.
-      // Creation is limited to a 1-to-1 conversation containing the authenticated user.
       allow create: if signedIn()
         && request.resource.data.participantIds is list
         && request.resource.data.participantIds.size() == 2
@@ -179,7 +149,6 @@ service cloud.firestore {
           'disappearingSeconds'
         ]);
 
-      // Participant clients may update only conversation presentation/summary fields.
       allow update: if participant(cid)
         && request.resource.data.participantIds == resource.data.participantIds
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -210,11 +179,8 @@ service cloud.firestore {
           && (
             !(request.resource.data.type in ['IMAGE', 'VIDEO', 'AUDIO', 'VOICE', 'FILE'])
             || (
-              request.resource.data.mediaUrl is string
-              && request.resource.data.mediaUrl.size() > 0
+              validCloudinaryUrl(request.resource.data.mediaUrl)
               && request.resource.data.text == ''
-              && request.resource.data.keys().hasAny(['mediaE2ee'])
-              && validMediaE2eePayload(request.resource.data.mediaE2ee)
               && (
                 !request.resource.data.keys().hasAny(['e2ee'])
                 || validE2eePayload(request.resource.data.e2ee)
@@ -276,26 +242,50 @@ service cloud.firestore {
             && request.resource.data.hiddenFor.hasAll(resource.data.hiddenFor)
             && request.resource.data.hiddenFor.size() == resource.data.hiddenFor.size() + 1
           )
+          ||
+          (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+            && request.resource.data.reactions is list
+            && request.resource.data.reactions.size() <= 20
+          )
         );
 
-        // Only the original sender may permanently delete a message.
-        allow delete: if participant(cid) && resource.data.senderId == request.auth.uid;
+        allow delete: if participant(cid)
+          && resource.data.senderId == request.auth.uid;
       }
 
       match /typing/{uid} {
         allow read: if participant(cid);
+
         allow create, update: if owner(uid)
           && participant(cid)
           && request.resource.data.keys().hasOnly(['until'])
           && request.resource.data.until is int
           && request.resource.data.until >= 0
           && request.resource.data.until <= request.time.toMillis() + 15000;
+
         allow delete: if owner(uid) && participant(cid);
       }
     }
 
-    // Admin-SDK / authenticated-server-only collections: media metadata, rate limits, sessions,
-    // tombstones, usernames and reports. Android clients must never read or mutate these directly.
+    match /reports/{reportId} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'reporterId', 'reportedUid', 'reason', 'createdAt'
+        ])
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.reportedUid is string
+        && request.resource.data.reportedUid != request.auth.uid
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() >= 4
+        && request.resource.data.reason.size() <= 500
+        && request.resource.data.createdAt is int
+        && request.resource.data.createdAt <= request.time.toMillis() + 60000
+        && request.resource.data.createdAt >= request.time.toMillis() - 300000;
+
+      allow read, update, delete: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

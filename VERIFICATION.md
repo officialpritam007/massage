@@ -1,38 +1,37 @@
-# Verification checklist — Liquid Chat 4.1.1
+# Verification — Liquid Chat 4.2.0 free direct mode
 
-## CI checks
+## CI
 
-The Android build workflow must pass all of these from the same revision:
+The same revision must pass:
 
 - Firestore security-rule emulator tests.
-- Firebase + Cloudinary backend JavaScript syntax validation.
 - Android unit tests.
 - Debug APK assembly.
 - APK artifact upload.
 
-The Firebase backend deployment workflow must also complete successfully on `main` whenever `firebase-functions/liquid-api/**`, `firebase.json` or the deployment workflow changes.
+## Cloudinary setup gate
 
-## Live acceptance checks
+Before media testing, confirm unsigned preset `liquid_chat_unsigned` exists in cloud `mthzgqhv`.
 
-Use two physical Android devices/accounts and verify:
+## Two-device acceptance
 
-- registration/login and cached-session reopen;
-- text send/receive, reply, typing bubble, ordering and retry;
-- Sending → Sent → Delivered → Read transitions;
-- background push delivery and notification tap;
-- profile-photo upload/change/delete;
-- photo/video/voice attachment upload, download, playback and cache reuse;
-- delete-for-me and delete-for-everyone;
-- privacy/block behaviour;
-- reinstall/logout/account-deletion cleanup.
+Verify with two Firebase accounts:
 
-## Cloudinary acceptance
+- registration/login;
+- realtime text send/receive;
+- reply/edit/reactions;
+- Sending → Sent → Delivered → Read;
+- typing and presence;
+- direct photo upload and display;
+- profile photo upload/change/remove;
+- voice/video upload if those formats are enabled;
+- delete-for-me and sender delete-for-everyone;
+- archive/favorite/mute/disappearing settings;
+- logout and sign-in again.
 
-- New app media appears under the `liquid-chat/` public-id namespace.
-- Chat media uses authenticated delivery and is not publicly retrievable without the signed URL.
-- Attachments above the app's 9 MB limit are rejected before upload.
-- Deleted/replaced media is removed or revoked by the backend.
+## Expected limitations
 
-## Release boundary
-
-A successful APK build proves compile/test integrity, not live backend correctness. Treat a revision as production-ready only after the deployment and two-device checks above pass with the actual Firebase project and Cloudinary account.
+- No Firebase Functions deployment.
+- No reliable FCM push when the app process is fully killed.
+- Direct Cloudinary media is public-by-URL.
+- Firestore deletion does not guarantee deletion of the Cloudinary asset itself.

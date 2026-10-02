@@ -1,65 +1,51 @@
-# Liquid Chat 4.1.1
+# Liquid Chat 4.2.0
 
-A Kotlin/Jetpack Compose, Android-native **1-to-1** real-time messaging app with an original Liquid Glass-inspired UI.
+A Kotlin/Jetpack Compose **1-to-1 realtime messaging app** using a zero-paid-backend architecture.
 
 **Developer:** Pritam Pal · **Support:** officialpritam07@gmail.com  
 © 2026 Pritam Pal
 
-## Product scope
+## Architecture
 
-- 1-to-1 private messaging only. Group chat, Communities and Updates are out of scope.
-- Firebase Authentication + Firestore realtime snapshots + FCM push delivery.
-- Authenticated Cloudinary media storage with short-lived signed delivery URLs.
-- Server-authoritative message mutations and permanent deletion tombstones.
+- **Firebase Authentication** — account/session identity.
+- **Cloud Firestore** — profiles, directory, 1-to-1 conversations, messages, typing, presence, settings and delivery/read state.
+- **Cloudinary Free** — direct unsigned media uploads. Firestore stores the returned `secure_url`.
+- **No Firebase Functions, Appwrite, Firebase Storage or paid custom backend.**
 
-## Included behaviour
+## Messaging
 
-- All / Favorites / Archived / Settings floating navigation.
-- Balanced frosted surfaces, crystal wallpaper, light/dark themes and expressive spring motion.
-- Remote-only typing bubble in the message area; it expands into the received message bubble.
-- Online / last-seen presence with privacy controls and direct offline write when the app stops.
-- Swipe-to-reply and voice recording with lock, cancel, pause/resume and preview-before-send.
-- Durable local send queue, optimistic messages, idempotent server writes and explicit retry states.
-- Sending / Sent / Delivered / Read / Failed message delivery states.
-- Authenticated Cloudinary uploads, private photo/video/voice retrieval and cache-aware playback.
-- Chat attachments are capped at 9 MB in the Android client to stay below the connected Cloudinary Free-plan raw-asset limit.
-- Reply, edit, delete-for-me, delete-for-everyone, reactions, pin, star and forward actions.
-- Permanent Delete Chat for the current account using server-side `deletedFor` / `deletedBefore` state.
-- Search, profile, block/report, privacy and notification settings.
-- Developer diagnostics for Firebase Auth, Firestore, FCM, backend and Cloudinary configuration.
-- Calls, video calls, groups, Updates and Communities are not part of the current product scope.
+- Optimistic send queue with retry.
+- Realtime Firestore receive.
+- Sending → Sent → Delivered → Read state.
+- Reply, edit, pin, star, reactions, delete-for-me and sender-only delete-for-everyone.
+- Favorites, archive, mute, disappearing timer and chat wallpaper.
+- Text payloads retain the app's device-bound E2EE layer.
+- Media uploads are **not E2EE** in direct unsigned mode; Cloudinary returns public delivery URLs.
 
-## Permanent deletion model
+## Cloudinary
 
-Deletion is **not** based on a local `hidden:*` preference as the source of truth.
+Android uploads directly to `https://api.cloudinary.com/v1_1/<cloud-name>/auto/upload`
+with an **unsigned upload preset**. The APK contains only the public cloud name and preset name,
+never a Cloudinary API secret.
 
-- **Delete for me:** server records a per-user hidden tombstone and updates `hiddenFor` when the message still exists.
-- **Delete for everyone:** server records a global tombstone, deletes the message document, revokes media access and invalidates remote notifications.
-- **Delete chat:** server records the account in `deletedFor` and a `deletedBefore` cutoff. Old listeners, pagination and cache rebuilds are filtered by that server state.
-- Legacy device-local hidden flags are treated only as migration input and are converted to server-backed deletion.
+Current defaults:
 
-## Build and configure
+- Cloud name: `mthzgqhv`
+- Upload preset: `liquid_chat_unsigned`
+- Client attachment cap: 9 MB
 
-Read [CLOUDINARY_SETUP.md](CLOUDINARY_SETUP.md) before building. GitHub Actions verifies unit tests and builds a debug APK on `main`, hardening branches and pull requests. New uploads use Cloudinary; Firebase remains responsible for identity, message snapshots and push delivery.
+See [CLOUDINARY_SETUP.md](CLOUDINARY_SETUP.md).
 
-Read [GITHUB_UPDATE_BN.md](GITHUB_UPDATE_BN.md) before replacing an existing repository. Read [VERIFICATION.md](VERIFICATION.md) for verification status and remaining deployment gates.
+## Free-mode limitations
 
-## Important behaviour
+- Reliable push delivery while the Android process is fully killed requires a trusted sender/backend. This backendless build does not claim killed-app FCM push.
+- Delete-for-everyone removes the Firestore message and local cache. Without a trusted Cloudinary Admin backend, the uploaded Cloudinary object cannot be guaranteed to be remotely destroyed.
+- Removing/replacing a profile photo removes its Firestore reference but may leave the old Cloudinary object orphaned.
+- Anyone who obtains a direct Cloudinary media URL can fetch that asset.
+- Free operation depends on remaining inside Firebase and Cloudinary free quotas.
 
-- Send queues resume while the app process is active or when the app is reopened. Force-stopping Android prevents background execution; reopening resumes pending sends.
-- Search covers loaded conversations/messages; use **Load earlier messages** for older history.
-- Favorites are account-synced. Message stars, drafts and wallpaper are currently device-local.
-- New message text and chat-media payloads use the app's E2EE layer; this implementation has not undergone an independent security audit. Payments, linked devices and cloud backup are not included.
-- Cloudinary media links are short-lived and authorization is re-checked by the backend before a new token is issued.
-- Account deletion requires recent authentication and performs server-side cleanup.
-- The debug signing key is not a private production release key. Configure protected release signing before public distribution.
+## CI
 
-## Backend and security
+GitHub Actions validates free-tier configuration, runs Firestore security-rule emulator tests, runs Android unit tests, builds the debug APK and uploads the artifact.
 
-`firebase-functions/liquid-api/src/main.js` is the authenticated HTTP API. Firebase Admin credentials and the Cloudinary API key stay server-side. Android sends Firebase ID tokens to the backend and receives short-lived signed Cloudinary media URLs; the Cloudinary API secret stays server-side.
-
-`firestore.rules` limits Android to its own private settings, public directory presence, participant-only conversation reads and participant typing state. Conversation/message mutations, tombstones, media metadata, rate limits, sessions, usernames and reports remain server-authoritative.
-
-`storage.rules` deliberately blocks legacy Firebase Storage paths because current chat media is Cloudinary-authoritative; this prevents old client paths from bypassing participant validation and deletion revocation.
-
-The only backend source of truth is `firebase-functions/liquid-api/`. Legacy `functions/` and `appwrite-functions/` sources are intentionally removed.
+Firestore rules deploy independently; Firebase Functions are not part of this architecture.

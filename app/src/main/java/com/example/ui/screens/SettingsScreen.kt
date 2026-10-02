@@ -153,7 +153,7 @@ fun SettingsScreen(
         }
 
         SettingsSection("Data & tools") {
-          SettingRow("Data & Storage", "Encrypted media, cache and reinstall wipe") {
+          SettingRow("Data & Storage", "Cloudinary media, cache and local data") {
             scope.launch {
               cacheSize = withContext(Dispatchers.IO) {
                 context.cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
@@ -173,7 +173,7 @@ fun SettingsScreen(
         GlassCard(Modifier.fillMaxWidth()) {
           Column(Modifier.padding(8.dp)) {
             TextButton(onClick = { dialog = "Log out" }, modifier = Modifier.fillMaxWidth()) {
-              Text("Log out & erase all data", color = MaterialTheme.colorScheme.error)
+              Text("Log out", color = MaterialTheme.colorScheme.error)
             }
             TextButton(onClick = { dialog = "Delete account" }, modifier = Modifier.fillMaxWidth()) {
               Text("Delete account", color = MaterialTheme.colorScheme.error)
@@ -303,9 +303,9 @@ fun SettingsScreen(
 
           "Data & Storage" -> {
             Text("Temporary cache: ${cacheSize / 1024 / 1024} MB")
-            Text("Chat attachments are encrypted on-device before Cloudinary storage. Maximum attachment size: 9 MB.")
+            Text("Chat attachments upload directly to Cloudinary; the returned secure URL is saved in Firestore. Maximum attachment size: 9 MB.")
             Text("Liquid Chat does not back up app data or E2EE private keys.")
-            Text("After an uninstall, the next sign-in detects the new installation and permanently clears the previous Liquid Chat data before syncing.")
+            Text("Uninstalling clears this device's local cache and encryption identity; Firestore chat data is not automatically erased.")
             Text("Clearing temporary cache does not delete server data; logout does.")
             if (upload != null) {
               Text("Wait for the current upload to finish before clearing cache.")
@@ -341,8 +341,8 @@ fun SettingsScreen(
             Text("Liquid Chat ${BuildConfig.VERSION_NAME}")
             Text("Developed by Pritam Pal")
             Text("© 2026 Pritam Pal")
-            Text("Firebase authentication + Firestore realtime transport + Cloudinary encrypted media storage.")
-            Text("New message text and chat media use device-bound end-to-end encryption with signed key metadata. Security keys can be compared from a contact profile.")
+            Text("Firebase Auth + Cloud Firestore realtime data + direct Cloudinary media hosting.")
+            Text("Text messages keep device-bound E2EE. Direct Cloudinary media uses public secure URLs and is not end-to-end encrypted in the free backendless mode.")
             TextButton(
               onClick = {
                 context.startActivity(
@@ -357,10 +357,10 @@ fun SettingsScreen(
 
           "Log out" -> {
             Text(
-              "Logging out permanently erases your Liquid Chat conversations, shared media, profile photo and app profile from the server. This cannot be undone."
+              "Logging out clears this device session and local cache. Your Firebase account and Firestore chat data remain available for the next sign-in."
             )
             GlassButton(
-              text = "Log out & erase all data",
+              text = "Log out",
               onClick = {
                 busy = true
                 viewModel.logout { ok, _ ->
@@ -377,7 +377,7 @@ fun SettingsScreen(
           }
 
           "Delete account" -> {
-            Text("This permanently deletes your account, uploaded files and conversations. Sign in again first if the backend requests recent authentication.")
+            Text("This deletes your Firebase account/profile and hides your chats for this account. Direct Cloudinary media may remain stored because no Admin API secret is shipped in the app. Sign in again first if recent authentication is required.")
             GlassButton(
               text = "Permanently delete",
               onClick = {

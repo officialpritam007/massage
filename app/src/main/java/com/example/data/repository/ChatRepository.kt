@@ -7,7 +7,6 @@ import com.example.data.network.LiquidApi
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.*
-import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.tasks.await
@@ -17,10 +16,10 @@ import java.util.Date
 import java.util.UUID
 
 /**
- * Firestore snapshots are read-only message truth; authenticated server actions serialize
- * mutations. Snapshot decoding is deliberately tolerant of legacy Number/Timestamp/String data.
- * Permanent deletion is server-backed: message hiddenFor, global tombstones and per-user
- * deletedBefore cutoffs are all respected before anything reaches UI/search/cache.
+ * Firebase Auth + Cloud Firestore are the realtime source of truth.
+ * Client mutations are constrained by Firestore security rules. Cloudinary uploads happen
+ * directly from Android and Firestore stores only the returned secure media URL.
+ * Snapshot decoding remains tolerant of legacy Number/Timestamp/String data.
  */
 class ChatRepository(
   private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -245,32 +244,9 @@ class ChatRepository(
   private suspend fun enforceInstallationPrivacy() {
     val account = uid
     if (account.isBlank()) return
-
-    val localInstallationId = installationId()
-    val ref = db.document("users/$account")
-    val snapshot = ref.get().await()
-    if (!snapshot.exists()) return
-
-    val remoteInstallationId = snapshot.safeString("installationId")
-    when {
-      remoteInstallationId.isBlank() -> {
-        ref.update("installationId", localInstallationId).await()
-      }
-      remoteInstallationId != localInstallationId -> {
-        LiquidApi.call(
-          "purgeUserData",
-          mapOf("installationId" to localInstallationId)
-        )
-        prefs.edit().clear().apply()
-        LiquidApi.clearMediaCachesOnly()
-        deletedBefore.clear()
-        legacyDeleteMigrations.clear()
-        deleteTombstones.clear()
-        pendingPeers.clear()
-        _conversations.value = emptyList()
-        _messages.value = emptyMap()
-      }
-    }
+    db.document("users/$account")
+      .set(mapOf("installationId" to installationId()), SetOptions.merge())
+      .await()
   }
 
   private fun finishLocalLogout() {
@@ -427,33 +403,9 @@ class ChatRepository(
 
   fun logout(onResult: (Result<Unit>) -> Unit = {}) {
     setPresence(false)
-    val account = uid
-    if (account.isBlank()) {
-      finishLocalLogout()
-      onResult(Result.success(Unit))
-      return
-    }
-
-    _loading.value = true
-    scope.launch {
-      val wiped = runCatching {
-        LiquidApi.call(
-          "purgeUserData",
-          mapOf("installationId" to installationId())
-        )
-      }
-      if (wiped.isFailure) {
-        _loading.value = false
-        val failure = wiped.exceptionOrNull() ?: IllegalStateException("Unknown error")
-        _error.value = "Secure logout could not erase server data: " + friendlyError(failure)
-        onResult(Result.failure(failure))
-        return@launch
-      }
-
-      LiquidApi.clearMediaCachesOnly()
-      finishLocalLogout()
-      onResult(Result.success(Unit))
-    }
+    LiquidApi.clearMediaCachesOnly()
+    finishLocalLogout()
+    onResult(Result.success(Unit))
   }
 
   fun close() {
@@ -493,21 +445,6 @@ class ChatRepository(
     scope.launch {
       runCatching { ensureE2eeIdentityPublished() }
         .onFailure { scheduleSyncRecovery("Encryption identity", it) }
-    }
-
-    val device = prefs.getString("deviceId", null)
-      ?: UUID.randomUUID().toString().replace("-", "").also {
-        prefs.edit().putString("deviceId", it).apply()
-      }
-
-    FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
-      if (uid == account) {
-        db.document("users/$account")
-          .set(mapOf("tokens" to mapOf(device to token)), SetOptions.merge())
-          .addOnFailureListener { error ->
-            _syncWarning.value = "Notifications: " + friendlyError(error, "token registration failed")
-          }
-      }
     }
 
     listeners += db.document("users/$account").addSnapshotListener { snapshot, error ->
@@ -879,30 +816,7 @@ class ChatRepository(
     val expires = if (rawExpires == null) null else anyLong(rawExpires, 0L).takeIf { it > 0L }
     if (expires != null && expires <= System.currentTimeMillis()) return null
 
-    val storedMediaUrl = snapshot.safeString("mediaUrl")
-    val mediaEncryptedMap = (snapshot.get("mediaE2ee") as? Map<*, *>)
-      ?.entries
-      ?.filter { it.key is String }
-      ?.associate { it.key as String to it.value }
-    val mediaSecret = mediaEncryptedMap?.let { fields ->
-      E2eeCrypto.unwrapMediaSecret(
-        context = LiquidApi.context,
-        uid = uid,
-        senderId = senderId,
-        conversationId = cid,
-        messageId = snapshot.id,
-        fields = fields,
-        expectedSenderKeyId = expectedSenderKeyId
-      )
-    }
-    if (storedMediaUrl.isNotBlank() && mediaSecret != null) {
-      LiquidApi.registerMediaSecret(storedMediaUrl, mediaSecret)
-    }
-    val readableMediaUrl = if (mediaEncryptedMap != null && mediaSecret == null) {
-      ""
-    } else {
-      storedMediaUrl
-    }
+    val readableMediaUrl = snapshot.safeString("mediaUrl")
 
     return Message(
       id = snapshot.id,
@@ -1003,7 +917,7 @@ class ChatRepository(
 
     var recipientPublicKey = ""
     var recipientKeyId = ""
-    if (type == "TEXT" || mediaUrl.isNotBlank() || text.isNotBlank()) {
+    if (type == "TEXT" || text.isNotBlank()) {
       val recipient = db.document("directory/$otherUid").get().await()
       recipientPublicKey = recipient.safeString("e2eePublicKey")
       recipientKeyId = recipient.safeString("e2eeKeyId")
@@ -1027,8 +941,7 @@ class ChatRepository(
       "hiddenFor" to emptyList<String>(),
       "isEdited" to false,
       "isPinned" to false,
-      "reactions" to emptyList<Map<String, Any>>(),
-      "notificationPending" to true
+      "reactions" to emptyList<Map<String, Any>>()
     )
 
     var encryptedText = false
@@ -1051,22 +964,13 @@ class ChatRepository(
       message["e2ee"] = encrypted.fields
       encryptedText = true
     } else if (mediaUrl.isNotBlank()) {
-      val mediaSecret = LiquidApi.mediaSecret(mediaUrl)
-        ?: error("Attachment encryption key unavailable. Please attach the file again.")
-      message["mediaE2ee"] = E2eeCrypto.wrapMediaSecret(
-        context = LiquidApi.context,
-        uid = uid,
-        recipientPublicKeyBase64 = recipientPublicKey,
-        recipientKeyId = recipientKeyId,
-        conversationId = cid,
-        messageId = id,
-        secret = mediaSecret
-      )
-
       val replyId = data["replyToId"] as? String
       val replyTextValue = (data["replyToText"] as? String)?.take(500)
       val replySenderValue = (data["replyToSender"] as? String)?.take(60)
       if (text.isNotBlank() || !replyId.isNullOrBlank()) {
+        require(recipientPublicKey.isNotBlank() && recipientKeyId.isNotBlank()) {
+          "Contact encryption key unavailable"
+        }
         val encryptedMeta = E2eeCrypto.encryptText(
           context = LiquidApi.context,
           uid = uid,
@@ -1329,25 +1233,11 @@ class ChatRepository(
             _syncWarning.value = "Message send timed out. Tap the failed message to retry."
             continue
           }
-          val committedMediaUrl = (data["mediaUrl"] as? String).orEmpty()
-          if (committedMediaUrl.isNotBlank()) {
-            LiquidApi.forgetPendingMediaSecret(committedMediaUrl)
-          }
           prefs.edit().remove(key).apply()
           if (!created) {
             removeLocalMessage(cid, id)
           } else {
             updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.SENT) }
-            // Never send plaintext to the notification bridge. It receives only
-            // identifiers and reads the already-encrypted Firestore document.
-            scope.launch {
-              runCatching {
-                LiquidApi.call(
-                  "notifyExisting",
-                  mapOf("conversationId" to cid, "messageId" to id)
-                )
-              }
-            }
           }
         } catch (e: Exception) {
           if (e is CancellationException) throw e
@@ -1459,27 +1349,21 @@ class ChatRepository(
 
   fun uploadProfilePhoto(uri: Uri, onResult: (Result<String>) -> Unit = {}) {
     runAction {
-      val result = runCatching { LiquidApi.upload(uri, null) }
+      val result = runCatching {
+        val account = uid
+        require(account.isNotBlank()) { "Please sign in again" }
+        val url = LiquidApi.upload(uri, null)
+        db.document("users/$account").set(mapOf("photoUrl" to url), SetOptions.merge()).await()
+        db.document("directory/$account").set(mapOf("photoUrl" to url), SetOptions.merge()).await()
+        url
+      }
       onResult(result)
       result.getOrThrow()
     }
   }
 
   fun forwardMedia(message: Message, target: String) = runAction {
-    require(message.mediaUrl.startsWith("cloudinary:")) { "Media unavailable" }
-    require(LiquidApi.mediaSecret(message.mediaUrl) != null) {
-      "Legacy media cannot be forwarded securely. Download and attach it again."
-    }
-
-    LiquidApi.call(
-      "authorizeForwardMedia",
-      mapOf(
-        "conversationId" to message.conversationId,
-        "messageId" to message.id,
-        "targetId" to target
-      )
-    )
-
+    require(message.mediaUrl.startsWith("https://res.cloudinary.com/")) { "Media unavailable" }
     sendMessage(
       conversationId = target,
       text = message.text,
@@ -1490,11 +1374,39 @@ class ChatRepository(
     )
   }
 
-  private fun action(name: String, cid: String, id: String, extra: Map<String, Any?> = emptyMap()) = runAction {
-    LiquidApi.call(name, mapOf("conversationId" to cid, "messageId" to id) + extra)
-  }
+  fun addReaction(cid: String, id: String, emoji: String) = runAction {
+    val clean = emoji.trim().take(16)
+    require(clean.isNotBlank()) { "Invalid reaction" }
+    val ref = db.document("conversations/$cid/messages/$id")
+    db.runTransaction { tx ->
+      val snap = tx.get(ref)
+      check(snap.exists()) { "Message unavailable" }
 
-  fun addReaction(cid: String, id: String, emoji: String) = action("react", cid, id, mapOf("emoji" to emoji))
+      val next = (snap.get("reactions") as? List<*>).orEmpty().mapNotNull { item ->
+        val map = item as? Map<*, *> ?: return@mapNotNull null
+        val value = map["emoji"] as? String ?: return@mapNotNull null
+        val users = (map["userIds"] as? List<*>)?.filterIsInstance<String>().orEmpty().toMutableSet()
+        value to users
+      }.toMutableList()
+
+      val index = next.indexOfFirst { it.first == clean }
+      if (index >= 0) {
+        val users = next[index].second
+        if (!users.add(uid)) users.remove(uid)
+        if (users.isEmpty()) next.removeAt(index)
+      } else if (next.size < 20) {
+        next += clean to mutableSetOf(uid)
+      }
+
+      tx.update(
+        ref,
+        "reactions",
+        next.take(20).map { (value, users) ->
+          mapOf("emoji" to value, "userIds" to users.take(20))
+        }
+      )
+    }.await()
+  }
 
   fun deleteMessageForMe(cid: String, id: String) = runAction {
     val tombstone = cid + ":" + id
@@ -1520,27 +1432,9 @@ class ChatRepository(
       if (snap.exists()) {
         check(snap.safeString("senderId") == uid) { "Only the sender can do this" }
         val mediaUrl = snap.safeString("mediaUrl")
-
-        if (mediaUrl.startsWith("cloudinary:")) {
-          // A media delete is complete only after the storage object and Firestore
-          // message are removed by the authenticated backend together.
-          LiquidApi.call(
-            "deleteForEveryone",
-            mapOf("conversationId" to cid, "messageId" to id)
-          )
-          LiquidApi.invalidateMedia(mediaUrl)
-        } else {
-          ref.delete().await()
-          refreshConversationSummaryDirect(cid)
-          scope.launch {
-            runCatching {
-              LiquidApi.call(
-                "deleteForEveryone",
-                mapOf("conversationId" to cid, "messageId" to id)
-              )
-            }
-          }
-        }
+        ref.delete().await()
+        refreshConversationSummaryDirect(cid)
+        if (mediaUrl.isNotBlank()) LiquidApi.invalidateMedia(mediaUrl)
       }
       removeLocalMessage(cid, id)
     } catch (t: Throwable) {
@@ -1810,12 +1704,58 @@ class ChatRepository(
   }
 
   fun report(id: String, reason: String) = runAction {
-    LiquidApi.call("report", mapOf("otherUid" to id, "reason" to reason))
+    val clean = reason.trim().take(500)
+    require(id.isNotBlank() && id != uid && clean.length >= 4) { "Please enter a report reason" }
+    db.collection("reports").add(
+      mapOf(
+        "reporterId" to uid,
+        "reportedUid" to id,
+        "reason" to clean,
+        "createdAt" to System.currentTimeMillis()
+      )
+    ).await()
     _error.value = "Report submitted"
   }
 
   suspend fun deleteAccount(): Result<Unit> = runCatching {
-    LiquidApi.call("deleteAccount")
+    val user = auth.currentUser ?: error("Please sign in again")
+    val account = uid
+    val now = System.currentTimeMillis()
+    val token = user.getIdToken(false).await()
+    val authAgeMs = now - token.authTimestamp * 1000L
+    require(authAgeMs in 0..(5 * 60_000L)) {
+      "For security, sign out, sign in again, then retry account deletion."
+    }
+
+    val ownRef = db.document("users/$account")
+    val own = ownRef.get().await()
+    val previousUsername = own.safeString("username").trim().lowercase()
+
+    val conversations = db.collection("conversations")
+      .whereArrayContains("participantIds", account)
+      .get()
+      .await()
+    for (conversation in conversations.documents) {
+      conversation.reference.update(
+        mapOf(
+          "deletedFor" to FieldValue.arrayUnion(account),
+          "deletedBefore.$account" to now,
+          "unreadCounts.$account" to 0
+        )
+      ).await()
+    }
+
+    if (previousUsername.isNotBlank()) {
+      val usernameRef = db.document("usernames/$previousUsername")
+      val reserved = usernameRef.get().await()
+      if (reserved.exists() && reserved.safeString("uid") == account) {
+        usernameRef.delete().await()
+      }
+    }
+
+    db.document("directory/$account").delete().await()
+    ownRef.delete().await()
+    user.delete().await()
     LiquidApi.clearMediaCachesOnly()
     finishLocalLogout()
   }
