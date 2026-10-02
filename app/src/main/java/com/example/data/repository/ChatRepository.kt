@@ -484,8 +484,15 @@ class ChatRepository(
           return@addSnapshotListener
         }
         if (snapshot != null) guardSnapshot("Messages") {
-          val hasOlder = snapshot.documents.size.toLong() > limit
           val pageDocuments = snapshot.documents.take(limit.toInt())
+          val extraDocument = snapshot.documents.getOrNull(limit.toInt())
+          val cutoff = deletedBefore[cid] ?: 0L
+          val extraCreatedAt = extraDocument?.safeLong("createdAt") ?: 0L
+          // A raw Firestore document older than the account's delete cutoff is not
+          // visible history. Treating it as "has more" leaves a permanent pagination
+          // affordance even though every older document is hidden for this user.
+          val hasOlder = extraDocument != null &&
+            (cutoff <= 0L || extraCreatedAt > cutoff)
           _historyHasOlder.update { it + (cid to hasOlder) }
           _historyLoading.update { it + (cid to false) }
           val list = pageDocuments
