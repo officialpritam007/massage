@@ -238,6 +238,7 @@ fun ConversationScreenV2(
     var searchHighlightId by remember(conversationId) { mutableStateOf<String?>(null) }
     var historyAnchorId by remember(conversationId) { mutableStateOf<String?>(null) }
     var historyAnchorOffset by remember(conversationId) { mutableIntStateOf(0) }
+    var historyLoadGestureConsumed by remember(conversationId) { mutableStateOf(false) }
 
     val nearBottom by remember { derivedStateOf { !listState.canScrollForward } }
 
@@ -547,13 +548,18 @@ fun ConversationScreenV2(
         }
             .distinctUntilChanged()
             .collect { (scrolling, firstIndex, firstOffset) ->
-                if (!scrolling || !canLoadOlder || loadingOlder || rows.isEmpty()) {
+                if (!scrolling) {
+                    historyLoadGestureConsumed = false
+                    return@collect
+                }
+                if (!canLoadOlder || loadingOlder || rows.isEmpty() || historyLoadGestureConsumed) {
                     return@collect
                 }
 
                 val atTop = firstIndex <= 1 && firstOffset < 72
                 if (!atTop || historyAnchorId != null) return@collect
 
+                historyLoadGestureConsumed = true
                 val firstVisible = listState.layoutInfo.visibleItemsInfo.firstOrNull { item ->
                     rows.any { it.id == item.key }
                 }
