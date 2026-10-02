@@ -50,6 +50,8 @@ class ChatRepository(
   private var heartbeat: Job? = null
   private var outboxJob: Job? = null
   private var appearanceJob: Job? = null
+  private var syncRecoveryJob: Job? = null
+  private var syncRecoveryAttempts = 0
   private data class QueuedMediaUpload(
     val id: String = UUID.randomUUID().toString(),
     val conversationId: String,
@@ -85,6 +87,8 @@ class ChatRepository(
   val searchHistory = _searchHistory.asStateFlow()
   private val _error = MutableStateFlow<String?>(null)
   val error = _error.asStateFlow()
+  private val _syncWarning = MutableStateFlow<String?>(null)
+  val syncWarning = _syncWarning.asStateFlow()
   private val _loading = MutableStateFlow(true)
   val loading = _loading.asStateFlow()
   private val _upload = MutableStateFlow<Float?>(null)
@@ -125,7 +129,7 @@ class ChatRepository(
     val message = t.message.orEmpty()
     return when {
       message.contains("PERMISSION_DENIED", true) || message.contains("insufficient permissions", true) ->
-        "Sync permission denied. Publish the latest Firestore rules, then reopen Liquid Chat."
+        "Firebase access was denied. Liquid Chat will retry automatically."
       message.contains("UNAVAILABLE", true) || message.contains("network", true) || t is java.io.IOException ->
         "Connection unavailable. Your pending messages will retry when the network returns."
       message.contains("token", true) && message.contains("expired", true) ->
@@ -138,22 +142,33 @@ class ChatRepository(
   }
 
   private fun reportSnapshotFailure(area: String, t: Throwable) {
-    _error.value = "$area: ${friendlyError(t, "could not be loaded")}"
+    _syncWarning.value = "$area: ${friendlyError(t, "could not be loaded")}"
   }
 
-  private fun clearRecoveredSyncError() {
-    val current = _error.value.orEmpty()
-    if (
-      current.contains("permission denied", ignoreCase = true) ||
-      current.contains("insufficient permissions", ignoreCase = true)
-    ) {
-      _error.value = null
+  private fun markSyncHealthy() {
+    syncRecoveryAttempts = 0
+    _syncWarning.value = null
+  }
+
+  private fun scheduleSyncRecovery(area: String, t: Throwable) {
+    reportSnapshotFailure(area, t)
+    val permissionLike = t is FirebaseFirestoreException &&
+      (t.code == FirebaseFirestoreException.Code.PERMISSION_DENIED ||
+        t.code == FirebaseFirestoreException.Code.UNAUTHENTICATED)
+    if (!permissionLike || syncRecoveryAttempts >= 2 || syncRecoveryJob?.isActive == true) return
+
+    val account = uid
+    syncRecoveryAttempts += 1
+    syncRecoveryJob = scope.launch {
+      runCatching { auth.currentUser?.getIdToken(true)?.await() }
+      delay(750L * syncRecoveryAttempts)
+      if (uid == account && account.isNotBlank()) startSync()
     }
   }
 
   private inline fun guardSnapshot(area: String, block: () -> Unit) {
     runCatching(block)
-      .onSuccess { clearRecoveredSyncError() }
+      .onSuccess { markSyncHealthy() }
       .onFailure { reportSnapshotFailure(area, it) }
   }
 
@@ -459,6 +474,7 @@ class ChatRepository(
     _historyLoading.value = emptyMap()
     heartbeat?.cancel()
     outboxJob?.cancel()
+    syncRecoveryJob?.cancel()
   }
 
   private fun startSync() {
@@ -480,14 +496,14 @@ class ChatRepository(
         db.document("users/$account")
           .set(mapOf("tokens" to mapOf(device to token)), SetOptions.merge())
           .addOnFailureListener { error ->
-            _error.value = friendlyError(error, "Notifications could not be registered")
+            _syncWarning.value = "Notifications: " + friendlyError(error, "token registration failed")
           }
       }
     }
 
     listeners += db.document("users/$account").addSnapshotListener { snapshot, error ->
       if (error != null) {
-        _error.value = friendlyError(error)
+        scheduleSyncRecovery("Profile", error)
         return@addSnapshotListener
       }
       if (snapshot == null || !snapshot.exists()) return@addSnapshotListener
@@ -530,7 +546,7 @@ class ChatRepository(
 
     listeners += db.collection("directory").limit(200).addSnapshotListener { snapshot, error ->
       if (error != null) {
-        _error.value = friendlyError(error)
+        scheduleSyncRecovery("Contacts", error)
         return@addSnapshotListener
       }
       if (snapshot != null) guardSnapshot("Contacts") {
@@ -545,7 +561,7 @@ class ChatRepository(
       .addSnapshotListener { snapshot, error ->
         _loading.value = false
         if (error != null) {
-          _error.value = friendlyError(error)
+          scheduleSyncRecovery("Chats", error)
           return@addSnapshotListener
         }
         if (snapshot != null) guardSnapshot("Chats") {
@@ -690,14 +706,10 @@ class ChatRepository(
       .addSnapshotListener { snapshot, error ->
         if (error != null) {
           _historyLoading.update { it + (cid to false) }
-          _error.value = friendlyError(error)
+          scheduleSyncRecovery("Messages", error)
           return@addSnapshotListener
         }
         if (snapshot != null) guardSnapshot("Messages") {
-          if (_error.value?.contains("permission denied", ignoreCase = true) == true) {
-            _error.value = null
-          }
-
           val pageDocuments = snapshot.documents.take(recentLimit.toInt())
           val extraDocument = snapshot.documents.getOrNull(recentLimit.toInt())
           if (cid !in historyPagingStarted) {
@@ -797,7 +809,7 @@ class ChatRepository(
           .forEach { receipt(cid, it.id, "DELIVERED") }
       } catch (t: Throwable) {
         if (t !is CancellationException) {
-          _error.value = friendlyError(t)
+          reportSnapshotFailure("History", t)
         }
       } finally {
         _historyLoading.update { it + (cid to false) }
@@ -1715,7 +1727,7 @@ class ChatRepository(
         "lastSeen" to if (_privacy.value.lastSeenVisibility != "Nobody") now else 0L
       ),
       SetOptions.merge()
-    ).addOnFailureListener { _error.value = it.message }
+    ).addOnFailureListener { _syncWarning.value = "Presence: " + friendlyError(it) }
   }
 
   fun draft(cid: String) = prefs.getString("draft:$uid:$cid", "").orEmpty()
@@ -1774,7 +1786,7 @@ class ChatRepository(
   private fun save(field: String, value: Any) {
     if (uid.isNotBlank()) {
       db.document("users/$uid").set(mapOf(field to value), SetOptions.merge())
-        .addOnFailureListener { _error.value = it.message }
+        .addOnFailureListener { _syncWarning.value = "Settings: " + friendlyError(it) }
     }
   }
 
@@ -1795,7 +1807,8 @@ class ChatRepository(
 
   suspend fun deleteAccount(): Result<Unit> = runCatching {
     LiquidApi.call("deleteAccount")
-    logout()
+    LiquidApi.clearMediaCachesOnly()
+    finishLocalLogout()
   }
 
   fun addSearchHistory(query: String) {
