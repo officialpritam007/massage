@@ -3,6 +3,7 @@ package com.example.ui.navigation
 sealed class Screen(val route: String) {
   object Auth : Screen("auth")
   object Chats : Screen("chats")
+  object Contacts : Screen("contacts")
   object Conversation : Screen("conversation/{conversationId}") {
     fun createRoute(conversationId: String) = "conversation/$conversationId"
   }

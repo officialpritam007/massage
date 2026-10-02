@@ -52,22 +52,26 @@ fun LiquidChatApp(
     onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
   }
 
+  val referenceAccent = appearance.accentColorHex.isBlank() || appearance.accentColorHex.equals("#176BFF", ignoreCase = true)
+  val referenceDark = appearance.isDarkMode || referenceAccent
   val glassConfig = LiquidGlassConfig(
     glassIntensity = appearance.glassIntensity,
     blurAlpha = appearance.blurAlpha,
     cornerRadiusDp = appearance.cornerRadiusDp,
     borderStrength = appearance.borderStrength,
-    accentColor = try {
+    accentColor = if (referenceAccent) {
+      Color(0xFF00E39C)
+    } else try {
       Color(android.graphics.Color.parseColor(appearance.accentColorHex))
     } catch (_: Exception) {
-      Color(0xFF176BFF)
+      Color(0xFF00E39C)
     },
     isReducedMotion = appearance.isReducedMotion,
-    isDark = appearance.isDarkMode
+    isDark = referenceDark
   )
 
   LiquidChatTheme(
-    darkTheme = appearance.isDarkMode,
+    darkTheme = referenceDark,
     glassConfig = glassConfig
   ) {
     val navController = rememberNavController()
@@ -149,11 +153,27 @@ fun LiquidChatApp(
           viewModel = chatViewModel,
           onNavigateToConversation = { navController.navigate(Screen.Conversation.createRoute(it)) },
           onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
+          onNavigateToContacts = { navController.navigate(Screen.Contacts.route) },
           onNavigateToSearch = { navController.navigate(Screen.Search.route) },
           onNavigateToAppearance = { navController.navigate(Screen.Appearance.route) },
           onNavigateToProfile = { navController.navigate(Screen.ContactProfile.createRoute(it)) },
           initialTab = homeTab,
           onHomeTabSelected = { homeTab = it }
+        )
+      }
+
+      composable(Screen.Contacts.route) {
+        ContactsScreen(
+          viewModel = chatViewModel,
+          onNavigateToConversation = { navController.navigate(Screen.Conversation.createRoute(it)) },
+          onNavigateToChats = {
+            navController.popBackStack(Screen.Chats.route, false)
+          },
+          onNavigateToSettings = {
+            navController.navigate(Screen.Settings.route) { launchSingleTop = true }
+          },
+          onNavigateToSearch = { navController.navigate(Screen.Search.route) },
+          onNavigateToProfile = { navController.navigate(Screen.ContactProfile.createRoute(it)) }
         )
       }
 
@@ -231,6 +251,8 @@ fun LiquidChatApp(
           onBackClick = { navController.popBackStack() },
           onNavigateToAppearance = { navController.navigate(Screen.Appearance.route) },
           onNavigateToDiagnostics = { navController.navigate(Screen.Diagnostics.route) },
+          onNavigateToProfile = { navController.navigate(Screen.ContactProfile.createRoute(it)) },
+          onNavigateToContacts = { navController.navigate(Screen.Contacts.route) },
           onNavigateToHomeTab = { tab ->
             homeTab = tab
             navController.popBackStack(Screen.Chats.route, false)

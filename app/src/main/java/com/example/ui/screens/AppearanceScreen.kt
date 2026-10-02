@@ -16,7 +16,7 @@ import com.example.ui.viewmodel.LiquidChatViewModel
 @Composable
 fun AppearanceScreen(viewModel: LiquidChatViewModel, onBackClick: () -> Unit) {
   val a by viewModel.appearance.collectAsState()
-  val accents = listOf("#176BFF", "#00A7D8", "#7A63FF", "#14A46F")
+  val accents = listOf("#00E39C", "#00A7D8", "#176BFF", "#7A63FF", "#14A46F")
 
   LiquidBackground(crystal = true) {
     Column(

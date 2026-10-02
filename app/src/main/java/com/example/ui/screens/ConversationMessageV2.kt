@@ -181,7 +181,7 @@ fun MessageBubbleV2(
     val shape = if (isMe) RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp)
     else RoundedCornerShape(22.dp, 22.dp, 22.dp, 6.dp)
     val bg = if (isMe) {
-        config.accentColor.copy(alpha = if (config.isDark) .44f else .66f)
+        com.example.ui.theme.BubbleOutgoingGradientStart.copy(alpha = if (config.isDark) .82f else .72f)
     } else {
         if (config.isDark) Color(0xFFB8D9FF).copy(alpha = .075f)
         else Color.White.copy(alpha = .56f)
@@ -359,7 +359,7 @@ fun MessageBubbleV2(
                 GlassCard(
                     modifier = Modifier.padding(top = 2.dp),
                     shape = RoundedCornerShape(999.dp),
-                    backgroundColor = if (config.isDark) Color(0xFF0B151F).copy(alpha = .82f) else Color.White.copy(alpha = .76f),
+                    backgroundColor = if (config.isDark) Color(0xFF142A31).copy(alpha = .82f) else Color.White.copy(alpha = .76f),
                     elevation = 1.dp
                 ) {
                     Row(Modifier.padding(horizontal = 7.dp, vertical = 3.dp)) {

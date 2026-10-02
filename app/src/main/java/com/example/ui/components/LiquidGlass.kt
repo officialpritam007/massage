@@ -92,7 +92,7 @@ fun GlassCard(
     label = "glass_card_press"
   )
   val surface = if (config.isDark) {
-    Color(0xFFB7D9FF).copy(alpha = (0.035f + config.blurAlpha * 0.085f + config.glassIntensity * 0.025f).coerceIn(0.06f, 0.18f))
+    Color(0xFF19323B).copy(alpha = (0.46f + config.blurAlpha * 0.12f + config.glassIntensity * 0.08f).coerceIn(0.50f, 0.76f))
   } else {
     Color.White.copy(alpha = (0.36f + config.blurAlpha * 0.14f + config.glassIntensity * 0.06f).coerceIn(0.38f, 0.64f))
   }
@@ -100,8 +100,8 @@ fun GlassCard(
   val backdrop = LocalGlassBackdrop.current
   val border = borderColor ?: if (config.isDark) GlassBorderStrokeDark else Color.White.copy(alpha = 0.38f)
   val resolvedShape: Shape = shape ?: RoundedCornerShape(config.cornerRadiusDp.coerceIn(16f, 32f).dp)
-  val topHighlight = if (config.isDark) GlassHighlight.copy(alpha = 0.30f) else Color.White.copy(alpha = 0.95f)
-  val shadow = if (config.isDark) Color.Black.copy(alpha = 0.42f) else Color.Black.copy(alpha = 0.10f)
+  val topHighlight = if (config.isDark) Color(0xFFD8FFFF).copy(alpha = 0.32f) else Color.White.copy(alpha = 0.95f)
+  val shadow = if (config.isDark) Color.Black.copy(alpha = 0.56f) else Color.Black.copy(alpha = 0.10f)
 
   Box(
     modifier = modifier
@@ -111,7 +111,7 @@ fun GlassCard(
       .then(
         if (backdrop != null && config.isGlassEnabled) {
           Modifier.hazeEffect(backdrop) {
-            blurRadius = (12f + config.blurAlpha * 20f).dp
+            blurRadius = (16f + config.blurAlpha * 24f).dp
             noiseFactor = 0.025f
             this.backgroundColor = glassBackground
           }
@@ -122,7 +122,7 @@ fun GlassCard(
       .drawWithContent {
         drawContent()
         drawRect(
-          color = topHighlight.copy(alpha = if (config.isDark) 0.38f else 0.70f),
+          color = topHighlight.copy(alpha = if (config.isDark) 0.48f else 0.70f),
           size = Size(size.width, 1.dp.toPx())
         )
       }
@@ -204,7 +204,7 @@ fun GlassIconButton(
   testTag: String = "glass_icon_button"
 ) {
   val config = LocalLiquidGlass.current
-  val bg = backgroundColor ?: if (config.isDark) Color.White.copy(alpha = 0.065f) else Color.White.copy(alpha = 0.54f)
+  val bg = backgroundColor ?: if (config.isDark) Color(0xFF9AC9D6).copy(alpha = 0.12f) else Color.White.copy(alpha = 0.54f)
   val iconTint = if (tint == TextPrimary && !config.isDark) TextPrimaryLight else tint
   val interactions = remember { MutableInteractionSource() }
   val pressed by interactions.collectIsPressedAsState()
@@ -251,7 +251,7 @@ fun GlassTextField(
     modifier = modifier
       .defaultMinSize(minHeight = minHeight)
       .clip(resolvedShape)
-      .background(if (config.isDark) Color.White.copy(alpha = 0.055f) else Color.White.copy(alpha = 0.48f))
+      .background(if (config.isDark) Color(0xFF18343C).copy(alpha = 0.62f) else Color.White.copy(alpha = 0.48f))
       .border(1.dp, if (config.isDark) GlassBorderStrokeDark else GlassBorderStrokeLight, resolvedShape)
       .padding(horizontal = horizontalPadding, vertical = verticalPadding)
       .testTag(testTag),
@@ -297,7 +297,7 @@ fun GlassAvatar(
   Box(modifier = modifier.size(size).then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)) {
     Box(
       modifier = Modifier.fillMaxSize().clip(CircleShape).border(1.5.dp, borderBrush, CircleShape)
-        .background(if (config.isDark) Color.White.copy(alpha = 0.09f) else Color.White.copy(alpha = 0.75f)),
+        .background(if (config.isDark) Color(0xFFB8D8D8).copy(alpha = 0.12f) else Color.White.copy(alpha = 0.75f)),
       contentAlignment = Alignment.Center
     ) {
       if (!photoUrl.isNullOrBlank()) {
@@ -339,24 +339,44 @@ fun GlassHeader(
   modifier: Modifier = Modifier
 ) {
   val config = LocalLiquidGlass.current
-  GlassCard(
-    modifier = modifier.fillMaxWidth(),
-    shape = RoundedCornerShape(bottomStart = 26.dp, bottomEnd = 26.dp),
-    elevation = 7.dp
+  Row(
+    modifier = modifier
+      .fillMaxWidth()
+      .padding(horizontal = 6.dp, vertical = 8.dp),
+    verticalAlignment = Alignment.CenterVertically
   ) {
-    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-      if (onBackClick != null) {
-        IconButton(onClick = onBackClick, modifier = Modifier.size(44.dp).testTag("header_back_button")) {
-          Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = if (config.isDark) TextPrimary else TextPrimaryLight)
-        }
-      }
-      Box(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
-        androidx.compose.foundation.layout.Column {
-          Text(title, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = if (config.isDark) TextPrimary else TextPrimaryLight), maxLines = 1, overflow = TextOverflow.Ellipsis)
-          if (!subtitle.isNullOrBlank()) Text(subtitle, style = MaterialTheme.typography.bodySmall.copy(color = if (config.isDark) TextSecondary else TextSecondaryLight, fontSize = 12.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-      }
-      if (actions != null) Row(verticalAlignment = Alignment.CenterVertically) { actions() }
+    if (onBackClick != null) {
+      GlassIconButton(
+        Icons.AutoMirrored.Filled.ArrowBack,
+        "Back",
+        onBackClick,
+        size = 46.dp
+      )
     }
+    Box(modifier = Modifier.weight(1f).padding(horizontal = if (onBackClick != null) 12.dp else 2.dp)) {
+      androidx.compose.foundation.layout.Column {
+        Text(
+          title,
+          style = MaterialTheme.typography.headlineLarge.copy(
+            fontWeight = FontWeight.Bold,
+            color = if (config.isDark) TextPrimary else TextPrimaryLight
+          ),
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis
+        )
+        if (!subtitle.isNullOrBlank()) {
+          Text(
+            subtitle,
+            style = MaterialTheme.typography.bodySmall.copy(
+              color = if (config.isDark) TextSecondary else TextSecondaryLight,
+              fontSize = 12.sp
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
+        }
+      }
+    }
+    if (actions != null) Row(verticalAlignment = Alignment.CenterVertically) { actions() }
   }
 }

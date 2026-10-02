@@ -11,57 +11,57 @@ import androidx.compose.ui.graphics.Color
 
 /** Shared design tokens for the app-wide Liquid Glass material. */
 data class LiquidGlassConfig(
-  val glassIntensity: Float = 0.85f,
-  val blurAlpha: Float = 0.70f,
-  val cornerRadiusDp: Float = 32f,
-  val borderStrength: Float = 0.70f,
+  val glassIntensity: Float = 0.90f,
+  val blurAlpha: Float = 0.82f,
+  val cornerRadiusDp: Float = 30f,
+  val borderStrength: Float = 0.78f,
   val accentColor: Color = CyanAccent,
   val isGlassEnabled: Boolean = true,
   val isReducedMotion: Boolean = false,
-  val isDark: Boolean = false
+  val isDark: Boolean = true
 )
 
 val LocalLiquidGlass = compositionLocalOf { LiquidGlassConfig() }
 
 private val DarkColorScheme = darkColorScheme(
-  primary = Color(0xFF72B7FF),
-  onPrimary = Color(0xFF04111E),
-  primaryContainer = Color(0xFF14385D),
-  onPrimaryContainer = Color(0xFFDDEEFF),
-  secondary = Color(0xFF9CCBFF),
-  onSecondary = Color(0xFF07121C),
-  tertiary = Color(0xFFC8B8FF),
-  background = Color(0xFF090D14),
-  onBackground = Color(0xFFF4F8FF),
-  surface = Color(0xFF101722),
-  onSurface = Color(0xFFF4F8FF),
-  surfaceVariant = Color(0xFF1A2432),
-  onSurfaceVariant = Color(0xFFC5D1DF),
-  outline = Color(0xFF6A7E95),
-  error = Color(0xFFFF8A8A),
-  onError = Color(0xFF330606)
+  primary = Color(0xFF00E39C),
+  onPrimary = Color(0xFF001B14),
+  primaryContainer = Color(0xFF005F49),
+  onPrimaryContainer = Color(0xFFB6FFE7),
+  secondary = Color(0xFF72D8FF),
+  onSecondary = Color(0xFF00151C),
+  tertiary = Color(0xFFA98CFF),
+  background = Color(0xFF020508),
+  onBackground = Color(0xFFF8FFFE),
+  surface = Color(0xFF0B171D),
+  onSurface = Color(0xFFF8FFFE),
+  surfaceVariant = Color(0xFF172930),
+  onSurfaceVariant = Color(0xFFB3C2C9),
+  outline = Color(0xFF5D7A82),
+  error = Color(0xFFFF8D9B),
+  onError = Color(0xFF35050D)
 )
 
 private val LightColorScheme = lightColorScheme(
-  primary = ElectricBlue,
+  primary = Color(0xFF008D70),
   onPrimary = Color.White,
-  primaryContainer = Color(0xFFE4F0FF),
-  onPrimaryContainer = Color(0xFF083A78),
-  secondary = AzureBlue,
+  primaryContainer = Color(0xFFB9F7E8),
+  onPrimaryContainer = Color(0xFF00382C),
+  secondary = Color(0xFF0A7FA4),
   onSecondary = Color.White,
   tertiary = VioletAccent,
-  background = Color(0xFFF5F8FC),
-  onBackground = Color(0xFF111827),
-  surface = Color(0xFFF8FBFF),
-  onSurface = Color(0xFF111827),
-  surfaceVariant = Color(0xFFEAF0F7),
-  onSurfaceVariant = Color(0xFF465568),
-  outline = Color(0xFF8795A7)
+  background = Color(0xFFF3F8F8),
+  onBackground = Color(0xFF0A191C),
+  surface = Color(0xFFF8FCFC),
+  onSurface = Color(0xFF0A191C),
+  surfaceVariant = Color(0xFFE5F0F0),
+  onSurfaceVariant = Color(0xFF496168),
+  outline = Color(0xFF82969C)
 )
 
 @Composable
 fun LiquidChatTheme(
-  darkTheme: Boolean = false,
+  darkTheme: Boolean = true,
   glassConfig: LiquidGlassConfig = LiquidGlassConfig(isDark = darkTheme),
   content: @Composable () -> Unit
 ) {

@@ -26,6 +26,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -42,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -114,7 +119,7 @@ fun ContactProfileScreen(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(32.dp),
                 backgroundColor = if (glass.isDark) {
-                    Color(0xFF0D1723).copy(alpha = .68f)
+                    Color(0xFF142A31).copy(alpha = .76f)
                 } else {
                     Color.White.copy(alpha = .58f)
                 },
@@ -182,6 +187,23 @@ fun ContactProfileScreen(
                             modifier = Modifier.padding(horizontal = 8.dp)
                         )
                     }
+
+                    Spacer(Modifier.height(6.dp))
+                    ProfileInfoRow(
+                        Icons.Default.Phone,
+                        "Phone",
+                        user.phoneNumber.ifBlank { "Not added" }
+                    )
+                    ProfileInfoRow(
+                        Icons.Default.Person,
+                        "Username",
+                        user.username.takeIf { it.isNotBlank() }?.let { "@$it" } ?: "Not set"
+                    )
+                    ProfileInfoRow(
+                        Icons.Default.ChatBubbleOutline,
+                        "About",
+                        user.bio.ifBlank { "Available" }
+                    )
 
                     Spacer(Modifier.height(6.dp))
                     if (user.uid != me.uid) {
@@ -390,6 +412,41 @@ fun ContactProfileScreen(
 }
 
 @Composable
+private fun ProfileInfoRow(
+    icon: ImageVector,
+    title: String,
+    value: String
+) {
+    val glass = LocalLiquidGlass.current
+    GlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        backgroundColor = if (glass.isDark) Color.White.copy(alpha = .075f) else Color.White.copy(alpha = .58f),
+        elevation = 0.dp
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier
+                    .size(42.dp)
+                    .background(Color.White.copy(alpha = if (glass.isDark) .12f else .75f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, contentDescription = null, tint = if (glass.isDark) Color.White else MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
+            }
+            Spacer(Modifier.width(11.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(value, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(21.dp))
+        }
+    }
+}
+
+@Composable
 private fun SharedMediaCard(
     message: Message,
     onClick: () -> Unit
@@ -402,7 +459,7 @@ private fun SharedMediaCard(
             else -> Modifier.size(116.dp)
         },
         shape = RoundedCornerShape(24.dp),
-        backgroundColor = if (glass.isDark) Color(0xFF0D1723).copy(alpha = .62f)
+        backgroundColor = if (glass.isDark) Color(0xFF142A31).copy(alpha = .70f)
         else Color.White.copy(alpha = .58f),
         elevation = 1.dp,
         onClick = onClick

@@ -497,12 +497,12 @@ class ChatRepository(
 
         (snapshot.get("appearance") as? Map<*, *>)?.let { a ->
           _appearance.value = AppearanceSettings(
-            isDarkMode = anyBoolean(a["isDarkMode"], false),
+            isDarkMode = anyBoolean(a["isDarkMode"], true),
             glassIntensity = (a["glassIntensity"] as? Number)?.toFloat() ?: 0.85f,
             blurAlpha = (a["blurAlpha"] as? Number)?.toFloat() ?: 0.70f,
             cornerRadiusDp = (a["cornerRadiusDp"] as? Number)?.toFloat() ?: 32f,
             borderStrength = (a["borderStrength"] as? Number)?.toFloat() ?: 0.70f,
-            accentColorHex = a["accentColorHex"] as? String ?: "#176BFF",
+            accentColorHex = a["accentColorHex"] as? String ?: "#00E39C",
             isReducedMotion = anyBoolean(a["isReducedMotion"], false)
           )
         }

@@ -649,7 +649,7 @@ fun ConversationScreenV2(
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(24.dp),
                             backgroundColor = if (config.isDark) {
-                                Color(0xFF091521).copy(alpha = .68f)
+                                Color(0xFF142A31).copy(alpha = .74f)
                             } else {
                                 Color.White.copy(alpha = .60f)
                             },
@@ -847,7 +847,7 @@ fun ConversationScreenV2(
                         Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(27.dp),
                         backgroundColor = if (config.isDark) {
-                            Color(0xFF0A1420).copy(alpha = .74f)
+                            Color(0xFF12262D).copy(alpha = .84f)
                         } else {
                             Color.White.copy(alpha = .62f)
                         },

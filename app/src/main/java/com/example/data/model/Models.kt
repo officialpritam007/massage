@@ -76,12 +76,12 @@ data class Conversation(
 )
 
 data class AppearanceSettings(
-  val isDarkMode: Boolean = false,
+  val isDarkMode: Boolean = true,
   val glassIntensity: Float = 0.85f,
   val blurAlpha: Float = 0.70f,
   val cornerRadiusDp: Float = 32f,
   val borderStrength: Float = 0.70f,
-  val accentColorHex: String = "#176BFF",
+  val accentColorHex: String = "#00E39C",
   val isReducedMotion: Boolean = false
 )
 

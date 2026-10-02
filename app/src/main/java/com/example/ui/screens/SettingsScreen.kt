@@ -2,6 +2,18 @@ package com.example.ui.screens
 
 import com.example.BuildConfig
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Whatshot
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -11,8 +23,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.data.repository.removeProfilePhoto
@@ -31,6 +46,8 @@ fun SettingsScreen(
   onNavigateToAppearance: () -> Unit,
   onNavigateToDiagnostics: () -> Unit,
   onNavigateToHomeTab: (String) -> Unit,
+  onNavigateToProfile: (String) -> Unit,
+  onNavigateToContacts: () -> Unit,
   onLogout: () -> Unit
 ) {
   val upload by viewModel.upload.collectAsState()
@@ -39,6 +56,7 @@ fun SettingsScreen(
   val notifications by viewModel.notifications.collectAsState()
   val blocked by viewModel.blockedUserIds.collectAsState()
   val users by viewModel.users.collectAsState()
+  val messages by viewModel.messages.collectAsState()
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
   val glass = LocalLiquidGlass.current
@@ -87,8 +105,7 @@ fun SettingsScreen(
         GlassBottomBar(
           selectedRoute = "settings",
           onNavigateToChats = { onNavigateToHomeTab("All") },
-          onNavigateToFavorites = { onNavigateToHomeTab("Favorites") },
-          onNavigateToArchived = { onNavigateToHomeTab("Archived") },
+          onNavigateToContacts = onNavigateToContacts,
           onNavigateToSettings = {}
         )
       }
@@ -103,75 +120,115 @@ fun SettingsScreen(
       ) {
         GlassHeader("Settings", subtitle = "Liquid Chat", onBackClick = onBackClick)
 
-        GlassCard(Modifier.fillMaxWidth()) {
+        GlassCard(
+          modifier = Modifier.fillMaxWidth(),
+          shape = androidx.compose.foundation.shape.RoundedCornerShape(30.dp),
+          backgroundColor = if (glass.isDark) Color(0xFF142A31).copy(alpha = .76f) else Color.White.copy(alpha = .60f),
+          borderColor = Color.White.copy(alpha = if (glass.isDark) .16f else .58f),
+          elevation = 6.dp,
+          onClick = { onNavigateToProfile(me.uid) }
+        ) {
           Row(
-            Modifier.padding(18.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 13.dp),
             verticalAlignment = Alignment.CenterVertically
           ) {
-            DustDeleteContainerV2(active = photoDeleting, reduced = glass.isReducedMotion) {
-              GlassAvatar(
-                shownPhoto,
-                me.displayName,
-                66.dp,
-                onClick = { if (!photoDeleting) showOwnPhoto = true }
+            Box(contentAlignment = Alignment.BottomEnd) {
+              DustDeleteContainerV2(active = photoDeleting, reduced = glass.isReducedMotion) {
+                GlassAvatar(
+                  shownPhoto,
+                  me.displayName.ifBlank { "Your profile" },
+                  66.dp,
+                  onClick = { if (!photoDeleting) showOwnPhoto = true }
+                )
+              }
+              GlassIconButton(
+                Icons.Default.PhotoCamera,
+                "Change photo",
+                { photo.launch("image/*") },
+                size = 32.dp,
+                tint = Color.White,
+                backgroundColor = glass.accentColor.copy(alpha = .86f)
               )
             }
-            Spacer(Modifier.width(15.dp))
+            Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-              Text(me.displayName.ifBlank { "Your profile" }, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
               Text(
-                me.username.takeIf { it.isNotBlank() }?.let { "@$it" } ?: "Set your username",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                me.displayName.ifBlank { "Your profile" },
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1
               )
-              Row(verticalAlignment = Alignment.CenterVertically) {
+              Text(
+                me.bio.ifBlank { "Hey there! I am using Liquid Chat" },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+              )
+              Row {
                 TextButton(onClick = { dialog = "Profile" }, contentPadding = PaddingValues(0.dp)) {
-                  Text("Edit profile")
+                  Text("Edit profile", color = glass.accentColor)
                 }
-                Spacer(Modifier.width(12.dp))
-                TextButton(onClick = { photo.launch("image/*") }, enabled = !photoDeleting) {
-                  Text(if (shownPhoto.isBlank()) "Add photo" else "Change photo")
-                }
-              }
-              if (shownPhoto.isNotBlank()) {
-                TextButton(onClick = ::removePhoto, enabled = !photoDeleting, contentPadding = PaddingValues(0.dp)) {
-                  Text("Remove photo", color = MaterialTheme.colorScheme.error)
-                }
-              }
-              if (photoDeleteFailed) {
-                TextButton(onClick = ::removePhoto, contentPadding = PaddingValues(0.dp)) {
-                  Text("Photo delete failed • Retry", color = MaterialTheme.colorScheme.error)
+                if (shownPhoto.isNotBlank()) {
+                  Spacer(Modifier.width(10.dp))
+                  TextButton(onClick = ::removePhoto, contentPadding = PaddingValues(0.dp)) {
+                    Text("Remove", color = MaterialTheme.colorScheme.error)
+                  }
                 }
               }
             }
+            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
           }
         }
 
-        SettingsSection("Personalize") {
-          SettingRow("Appearance & Liquid Glass", "Theme, blur, tint, motion", onNavigateToAppearance)
-          SettingRow("Privacy", "Last seen, receipts and E2EE identity") { dialog = "Privacy" }
-          SettingRow("Notifications", "Messages, vibration and previews") { dialog = "Notifications" }
+        val sentCount = messages.values.sumOf { list -> list.count { it.senderId == me.uid } }
+        val activeDays = (((System.currentTimeMillis() - me.createdAt).coerceAtLeast(0L) / 86_400_000L) + 1L).coerceAtMost(999L)
+        val contactCount = conversationsCountForSettings(messages, users)
+
+        GlassCard(
+          modifier = Modifier.fillMaxWidth(),
+          shape = androidx.compose.foundation.shape.RoundedCornerShape(30.dp),
+          backgroundColor = if (glass.isDark) Color(0xFF142A31).copy(alpha = .72f) else Color.White.copy(alpha = .56f),
+          borderColor = Color.White.copy(alpha = if (glass.isDark) .14f else .54f),
+          elevation = 5.dp
+        ) {
+          Row(
+            Modifier.fillMaxWidth().padding(vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+          ) {
+            SettingsStat(Icons.Default.Whatshot, activeDays.toString(), "Days active")
+            SettingsStat(Icons.Default.ChatBubbleOutline, sentCount.toString(), "Messages sent")
+            SettingsStat(Icons.Default.People, contactCount.toString(), "Contacts")
+          }
         }
 
-        SettingsSection("Data & tools") {
-          SettingRow("Data & Storage", "Cloudinary media, cache and local data") {
-            scope.launch {
-              cacheSize = withContext(Dispatchers.IO) {
-                context.cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
-              }
-              dialog = "Data & Storage"
+        GlassVisualSettingRow(Icons.Default.Person, "Account") { dialog = "Profile" }
+        GlassVisualSettingRow(Icons.Default.Lock, "Privacy") { dialog = "Privacy" }
+        GlassVisualSettingRow(Icons.Default.ChatBubbleOutline, "Chats") { onNavigateToHomeTab("All") }
+        GlassVisualSettingRow(Icons.Default.Notifications, "Notifications") { dialog = "Notifications" }
+        GlassVisualSettingRow(Icons.Default.Storage, "Storage and data") {
+          scope.launch {
+            cacheSize = withContext(Dispatchers.IO) {
+              context.cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
             }
+            dialog = "Data & Storage"
           }
-          SettingRow("Blocked contacts", "Manage people you blocked") { dialog = "Blocked contacts" }
-          SettingRow("Developer Diagnostics", "Firebase, Cloudinary, FCM and backend status", onNavigateToDiagnostics)
         }
+        GlassVisualSettingRow(Icons.Default.Palette, "Appearance") { onNavigateToAppearance() }
+        GlassVisualSettingRow(Icons.Default.HelpOutline, "Help") { dialog = "About & Support" }
 
-        SettingsSection("Account & support") {
-          SettingRow("Verify email", "Send a fresh verification email") { viewModel.repository.verifyEmail() }
-          SettingRow("About & Support", "Version, developer and contact") { dialog = "About & Support" }
-        }
+        Text(
+          "Liquid Chat v" + BuildConfig.VERSION_NAME,
+          modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+          textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+          color = glass.accentColor.copy(alpha = .82f),
+          style = MaterialTheme.typography.bodyMedium
+        )
 
-        GlassCard(Modifier.fillMaxWidth()) {
+        GlassCard(Modifier.fillMaxWidth(), shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)) {
           Column(Modifier.padding(8.dp)) {
+            TextButton(onClick = onNavigateToDiagnostics, modifier = Modifier.fillMaxWidth()) {
+              Text("Developer diagnostics", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             TextButton(onClick = { dialog = "Log out" }, modifier = Modifier.fillMaxWidth()) {
               Text("Log out", color = MaterialTheme.colorScheme.error)
             }
@@ -398,6 +455,74 @@ fun SettingsScreen(
       }
     }
   }
+}
+
+@Composable
+private fun SettingsStat(icon: ImageVector, value: String, label: String) {
+  val config = LocalLiquidGlass.current
+  Column(
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.spacedBy(4.dp)
+  ) {
+    Box(
+      Modifier
+        .size(38.dp)
+        .clip(androidx.compose.foundation.shape.CircleShape)
+        .background(config.accentColor.copy(alpha = .18f)),
+      contentAlignment = Alignment.Center
+    ) {
+      Icon(icon, contentDescription = null, tint = config.accentColor, modifier = Modifier.size(20.dp))
+    }
+    Text(value, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+    Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+  }
+}
+
+@Composable
+private fun GlassVisualSettingRow(
+  icon: ImageVector,
+  title: String,
+  onClick: () -> Unit
+) {
+  val config = LocalLiquidGlass.current
+  GlassCard(
+    modifier = Modifier.fillMaxWidth(),
+    shape = androidx.compose.foundation.shape.RoundedCornerShape(27.dp),
+    backgroundColor = if (config.isDark) Color(0xFF142A31).copy(alpha = .72f) else Color.White.copy(alpha = .56f),
+    borderColor = Color.White.copy(alpha = if (config.isDark) .14f else .54f),
+    elevation = 4.dp,
+    onClick = onClick
+  ) {
+    Row(
+      Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 10.dp),
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      Box(
+        Modifier
+          .size(48.dp)
+          .clip(androidx.compose.foundation.shape.CircleShape)
+          .background(Color.White.copy(alpha = if (config.isDark) .13f else .72f)),
+        contentAlignment = Alignment.Center
+      ) {
+        Icon(icon, contentDescription = null, tint = if (config.isDark) Color.White else MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(23.dp))
+      }
+      Spacer(Modifier.width(14.dp))
+      Text(
+        title,
+        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.weight(1f)
+      )
+      Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
+    }
+  }
+}
+
+private fun conversationsCountForSettings(
+  messages: Map<String, List<com.example.data.model.Message>>,
+  users: List<com.example.data.model.User>
+): Int {
+  return maxOf(users.count { it.uid.isNotBlank() }, messages.keys.count()).coerceAtLeast(0)
 }
 
 @Composable

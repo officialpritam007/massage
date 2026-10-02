@@ -48,7 +48,7 @@ fun LiquidBackground(
     label = "glass_drift_y"
   )
 
-  val base = if (dark) Color(0xFF070B11) else Color(0xFFEDF4FB)
+  val base = if (dark) Color(0xFF020508) else Color(0xFFF0F7F7)
   CompositionLocalProvider(LocalGlassBackdrop provides if (config.isGlassEnabled) state else null) {
     Box(modifier.fillMaxSize().background(base)) {
       Canvas(
@@ -59,52 +59,79 @@ fun LiquidBackground(
         val dx = if (config.isReducedMotion) 0f else driftX
         val dy = if (config.isReducedMotion) 0f else driftY
 
-        val blue = Offset(size.width * (.86f + dx), size.height * (.10f + dy))
+        val greenTop = Offset(size.width * (.12f + dx), size.height * (.06f + dy))
         drawCircle(
           brush = Brush.radialGradient(
             listOf(
-              Color(0xFF6AA8FF).copy(alpha = if (dark) .18f else .26f),
-              Color(0xFFB9D9FF).copy(alpha = if (dark) .05f else .12f),
+              Color(0xFF00D58D).copy(alpha = if (dark) .34f else .24f),
+              Color(0xFF00A878).copy(alpha = if (dark) .13f else .09f),
               Color.Transparent
             ),
-            center = blue,
-            radius = size.width * .78f
+            center = greenTop,
+            radius = size.width * .74f
           ),
-          radius = size.width * .78f,
-          center = blue
+          radius = size.width * .74f,
+          center = greenTop
         )
 
-        val violet = Offset(size.width * (.02f - dx * .6f), size.height * (.78f - dy * .7f))
+        val blueTop = Offset(size.width * (.86f + dx), size.height * (.08f + dy))
         drawCircle(
           brush = Brush.radialGradient(
             listOf(
-              Color(0xFF8E7CFF).copy(alpha = if (dark) .12f else .16f),
-              Color(0xFFC3B9FF).copy(alpha = if (dark) .025f else .06f),
+              Color(0xFF006DFF).copy(alpha = if (dark) .23f else .15f),
+              Color(0xFF2E98FF).copy(alpha = if (dark) .08f else .05f),
               Color.Transparent
             ),
-            center = violet,
-            radius = size.width * .70f
-          ),
-          radius = size.width * .70f,
-          center = violet
-        )
-
-        val aqua = Offset(size.width * .62f, size.height * (1.04f + dy * .35f))
-        drawCircle(
-          brush = Brush.radialGradient(
-            listOf(
-              Color(0xFF61DED1).copy(alpha = if (dark) .065f else .095f),
-              Color.Transparent
-            ),
-            center = aqua,
+            center = blueTop,
             radius = size.width * .82f
           ),
           radius = size.width * .82f,
-          center = aqua
+          center = blueTop
+        )
+
+        val aquaBottom = Offset(size.width * (.32f - dx * .7f), size.height * (.94f + dy * .28f))
+        drawCircle(
+          brush = Brush.radialGradient(
+            listOf(
+              Color(0xFF00DFA0).copy(alpha = if (dark) .24f else .15f),
+              Color(0xFF00A3CB).copy(alpha = if (dark) .09f else .05f),
+              Color.Transparent
+            ),
+            center = aquaBottom,
+            radius = size.width * .80f
+          ),
+          radius = size.width * .80f,
+          center = aquaBottom
+        )
+
+        val violetRight = Offset(size.width * (.92f - dx * .3f), size.height * (.68f - dy * .4f))
+        drawCircle(
+          brush = Brush.radialGradient(
+            listOf(
+              Color(0xFFAA36FF).copy(alpha = if (dark) .18f else .10f),
+              Color(0xFF3C78FF).copy(alpha = if (dark) .10f else .05f),
+              Color.Transparent
+            ),
+            center = violetRight,
+            radius = size.width * .60f
+          ),
+          radius = size.width * .60f,
+          center = violetRight
+        )
+
+        val redRight = Offset(size.width * (.84f + dx * .4f), size.height * (.43f + dy * .4f))
+        drawCircle(
+          brush = Brush.radialGradient(
+            listOf(Color(0xFFFF316F).copy(alpha = if (dark) .12f else .06f), Color.Transparent),
+            center = redRight,
+            radius = size.width * .40f
+          ),
+          radius = size.width * .40f,
+          center = redRight
         )
 
         if (crystal) {
-          val tint = if (dark) Color(0xFF7192BE) else Color(0xFFC6DDF6)
+          val tint = if (dark) Color(0xFF74A8B3) else Color(0xFFB7D5D7)
           for (i in 0..5) {
             val x = size.width * (i % 3) / 2f
             val y = size.height * (i + 1) / 8f
@@ -118,9 +145,9 @@ fun LiquidBackground(
               path,
               Brush.linearGradient(
                 listOf(
-                  tint.copy(alpha = if (dark) .055f else .11f),
+                  tint.copy(alpha = if (dark) .055f else .08f),
                   Color.Transparent,
-                  Color.White.copy(alpha = if (dark) .016f else .045f)
+                  Color.White.copy(alpha = if (dark) .018f else .035f)
                 ),
                 start = Offset(x, y),
                 end = Offset(size.width / 2f, size.height / 2f)
@@ -134,7 +161,7 @@ fun LiquidBackground(
             listOf(
               if (dark) Color.Black.copy(alpha = .10f) else Color.White.copy(alpha = .04f),
               Color.Transparent,
-              if (dark) Color.Black.copy(alpha = .20f) else Color(0xFF93B5D9).copy(alpha = .10f)
+              if (dark) Color.Black.copy(alpha = .24f) else Color(0xFF6E989B).copy(alpha = .08f)
             )
           )
         )
