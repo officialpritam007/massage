@@ -326,6 +326,16 @@ export default async ({req, res, error}) => {
       t.set(rate, {minute: Math.floor(now / 60000), count: same ? d.count + 1 : 1});
     });
 
+    if (p.action === 'health') {
+      assertCloudinaryConfigured();
+      return res.json({
+        ok: true,
+        apiVersion: 2,
+        media: 'cloudinary',
+        project: process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT || 'firebase'
+      });
+    }
+
     if (p.action === 'usernameCheck') {
       const username = String(p.username || '').trim().toLowerCase();
       if (!/^[a-z0-9_.]{3,32}$/.test(username)) {
