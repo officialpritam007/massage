@@ -1,6 +1,7 @@
 {
   "project_info": {
     "project_number": "556885337302",
+    "firebase_url": "https://liquid-chat-v2-default-rtdb.asia-southeast1.firebasedatabase.app",
     "project_id": "liquid-chat-v2",
     "storage_bucket": "liquid-chat-v2.firebasestorage.app"
   },
@@ -13,6 +14,14 @@
         }
       },
       "oauth_client": [
+        {
+          "client_id": "556885337302-r0caqm2bl62ongqm3dmlrdh280lkqmjv.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.aistudio.liquidchat.vwnxkp",
+            "certificate_hash": "9516c6f768effbfee1da1767c663ca564fb6245b"
+          }
+        },
         {
           "client_id": "556885337302-to5i3ercuuilr7390qaumgnngoo1jrq6.apps.googleusercontent.com",
           "client_type": 3
