@@ -15,7 +15,6 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.example.BuildConfig
-import com.example.data.network.LiquidApi
 import com.example.ui.components.*
 import com.example.ui.viewmodel.LiquidChatViewModel
 import com.google.firebase.auth.FirebaseAuth
@@ -69,11 +68,14 @@ fun DiagnosticsScreen(
         token.exceptionOrNull()?.message ?: if (token.isSuccess) "FCM token available" else "Token unavailable"
       )
 
-      val backend = runCatching { LiquidApi.call("profile") }
       result += DiagnosticItem(
-        "Liquid API",
-        backend.isSuccess,
-        backend.exceptionOrNull()?.message ?: "Authenticated backend reachable"
+        "Optional media backend",
+        BuildConfig.LIQUID_API_URL.startsWith("https://"),
+        if (BuildConfig.LIQUID_API_URL.startsWith("https://")) {
+          "Configured • health call skipped so media quota cannot block chat diagnostics"
+        } else {
+          "Backend URL not configured"
+        }
       )
     }
 
@@ -92,10 +94,16 @@ fun DiagnosticsScreen(
       BuildConfig.LIQUID_API_URL.startsWith("https://"),
       BuildConfig.LIQUID_API_URL.ifBlank { "LIQUID_API_URL missing" }
     )
+    val visibleAppError = appError?.takeUnless { message ->
+      message.contains(
+        "Resource limit for the current billing cycle",
+        ignoreCase = true
+      )
+    }
     result += DiagnosticItem(
       "Last app error",
-      appError.isNullOrBlank(),
-      appError ?: "No current runtime error"
+      visibleAppError.isNullOrBlank(),
+      visibleAppError ?: "No current core runtime error"
     )
 
     items = result
