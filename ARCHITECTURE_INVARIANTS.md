@@ -4,55 +4,52 @@ These rules are part of the implementation contract. Changes that violate them a
 
 ## Source of truth
 
-- The Android app source lives only under `app/src/main/**`.
-- Do not add duplicate Android source files at the repository root.
-- `firestore.rules` must be exercised by the emulator tests in `tests/firestore` before an APK can build.
+- Android application source lives under `app/src/main/**`.
+- Firebase Authentication is the account/session source of truth.
+- Cloud Firestore is the realtime source of truth for users, directory, conversations, messages, typing and delivery/read state.
+- Firebase Cloud Messaging handles push delivery.
+- Cloudinary stores profile images and encrypted chat-media payloads.
+- Server-authoritative actions live only in `firebase-functions/liquid-api/**`.
 
-## Core messaging
+## Messaging reliability
 
-- Firebase Auth is the account/session source of truth.
-- Firestore is the realtime source of truth for users, directory, conversations, messages, typing and delivery/read state.
-- Text chat must not depend on Appwrite availability.
-- The recent-message realtime listener stays fixed; older history is loaded with one-shot pages and merged without restarting the listener.
-- A failed outgoing message becomes `FAILED` with Retry. It must never remain `SENDING` indefinitely.
-- Background delivery acknowledgements write directly to Firestore and must not depend on Appwrite.
+- The recent-message realtime listener remains fixed; older history is loaded in pages and merged without restarting it.
+- A failed outgoing message becomes `FAILED` with Retry; it must not remain `SENDING` indefinitely.
+- Background delivery/read acknowledgements write through the approved Firebase path and must not depend on media availability.
+- Media failures must never block text chat.
 
-## Error handling
+## Media and E2EE
 
-- Background listener, presence, token and retry failures are nonblocking sync warnings.
-- Only user-initiated destructive/privacy operations may block the UI with a modal.
-- Optional Appwrite media quota errors must never cover or disable text chat.
-- Permission failures retry the Firebase auth token before surfacing a nonblocking warning.
-
-## E2EE
-
-- New text messages store an empty plaintext `text` field plus the signed `e2ee` payload.
+- New text-message plaintext fields remain empty when the signed E2EE payload is present.
 - Reply metadata and edited text remain inside the encrypted payload.
-- Chat media is encrypted on-device before Appwrite storage; Firestore stores only wrapped media-key metadata.
-- Appwrite notification calls receive identifiers only, never plaintext message text.
-- E2EE private identity material never leaves the device and is protected by Android Keystore.
-- A peer without a published E2EE key cannot receive a new message; the UI must explain that encryption setup is pending.
+- Chat media is encrypted on-device before Cloudinary upload.
+- Firestore stores media metadata and wrapped media-key metadata, not the plaintext attachment.
+- Cloudinary API-secret operations are server-side only.
+- The Android client limits attachments to 9 MB so encrypted `raw` assets remain below the connected Cloudinary Free-plan 10 MB raw-file ceiling.
+- Private media is returned through short-lived signed Cloudinary delivery URLs after Firebase authorization checks.
 
 ## Privacy lifecycle
 
 - Android backup/device-transfer restore is disabled.
-- Logout is destructive: remote purge must succeed before local logout finishes.
-- Reinstall/clear-data creates a new installation identity. On the next sign-in, old Liquid Chat remote data is purged before normal sync begins.
-- App update does not change the installation identity.
-- Destructive privacy failures are blocking; normal sync failures are not.
+- Logout/account deletion uses the authenticated backend for remote cleanup before local state is cleared.
+- Reinstall/clear-data creates a new installation identity; the next sign-in follows the app's remote cleanup policy.
+- Destructive privacy failures may block the UI; background sync failures should not.
 
-## Backend boundaries
+## Deployment boundary
 
-- Appwrite is used for encrypted media, reports, destructive purge, profile-photo storage and generic notification dispatch.
-- Appwrite availability must not be required for Firebase Auth, Firestore text messaging, typing, read/delivery receipts or chat-list sync.
-- Function deployment should be scoped to `appwrite-functions/liquid-api/**` so Android-only commits do not consume function-build quota.
+- `firebase.json` points Functions to `firebase-functions/liquid-api`.
+- `.github/workflows/deploy-firebase-function.yml` deploys `liquidApi` from `main`.
+- `.github/workflows/deploy-firebase-rules.yml` publishes Firestore rules.
+- Cloudinary secrets are Firebase Functions secrets and must never be placed in the APK or committed to GitHub.
+- Legacy Appwrite and old root `functions/` sources are not part of the runtime.
 
 ## CI gate
 
-A merge to `main` is acceptable only when the latest cumulative workflow passes:
+A change is release-candidate quality only when:
 
-1. Firestore security-rule integration tests.
-2. Appwrite backend syntax/policy tests.
-3. Android unit tests.
-4. Debug APK assembly.
-5. Artifact upload.
+1. Firestore security-rule integration tests pass.
+2. Firebase + Cloudinary backend JavaScript syntax validation passes.
+3. Android unit tests pass.
+4. Debug APK assembly passes.
+5. The APK artifact is uploaded.
+6. Two-device live tests pass for messaging, delivery/read state, notifications, profile photos and media upload/download/delete.

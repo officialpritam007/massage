@@ -1,12 +1,38 @@
-# Verification report — 4.0.0
+# Verification checklist — Liquid Chat 4.1.1
 
-Completed locally:
+## CI checks
 
-- Backend JavaScript syntax check (`node --check`).
-- Four authenticated API policy tests: pair authorization, deterministic Appwrite IDs, message validation and presence freshness.
-- Firestore emulator rules: four tests covering private data, participant messages, typing ownership/expiry and protected server fields.
-- Android resource/configuration tasks resolved. Final Kotlin compile could not complete in this restricted runner because Gradle needed additional Maven artifacts while the network proxy was unavailable (`Network is unreachable` for KSP/Kotlin artifacts).
+The Android build workflow must pass all of these from the same revision:
 
-Before release, GitHub Actions must pass `assembleDebug`, `testDebugUnitTest` and `lintDebug`. Then test on two physical Android devices with two accounts: registration/login, text/reply/typing, read receipts, photo/video/document/voice, cancel/lock recording, favorites/archive, notification tap after restart, privacy/block, disappearing messages and account deletion.
+- Firestore security-rule emulator tests.
+- Firebase + Cloudinary backend JavaScript syntax validation.
+- Android unit tests.
+- Debug APK assembly.
+- APK artifact upload.
 
-This report does not claim zero errors, production release signing, live Firebase/Appwrite deployment, or exact iOS rendering. Production release requires Firebase/Appwrite configuration, a private release key and the two-device acceptance test.
+The Firebase backend deployment workflow must also complete successfully on `main` whenever `firebase-functions/liquid-api/**`, `firebase.json` or the deployment workflow changes.
+
+## Live acceptance checks
+
+Use two physical Android devices/accounts and verify:
+
+- registration/login and cached-session reopen;
+- text send/receive, reply, typing bubble, ordering and retry;
+- Sending → Sent → Delivered → Read transitions;
+- background push delivery and notification tap;
+- profile-photo upload/change/delete;
+- photo/video/voice attachment upload, download, playback and cache reuse;
+- delete-for-me and delete-for-everyone;
+- privacy/block behaviour;
+- reinstall/logout/account-deletion cleanup.
+
+## Cloudinary acceptance
+
+- New app media appears under the `liquid-chat/` public-id namespace.
+- Chat media uses authenticated delivery and is not publicly retrievable without the signed URL.
+- Attachments above the app's 9 MB limit are rejected before upload.
+- Deleted/replaced media is removed or revoked by the backend.
+
+## Release boundary
+
+A successful APK build proves compile/test integrity, not live backend correctness. Treat a revision as production-ready only after the deployment and two-device checks above pass with the actual Firebase project and Cloudinary account.

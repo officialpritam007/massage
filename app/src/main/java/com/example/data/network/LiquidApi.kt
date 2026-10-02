@@ -228,7 +228,7 @@ object LiquidApi {
             val n = input.read(buffer)
             if (n < 0) break
             total += n
-            require(total <= 25L * 1024 * 1024) { "Maximum attachment size is 25 MB" }
+            require(total <= 9L * 1024 * 1024) { "Maximum attachment size is 9 MB" }
             output.write(buffer, 0, n)
           }
         }

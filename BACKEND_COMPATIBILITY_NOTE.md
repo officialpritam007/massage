@@ -1,1 +1,0 @@
-Temporary marker: this branch introduced a new Liquid API backend architecture that requires additional Firebase/Appwrite deployment. The current production-compatible main branch is being restored to the previously verified Firebase + Appwrite bridge implementation so existing backend configuration can continue to work without reconfiguration.

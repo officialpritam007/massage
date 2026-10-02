@@ -1,18 +1,18 @@
 # Firebase + Cloudinary setup
 
-Liquid Chat now uses:
+Liquid Chat uses:
 
 - Firebase Authentication for identity.
 - Cloud Firestore for realtime users, conversations, messages, typing and delivery/read state.
 - Firebase Cloud Messaging for push notifications.
+- Firebase Functions `liquidApi` for server-authoritative actions and Cloudinary authorization.
 - Cloudinary for profile photos and encrypted chat media.
-- Firebase Functions `liquidApi` for server-authoritative actions and signed Cloudinary access.
 
 ## Cloudinary secrets
 
 The Android APK must never contain the Cloudinary API secret.
 
-Set these Firebase Functions secrets:
+Set these Firebase Functions secrets in project `liquid-chat-v2`:
 
 ```bash
 firebase functions:secrets:set CLOUDINARY_CLOUD_NAME
@@ -20,35 +20,40 @@ firebase functions:secrets:set CLOUDINARY_API_KEY
 firebase functions:secrets:set CLOUDINARY_API_SECRET
 ```
 
-The connected Cloudinary account can remain on the Free plan as long as usage stays within its current quota.
+Do not put `CLOUDINARY_API_SECRET` in GitHub Actions variables, Gradle properties, the APK, Firestore or source control.
 
 ## Deploy the backend
 
-Use the Firebase project `liquid-chat-v2`.
+Manual deployment:
 
 ```bash
 firebase use liquid-chat-v2
 firebase deploy --only functions:liquidApi,firestore:rules
 ```
 
-After deployment, copy the HTTPS URL for `liquidApi` into the GitHub repository variable:
+GitHub automation:
 
-`LIQUID_API_URL`
+- `.github/workflows/deploy-firebase-function.yml` deploys `liquidApi` after matching changes reach `main`.
+- `.github/workflows/deploy-firebase-rules.yml` publishes Firestore rules.
 
-The expected URL is normally similar to:
+Set GitHub repository variable `LIQUID_API_URL` to the deployed HTTPS endpoint. The normal default is:
 
 `https://us-central1-liquid-chat-v2.cloudfunctions.net/liquidApi`
 
-Do not put `CLOUDINARY_API_SECRET` in GitHub Actions, Gradle properties, the APK, Firestore, or source control.
+## Media limits
 
-## Existing Appwrite media
-
-The code migration changes all **new** uploads to Cloudinary. Existing Firestore messages or profiles whose media URL starts with `appwrite:` are legacy data and are not copied automatically.
-
-Before removing the old Appwrite project, either migrate those assets to Cloudinary and rewrite their Firestore media references, or accept that those old attachments will no longer be available. Do not delete the old Appwrite bucket until that migration is completed and verified.
+The connected Cloudinary Free plan reports a 10 MB maximum raw-asset size. Encrypted chat attachments are stored as raw assets, so the Android client caps attachments at 9 MB to leave room for encryption overhead.
 
 ## Security model
 
-Chat attachments are encrypted on-device before upload. Cloudinary stores the encrypted bytes as authenticated assets. Firebase verifies the signed-in user and conversation membership before returning an authenticated Cloudinary delivery URL. Profile photos use the same authenticated backend path and respect the existing profile-photo privacy checks.
+Chat attachments are encrypted on-device before upload. Firebase verifies the signed-in user and conversation membership before providing Cloudinary upload authorization or a signed delivery URL. Cloudinary secret operations and deletion remain server-side.
 
-Cloudinary API secret operations (signing and deletion) occur only inside Firebase Functions.
+## Live verification
+
+After installing the current APK:
+
+1. Upload/change a profile photo.
+2. Send a small photo or voice message.
+3. Confirm a new Cloudinary asset exists under `liquid-chat/`.
+4. Open the media from the receiving account.
+5. Delete/replace it and confirm the backend revokes or removes the asset as expected.

@@ -1,6 +1,0 @@
-{
-  "name": "liquid-chat-firebase-appwrite-bridge",
-  "private": true,
-  "type": "module",
-  "engines": { "node": ">=22" }
-}
