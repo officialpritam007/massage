@@ -38,6 +38,7 @@ class ChatRepository(
   private val receipts = mutableSetOf<String>()
   private val lastTyping = mutableMapOf<String, Long>()
   private val legacyDeleteMigrations = mutableSetOf<String>()
+  private val deleteTombstones = mutableSetOf<String>()
   // Keeps enough peer identity to compose a fresh message without putting a
   // server-deleted conversation back into the chats list before a new send.
   private val pendingPeers = mutableMapOf<String, User>()
@@ -224,6 +225,7 @@ class ChatRepository(
     auth.signOut()
     deletedBefore.clear()
     legacyDeleteMigrations.clear()
+    deleteTombstones.clear()
     pendingPeers.clear()
     _currentUser.value = User()
     _users.value = emptyList()
@@ -495,9 +497,20 @@ class ChatRepository(
             (cutoff <= 0L || extraCreatedAt > cutoff)
           _historyHasOlder.update { it + (cid to hasOlder) }
           _historyLoading.update { it + (cid to false) }
-          val list = pageDocuments
+          val parsed = pageDocuments
             .mapNotNull { doc -> runCatching { toMessage(cid, doc) }.getOrNull() }
             .sortedBy { it.createdAt }
+
+          val visibleIds = parsed.asSequence().map { message -> message.id }.toSet()
+          val tombstonePrefix = cid + ":"
+          deleteTombstones.removeAll { key ->
+            key.startsWith(tombstonePrefix) &&
+              key.removePrefix(tombstonePrefix) !in visibleIds
+          }
+
+          val list = parsed.filterNot { message ->
+            (cid + ":" + message.id) in deleteTombstones
+          }
           val pending = _messages.value[cid].orEmpty().filter {
             it.status == MessageDeliveryStatus.SENDING || it.status == MessageDeliveryStatus.FAILED
           }.filter { p -> list.none { saved -> saved.id == p.id } }
@@ -840,19 +853,33 @@ class ChatRepository(
   fun addReaction(cid: String, id: String, emoji: String) = action("react", cid, id, mapOf("emoji" to emoji))
 
   fun deleteMessageForMe(cid: String, id: String) = runAction {
+    val tombstone = cid + ":" + id
     val mediaUrl = _messages.value[cid].orEmpty().firstOrNull { it.id == id }?.mediaUrl.orEmpty()
     prefs.edit().remove("outbox:$uid:$id").apply()
-    LiquidApi.call("deleteForMe", mapOf("conversationId" to cid, "messageId" to id))
-    if (mediaUrl.isNotBlank()) LiquidApi.invalidateMedia(mediaUrl)
-    removeLocalMessage(cid, id)
+    deleteTombstones += tombstone
+    try {
+      LiquidApi.call("deleteForMe", mapOf("conversationId" to cid, "messageId" to id))
+      if (mediaUrl.isNotBlank()) LiquidApi.invalidateMedia(mediaUrl)
+      removeLocalMessage(cid, id)
+    } catch (t: Throwable) {
+      deleteTombstones -= tombstone
+      throw t
+    }
   }
 
   fun deleteMessageForEveryone(cid: String, id: String) = runAction {
+    val tombstone = cid + ":" + id
     val mediaUrl = _messages.value[cid].orEmpty().firstOrNull { it.id == id }?.mediaUrl.orEmpty()
     prefs.edit().remove("outbox:$uid:$id").apply()
-    LiquidApi.call("deleteForEveryone", mapOf("conversationId" to cid, "messageId" to id))
-    if (mediaUrl.isNotBlank()) LiquidApi.invalidateMedia(mediaUrl)
-    removeLocalMessage(cid, id)
+    deleteTombstones += tombstone
+    try {
+      LiquidApi.call("deleteForEveryone", mapOf("conversationId" to cid, "messageId" to id))
+      if (mediaUrl.isNotBlank()) LiquidApi.invalidateMedia(mediaUrl)
+      removeLocalMessage(cid, id)
+    } catch (t: Throwable) {
+      deleteTombstones -= tombstone
+      throw t
+    }
   }
 
   fun deleteMessage(cid: String, id: String) = deleteMessageForEveryone(cid, id)
