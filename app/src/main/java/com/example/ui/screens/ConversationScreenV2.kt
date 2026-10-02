@@ -198,7 +198,8 @@ fun ConversationScreenV2(
     var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
     var recordingFile by remember { mutableStateOf<File?>(null) }
     var waveform by remember { mutableStateOf<List<Float>>(emptyList()) }
-    var voiceDraft by remember { mutableStateOf<VoiceDraftV2?>(null) }
+    val draftStore = remember(me.uid, conversationId) { com.example.data.local.VoiceDraftStore(context, me.uid, conversationId) }
+    var voiceDraft by remember(me.uid, conversationId) { mutableStateOf(draftStore.load()?.let { VoiceDraftV2(it.file, it.seconds, it.waveform) }) }
     var voiceDraftDeleting by remember { mutableStateOf(false) }
     var voiceDraftDeleteFailed by remember { mutableStateOf(false) }
 
@@ -228,6 +229,7 @@ fun ConversationScreenV2(
                     voiceDurationSeconds = draft.seconds,
                     waveform = draft.waveform
                 )
+                draftStore.forget(draft.file)
                 draft.file.delete()
                 if (voiceDraft?.file == draft.file) voiceDraft = null
             }.onFailure {
@@ -244,6 +246,7 @@ fun ConversationScreenV2(
             delay(if (config.isReducedMotion) 90 else 520)
             val removed = !draft.file.exists() || draft.file.delete()
             if (removed) {
+                draftStore.forget(draft.file)
                 if (voiceDraft?.file == draft.file) voiceDraft = null
             } else {
                 voiceDraftDeleteFailed = true
@@ -270,21 +273,24 @@ fun ConversationScreenV2(
             voiceDraft?.takeUnless { it.uploading }?.file?.delete()
             val draft = VoiceDraftV2(file, seconds, samples)
             voiceDraft = draft
+            draftStore.save(draft.file, draft.seconds, draft.waveform)
             voiceDraftDeleteFailed = false
             if (autoSend) sendVoiceDraft(draft)
         } else {
-            file?.delete()
+            file?.let { draftStore.forget(it); it.delete() }
         }
     }
 
     fun startRecording() {
-        if (recording || other.uid in blocked) return
+        if (recording || voiceDraft != null || other.uid in blocked) return
         runCatching {
-            val file = File.createTempFile("voice-", ".aac", context.cacheDir)
+            val file = draftStore.newFile()
+            recordingFile = file
             val active = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(context) else {
                 @Suppress("DEPRECATION")
                 MediaRecorder()
             }
+            recorder = active
             active.setAudioSource(MediaRecorder.AudioSource.MIC)
             active.setOutputFormat(MediaRecorder.OutputFormat.AAC_ADTS)
             active.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
@@ -300,8 +306,12 @@ fun ConversationScreenV2(
             waveform = emptyList()
             paused = false
             recording = true
+            draftStore.save(file, 0, emptyList())
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         }.onFailure {
+            runCatching { recorder?.release() }; recorder = null
+            recordingFile?.let { file -> draftStore.forget(file); file.delete() }; recordingFile = null
+            recording = false
             android.widget.Toast.makeText(context, it.message ?: "Unable to record", android.widget.Toast.LENGTH_LONG).show()
         }
     }
@@ -359,7 +369,10 @@ fun ConversationScreenV2(
     LaunchedEffect(recording, paused) {
         while (recording) {
             delay(1000)
-            if (!paused) elapsed++
+            if (!paused) {
+                elapsed++
+                recordingFile?.let { draftStore.save(it, elapsed, waveform) }
+            }
             if (elapsed >= 600) finishRecording(keep = true, autoSend = false)
         }
     }
@@ -431,16 +444,14 @@ fun ConversationScreenV2(
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
-                if (recordingCurrent) finishCurrent(false, false)
+                if (recordingCurrent) finishCurrent(true, false)
                 repo.setTyping(conversationId, false)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            runCatching { recorder?.release() }
-            recordingFile?.delete()
-            voiceDraft?.takeUnless { it.uploading }?.file?.delete()
+            if (recordingCurrent) finishCurrent(true, false)
             repo.setTyping(conversationId, false)
         }
     }
@@ -636,18 +647,20 @@ fun ConversationScreenV2(
 
                     GlassCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(30.dp), backgroundColor = if (config.isDark) Color(0xFF0C1620).copy(alpha = .78f) else Color.White.copy(alpha = .72f), elevation = 8.dp) {
                         Row(Modifier.padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            GlassIconButton(Icons.Default.Add, "Attach", { attachmentSheet = true }, size = 40.dp)
+                            if (!recording) GlassIconButton(Icons.Default.Add, "Attach", { attachmentSheet = true }, size = 48.dp)
                             Spacer(Modifier.width(3.dp))
-                            GlassTextField(text, { if (it.length <= 8000) text = it }, placeholder = if (other.uid in blocked) "Contact blocked" else "Message…", modifier = Modifier.weight(1f), keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None), singleLine = false, maxLines = 5, shape = RoundedCornerShape(24.dp))
+                            if (recording) Text(if (locked) "Hands-free recording" else "← Cancel       ↑ Lock", Modifier.weight(1f).padding(10.dp), style = MaterialTheme.typography.labelMedium)
+                            else GlassTextField(text, { if (it.length <= 8000) text = it }, placeholder = if (other.uid in blocked) "Contact blocked" else "Message…", modifier = Modifier.weight(1f), keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None), singleLine = false, maxLines = 5, shape = RoundedCornerShape(24.dp))
                             Spacer(Modifier.width(3.dp))
                             if (text.isBlank()) {
-                                GlassIconButton(Icons.Default.PhotoCamera, "Camera", onNavigateToCamera, size = 40.dp)
+                                if (!recording) GlassIconButton(Icons.Default.PhotoCamera, "Camera", onNavigateToCamera, size = 48.dp)
                                 var dx by remember { mutableFloatStateOf(0f) }
                                 var dy by remember { mutableFloatStateOf(0f) }
+                                val dragThreshold = with(androidx.compose.ui.platform.LocalDensity.current) { 80.dp.toPx() }
                                 val micX = if (recording && !locked) dx.coerceIn(-120f, 0f) else 0f
                                 val micY = if (recording && !locked) dy.coerceIn(-120f, 0f) else 0f
                                 Box(
-                                    Modifier.size(40.dp).offset { IntOffset(micX.roundToInt(), micY.roundToInt()) }.clip(CircleShape)
+                                    Modifier.size(48.dp).offset { IntOffset(micX.roundToInt(), micY.roundToInt()) }.clip(CircleShape)
                                         .background(if (config.isDark) Color.White.copy(alpha = .08f) else Color.White.copy(alpha = .58f))
                                         .pointerInput(other.uid, blocked) {
                                             detectDragGesturesAfterLongPress(
@@ -665,10 +678,10 @@ fun ConversationScreenV2(
                                                 },
                                                 onDrag = { change, amount ->
                                                     change.consume(); dx += amount.x; dy += amount.y
-                                                    if (dx < -100f && recordingCurrent) {
+                                                    if (dx < -dragThreshold && recordingCurrent && !lockedCurrent) {
                                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                                         finishCurrent(false, false); dx = 0f; dy = 0f
-                                                    } else if (dy < -100f && recordingCurrent && !lockedCurrent) {
+                                                    } else if (dy < -dragThreshold && recordingCurrent && !lockedCurrent) {
                                                         locked = true; dx = 0f; dy = 0f
                                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                                     }

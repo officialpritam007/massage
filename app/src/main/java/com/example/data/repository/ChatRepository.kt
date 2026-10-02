@@ -823,21 +823,23 @@ class ChatRepository(
 
   fun addReaction(cid: String, id: String, emoji: String) = action("react", cid, id, mapOf("emoji" to emoji))
 
-  fun deleteMessageForMe(cid: String, id: String) = runAction {
+  suspend fun deleteMessageForMeResult(cid: String, id: String) : Result<Unit> = runCatching {
     val mediaUrl = _messages.value[cid].orEmpty().firstOrNull { it.id == id }?.mediaUrl.orEmpty()
-    prefs.edit().remove("outbox:$uid:$id").apply()
     LiquidApi.call("deleteForMe", mapOf("conversationId" to cid, "messageId" to id))
     if (mediaUrl.isNotBlank()) LiquidApi.invalidateMedia(mediaUrl)
     removeLocalMessage(cid, id)
   }
 
-  fun deleteMessageForEveryone(cid: String, id: String) = runAction {
+  suspend fun deleteMessageForEveryoneResult(cid: String, id: String) : Result<Unit> = runCatching {
     val mediaUrl = _messages.value[cid].orEmpty().firstOrNull { it.id == id }?.mediaUrl.orEmpty()
-    prefs.edit().remove("outbox:$uid:$id").apply()
     LiquidApi.call("deleteForEveryone", mapOf("conversationId" to cid, "messageId" to id))
     if (mediaUrl.isNotBlank()) LiquidApi.invalidateMedia(mediaUrl)
     removeLocalMessage(cid, id)
   }
+
+  fun deleteMessageForMe(cid: String, id: String) = runAction { deleteMessageForMeResult(cid, id).getOrThrow() }
+  fun deleteMessageForEveryone(cid: String, id: String) = runAction { deleteMessageForEveryoneResult(cid, id).getOrThrow() }
+  fun deleteChatForMe(cid: String) = runAction { deleteChatForMeResult(cid).getOrThrow() }
 
   fun deleteMessage(cid: String, id: String) = deleteMessageForEveryone(cid, id)
   fun hideMessage(cid: String, id: String) = deleteMessageForMe(cid, id)
@@ -884,7 +886,7 @@ class ChatRepository(
   fun setConversationMuted(cid: String, value: Boolean) = setting(cid, "mutedFor", value)
   fun setFavorite(cid: String, value: Boolean) = setting(cid, "favoriteFor", value)
 
-  fun deleteChatForMe(cid: String) = runAction {
+  suspend fun deleteChatForMeResult(cid: String) : Result<Unit> = runCatching {
     val currentMessages = _messages.value[cid].orEmpty()
     val messageIds = currentMessages.map { it.id }.toSet()
     val mediaUrls = currentMessages.map { it.mediaUrl }.filter { it.isNotBlank() }.distinct()

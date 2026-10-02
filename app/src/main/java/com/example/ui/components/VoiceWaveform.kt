@@ -1,5 +1,13 @@
 package com.example.ui.components
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.media.AudioManager
+import android.media.AudioFocusRequest
+import androidx.core.content.ContextCompat
+import androidx.compose.ui.platform.LocalContext
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.os.Build
@@ -74,6 +82,9 @@ fun VoiceWaveformPlayer(
   modifier: Modifier = Modifier,
   isOutgoing: Boolean = false
 ) {
+  val context = LocalContext.current
+  val ownerKey = remember(mediaUrl) { java.util.UUID.randomUUID().toString() }
+  val audioManager = remember(context) { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
   var retry by remember(mediaUrl) { mutableIntStateOf(0) }
   val player = remember(mediaUrl, retry) {
     MediaPlayer().apply {
@@ -96,6 +107,51 @@ fun VoiceWaveformPlayer(
   val activeKey by VoicePlaybackBus.activeKey
   val speeds = remember { listOf(1f, 1.5f, 2f) }
   val speed = speeds[speedIndex]
+
+  val focusListener = remember(player) { AudioManager.OnAudioFocusChangeListener { change ->
+    if (change != AudioManager.AUDIOFOCUS_GAIN) {
+      runCatching { player.pause() }
+      playing = false
+      VoicePlaybackBus.release(ownerKey)
+    }
+  } }
+  val focusRequest = remember(player) {
+    if (Build.VERSION.SDK_INT >= 26) AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+      .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+      .setOnAudioFocusChangeListener(focusListener).setWillPauseWhenDucked(true).build() else null
+  }
+  fun requestFocus(): Boolean = if (Build.VERSION.SDK_INT >= 26 && focusRequest != null) {
+    audioManager.requestAudioFocus(focusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+  } else {
+    @Suppress("DEPRECATION")
+    audioManager.requestAudioFocus(focusListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+  }
+  fun abandonFocus() {
+    if (Build.VERSION.SDK_INT >= 26 && focusRequest != null) audioManager.abandonAudioFocusRequest(focusRequest)
+    else { @Suppress("DEPRECATION") audioManager.abandonAudioFocus(focusListener) }
+  }
+  val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+  DisposableEffect(player, lifecycleOwner) {
+    val receiver = object : BroadcastReceiver() {
+      override fun onReceive(context: Context?, intent: Intent?) {
+        runCatching { player.pause() }; playing = false; VoicePlaybackBus.release(ownerKey)
+      }
+    }
+    ContextCompat.registerReceiver(context, receiver, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY), ContextCompat.RECEIVER_NOT_EXPORTED)
+    val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+      if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+        runCatching { player.pause() }; playing = false; VoicePlaybackBus.release(ownerKey)
+      }
+    }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose {
+      lifecycleOwner.lifecycle.removeObserver(observer)
+      context.unregisterReceiver(receiver)
+      abandonFocus()
+    }
+  }
+  LaunchedEffect(playing) { if (!playing) abandonFocus() }
 
   val bars = remember(mediaUrl, waveform) {
     val source = if (waveform.isNotEmpty()) waveform else List(40) { index ->
@@ -130,13 +186,13 @@ fun VoiceWaveformPlayer(
         playing = false
         pos = 0f
         runCatching { it.seekTo(0) }
-        VoicePlaybackBus.release(mediaUrl)
+        VoicePlaybackBus.release(ownerKey)
       }
       player.setOnErrorListener { _, _, _ ->
         error = true
         ready = false
         playing = false
-        VoicePlaybackBus.release(mediaUrl)
+        VoicePlaybackBus.release(ownerKey)
         true
       }
       player.prepareAsync()
@@ -144,12 +200,12 @@ fun VoiceWaveformPlayer(
       error = true
       ready = false
       playing = false
-      VoicePlaybackBus.release(mediaUrl)
+      VoicePlaybackBus.release(ownerKey)
     }
   }
 
   LaunchedEffect(activeKey) {
-    if (activeKey != null && activeKey != mediaUrl && playing) {
+    if (activeKey != ownerKey && playing) {
       runCatching { player.pause() }
       playing = false
     }
@@ -161,6 +217,7 @@ fun VoiceWaveformPlayer(
         val wasPlaying = player.isPlaying
         player.playbackParams = player.playbackParams.setSpeed(speed)
         if (wasPlaying && !player.isPlaying) player.start()
+        if (!wasPlaying && player.isPlaying) player.pause()
       }
     }
   }
@@ -174,7 +231,7 @@ fun VoiceWaveformPlayer(
 
   DisposableEffect(player) {
     onDispose {
-      VoicePlaybackBus.release(mediaUrl)
+      VoicePlaybackBus.release(ownerKey)
       runCatching { player.release() }
     }
   }
@@ -203,9 +260,10 @@ fun VoiceWaveformPlayer(
               if (playing) {
                 runCatching { player.pause() }
                 playing = false
-                VoicePlaybackBus.release(mediaUrl)
+                VoicePlaybackBus.release(ownerKey)
               } else {
-                VoicePlaybackBus.activate(mediaUrl)
+                if (!requestFocus()) return@IconButton
+                VoicePlaybackBus.activate(ownerKey)
                 runCatching { player.start() }
                   .onSuccess { playing = true }
                   .onFailure { error = true }
@@ -227,9 +285,10 @@ fun VoiceWaveformPlayer(
         Canvas(Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 9.dp)) {
           if (bars.isEmpty()) return@Canvas
           val gap = 2.2.dp.toPx()
-          val width = ((size.width - gap * (bars.size - 1)) / bars.size).coerceAtLeast(1.6.dp.toPx())
+          val spacing = size.width / bars.size.coerceAtLeast(1)
+          val width = (spacing * .55f).coerceAtLeast(.5f)
           bars.forEachIndexed { index, amp ->
-            val x = index * (width + gap)
+            val x = index * spacing
             val h = size.height * amp
             val played = index.toFloat() / bars.size <= fraction
             drawLine(
