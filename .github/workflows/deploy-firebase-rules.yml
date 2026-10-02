@@ -7,13 +7,15 @@ on:
       - main
     paths:
       - 'firestore.rules'
+      - 'database.rules.json'
+      - 'firebase.json'
 
 permissions:
   contents: read
 
 jobs:
   deploy:
-    name: Publish Firestore rules
+    name: Publish Firebase rules
     runs-on: ubuntu-latest
     env:
       FIREBASE_PROJECT_ID: liquid-chat-v2
@@ -50,6 +52,11 @@ jobs:
 
       - name: Install Google auth client
         run: python3 -m pip install --disable-pip-version-check google-auth requests
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
       - name: Deploy Firestore rules through Firebase Rules API
         env:
@@ -131,6 +138,12 @@ jobs:
 
           print('Firestore rules are live:', live_ruleset)
           PY
+
+      - name: Deploy Realtime Database presence rules
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
+        run: |
+          npx --yes firebase-tools@14.15.1 deploy --only database --project "$FIREBASE_PROJECT_ID" --non-interactive
 
       - name: Remove temporary credentials
         if: always()
