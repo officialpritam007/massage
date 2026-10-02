@@ -1462,15 +1462,30 @@ class ChatRepository(
       val snap = ref.get().await()
       if (snap.exists()) {
         check(snap.safeString("senderId") == uid) { "Only the sender can do this" }
-        ref.delete().await()
-        refreshConversationSummaryDirect(cid)
-      }
-      removeLocalMessage(cid, id)
-      scope.launch {
-        runCatching {
-          LiquidApi.call("deleteForEveryone", mapOf("conversationId" to cid, "messageId" to id))
+        val mediaUrl = snap.safeString("mediaUrl")
+
+        if (mediaUrl.startsWith("appwrite:")) {
+          // A media delete is complete only after the storage object and Firestore
+          // message are removed by the authenticated backend together.
+          LiquidApi.call(
+            "deleteForEveryone",
+            mapOf("conversationId" to cid, "messageId" to id)
+          )
+          LiquidApi.invalidateMedia(mediaUrl)
+        } else {
+          ref.delete().await()
+          refreshConversationSummaryDirect(cid)
+          scope.launch {
+            runCatching {
+              LiquidApi.call(
+                "deleteForEveryone",
+                mapOf("conversationId" to cid, "messageId" to id)
+              )
+            }
+          }
         }
       }
+      removeLocalMessage(cid, id)
     } catch (t: Throwable) {
       deleteTombstones -= tombstone
       throw t
