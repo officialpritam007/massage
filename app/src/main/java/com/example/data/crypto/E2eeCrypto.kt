@@ -46,6 +46,48 @@ object E2eeCrypto {
     val fileIv: ByteArray
   )
 
+  fun storePendingMediaSecret(
+    context: Context,
+    uid: String,
+    fileId: String,
+    secret: MediaSecret
+  ) {
+    val iv = ByteArray(12).also(random::nextBytes)
+    val raw = secret.key + secret.fileIv
+    val wrapped = wrapPrivateKey(uid, raw, iv)
+    context.getSharedPreferences(STORE, 0).edit()
+      .putString("pendingMedia:$uid:$fileId", b64(wrapped))
+      .putString("pendingMediaIv:$uid:$fileId", b64(iv))
+      .apply()
+  }
+
+  fun loadPendingMediaSecret(
+    context: Context,
+    uid: String,
+    fileId: String
+  ): MediaSecret? {
+    if (uid.isBlank() || fileId.isBlank()) return null
+    val prefs = context.getSharedPreferences(STORE, 0)
+    val wrapped = prefs.getString("pendingMedia:$uid:$fileId", null) ?: return null
+    val iv = prefs.getString("pendingMediaIv:$uid:$fileId", null) ?: return null
+    return runCatching {
+      val raw = unwrapPrivateKey(uid, unb64(wrapped), unb64(iv))
+      require(raw.size == 44) { "Invalid pending media secret" }
+      MediaSecret(
+        key = raw.copyOfRange(0, 32),
+        fileIv = raw.copyOfRange(32, 44)
+      )
+    }.getOrNull()
+  }
+
+  fun deletePendingMediaSecret(context: Context, uid: String, fileId: String) {
+    if (uid.isBlank() || fileId.isBlank()) return
+    context.getSharedPreferences(STORE, 0).edit()
+      .remove("pendingMedia:$uid:$fileId")
+      .remove("pendingMediaIv:$uid:$fileId")
+      .apply()
+  }
+
   private data class Identity(
     val privateKey: PrivateKey,
     val publicKey: PublicKey,
@@ -61,11 +103,15 @@ object E2eeCrypto {
   }
 
   fun deleteIdentity(context: Context, uid: String) {
-    context.getSharedPreferences(STORE, 0).edit()
+    val prefs = context.getSharedPreferences(STORE, 0)
+    val editor = prefs.edit()
       .remove("private:$uid")
       .remove("privateIv:$uid")
       .remove("public:$uid")
-      .apply()
+    prefs.all.keys
+      .filter { it.startsWith("pendingMedia:$uid:") || it.startsWith("pendingMediaIv:$uid:") }
+      .forEach { editor.remove(it) }
+    editor.apply()
 
     val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
     val alias = wrappingAlias(uid)
