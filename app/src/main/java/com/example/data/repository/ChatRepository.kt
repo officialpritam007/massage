@@ -119,6 +119,16 @@ class ChatRepository(
     _error.value = "$area: ${friendlyError(t, "could not be loaded")}"
   }
 
+  private fun clearRecoveredSyncError() {
+    val current = _error.value.orEmpty()
+    if (
+      current.contains("permission denied", ignoreCase = true) ||
+      current.contains("insufficient permissions", ignoreCase = true)
+    ) {
+      _error.value = null
+    }
+  }
+
   private inline fun guardSnapshot(area: String, block: () -> Unit) {
     runCatching(block).onFailure { reportSnapshotFailure(area, it) }
   }
@@ -298,7 +308,8 @@ class ChatRepository(
     failedUpload = null
     retryUpload = null
     LiquidApi.clear()
-    prefs.edit().clear().apply()
+    // Keep uid-namespaced local state. Logout must never erase account history,
+    // drafts, wallpaper or migration markers; remote chat/profile/media resyncs.
     auth.signOut()
     deletedBefore.clear()
     legacyDeleteMigrations.clear()
@@ -689,7 +700,7 @@ class ChatRepository(
       val migration = "$cid:${snapshot.id}"
       if (legacyDeleteMigrations.add(migration)) {
         scope.launch {
-          runCatching { LiquidApi.call("deleteForMe", mapOf("conversationId" to cid, "messageId" to snapshot.id)) }
+          runCatching { hideMessageDirect(cid, snapshot.id) }
             .onSuccess { prefs.edit().remove(legacyKey).apply() }
             .onFailure { legacyDeleteMigrations.remove(migration) }
         }
@@ -846,6 +857,28 @@ class ChatRepository(
       true
     }.await()
     return created
+  }
+
+  private suspend fun hideMessageDirect(cid: String, id: String) {
+    val mref = db.document("conversations/$cid/messages/$id")
+    val cref = db.document("conversations/$cid")
+
+    db.runTransaction { tx ->
+      val message = tx.get(mref)
+      if (!message.exists()) return@runTransaction
+
+      val hiddenFor = (message.get("hiddenFor") as? List<*>)
+        ?.filterIsInstance<String>()
+        .orEmpty()
+      if (uid !in hiddenFor) {
+        tx.update(mref, "hiddenFor", FieldValue.arrayUnion(uid))
+      }
+
+      val conversation = tx.get(cref)
+      if (conversation.safeString("lastMessageId") == id) {
+        tx.update(cref, "hiddenLastFor.$uid", id)
+      }
+    }.await()
   }
 
   private suspend fun refreshConversationSummaryDirect(cid: String) {
@@ -1164,19 +1197,16 @@ class ChatRepository(
   fun addReaction(cid: String, id: String, emoji: String) = action("react", cid, id, mapOf("emoji" to emoji))
 
   fun deleteMessageForMe(cid: String, id: String) = runAction {
-    prefs.edit()
-      .remove("outbox:$uid:$id")
-      .putBoolean("hidden:$uid:$id", true)
-      .apply()
-    deleteTombstones += (cid + ":" + id)
-    removeLocalMessage(cid, id)
-    // Best-effort cross-device migration when the optional backend is available again.
-    scope.launch {
-      runCatching {
-        LiquidApi.call("deleteForMe", mapOf("conversationId" to cid, "messageId" to id))
-      }.onSuccess {
-        prefs.edit().remove("hidden:$uid:$id").apply()
-      }
+    val tombstone = cid + ":" + id
+    prefs.edit().remove("outbox:$uid:$id").apply()
+    deleteTombstones += tombstone
+    try {
+      hideMessageDirect(cid, id)
+      prefs.edit().remove("hidden:$uid:$id").apply()
+      removeLocalMessage(cid, id)
+    } catch (t: Throwable) {
+      deleteTombstones -= tombstone
+      throw t
     }
   }
 
