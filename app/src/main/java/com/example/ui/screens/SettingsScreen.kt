@@ -351,15 +351,23 @@ fun SettingsScreen(
           }
 
           "Log out" -> {
-            Text("Pending unsent messages on this device will be removed. Send or retry them before logging out.")
+            Text(
+              "Logging out permanently erases your Liquid Chat conversations, shared media, profile photo and app profile from the server. This cannot be undone."
+            )
             GlassButton(
-              "Log out",
-              {
-                viewModel.logout()
-                onLogout()
-                dialog = ""
+              text = "Log out & erase all data",
+              onClick = {
+                busy = true
+                viewModel.logout { ok, _ ->
+                  busy = false
+                  if (ok) {
+                    dialog = ""
+                    onLogout()
+                  }
+                }
               },
-              modifier = Modifier.fillMaxWidth()
+              modifier = Modifier.fillMaxWidth(),
+              isLoading = busy
             )
           }
 
