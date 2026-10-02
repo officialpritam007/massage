@@ -149,6 +149,20 @@ private fun appendWaveformV2(existing: List<Float>, value: Float): List<Float> {
     return next
 }
 
+private fun compactPresenceLabelV3(user: User): String {
+    val full = presenceLabel(user)
+    return when {
+        full == "Online" -> full
+        full.startsWith("Last seen today at ") ->
+            "Last seen " + full.removePrefix("Last seen today at ")
+        full.startsWith("Last seen yesterday at ") ->
+            "Yesterday • " + full.removePrefix("Last seen yesterday at ")
+        full.startsWith("Last seen ") ->
+            full.removePrefix("Last seen ").replace(" at ", " • ")
+        else -> full
+    }
+}
+
 @Composable
 fun ConversationScreenV2(
     conversationId: String,
@@ -531,27 +545,71 @@ fun ConversationScreenV2(
         Scaffold(
             containerColor = Color.Transparent,
             topBar = {
-                Column(Modifier.statusBarsPadding().padding(horizontal = 10.dp, vertical = 6.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        GlassIconButton(Icons.AutoMirrored.Filled.ArrowBack, "Back", onBackClick, size = 44.dp)
+                Column(Modifier.statusBarsPadding().padding(horizontal = 9.dp, vertical = 5.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        GlassIconButton(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            "Back",
+                            onBackClick,
+                            size = 38.dp
+                        )
                         GlassCard(
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(28.dp),
-                            backgroundColor = if (config.isDark) Color(0xFF0D1723).copy(alpha = .72f) else Color.White.copy(alpha = .70f),
-                            elevation = 5.dp,
+                            shape = RoundedCornerShape(24.dp),
+                            backgroundColor = if (config.isDark) {
+                                Color(0xFF091521).copy(alpha = .68f)
+                            } else {
+                                Color.White.copy(alpha = .60f)
+                            },
+                            elevation = 4.dp,
                             onClick = { onNavigateToProfile(other.uid) }
                         ) {
-                            Row(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                                GlassAvatar(other.photoUrl, other.displayName.ifBlank { "Contact" }, 34.dp, conversation?.isOnline == true && other.onlineVisible)
-                                Spacer(Modifier.width(9.dp))
+                            Row(
+                                Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                GlassAvatar(
+                                    other.photoUrl,
+                                    other.displayName.ifBlank { "Contact" },
+                                    30.dp,
+                                    conversation?.isOnline == true && other.onlineVisible
+                                )
+                                Spacer(Modifier.width(8.dp))
                                 Column(Modifier.weight(1f)) {
-                                    Text(other.displayName.ifBlank { "Contact" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
-                                    val label = presenceLabel(other)
-                                    if (label.isNotBlank()) Text(label, style = MaterialTheme.typography.labelSmall, color = if (other.isOnline) EmeraldOnline else MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                                    Text(
+                                        other.displayName.ifBlank { "Contact" },
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    val label = compactPresenceLabelV3(other)
+                                    if (label.isNotBlank()) {
+                                        Text(
+                                            label,
+                                            fontSize = 10.sp,
+                                            color = if (other.isOnline) {
+                                                EmeraldOnline
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                            },
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
                             }
                         }
-                        GlassIconButton(Icons.Default.MoreHoriz, "Chat menu", { menu = true }, size = 44.dp)
+                        GlassIconButton(
+                            Icons.Default.MoreHoriz,
+                            "Chat menu",
+                            { menu = true },
+                            size = 38.dp
+                        )
                     }
                     AnimatedVisibility(search) {
                         GlassTextField(query, { query = it }, placeholder = "Search messages", modifier = Modifier.padding(top = 7.dp), shape = RoundedCornerShape(24.dp), keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None))
