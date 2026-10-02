@@ -493,7 +493,7 @@ fun ConversationScreenV2(
         deletingId = message.id
         deleteRetry = null
         scope.launch {
-            delay(if (config.isReducedMotion) 90 else 520)
+            delay(if (config.isReducedMotion) 70 else 300)
             locallyHiddenDeletes = locallyHiddenDeletes + message.id
             deletingId = null
 
