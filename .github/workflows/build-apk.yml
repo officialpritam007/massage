@@ -19,10 +19,7 @@ jobs:
     name: Verify and Build Debug APK
     runs-on: ubuntu-latest
     env:
-      LIQUID_API_URL: ${{ vars.LIQUID_API_URL || 'https://liquichat.sgp.appwrite.run' }}
-      APPWRITE_ENDPOINT: ${{ vars.APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1' }}
-      APPWRITE_PROJECT_ID: ${{ vars.APPWRITE_PROJECT_ID || '6abae44b0030a4b3c0b4' }}
-      APPWRITE_BUCKET_ID: ${{ vars.APPWRITE_BUCKET_ID || '6abae4e300352b37c209' }}
+      LIQUID_API_URL: ${{ vars.LIQUID_API_URL || 'https://us-central1-liquid-chat-v2.cloudfunctions.net/liquidApi' }}
       APP_CHECK_PROVIDER: ${{ vars.APP_CHECK_PROVIDER || 'none' }}
 
     steps:
@@ -76,11 +73,11 @@ jobs:
           npm ci --prefix tests/firestore
           npx --yes firebase-tools@14.15.1 emulators:exec --only firestore --project demo-liquid-chat "cd tests/firestore && npm test"
 
-      - name: Run Appwrite backend tests
+      - name: Validate Firebase + Cloudinary backend source
         run: |
-          npm ci --prefix appwrite-functions/liquid-api
-          node --check appwrite-functions/liquid-api/src/main.js
-          npm test --prefix appwrite-functions/liquid-api
+          npm install --prefix firebase-functions/liquid-api --ignore-scripts
+          node --check firebase-functions/liquid-api/index.js
+          node --check firebase-functions/liquid-api/src/main.js
 
       - name: Run unit tests
         run: |

@@ -166,7 +166,7 @@ service cloud.firestore {
       allow read: if signedIn()
         && request.auth.uid in resource.data.participantIds;
 
-      // Core chat remains available even when the optional Appwrite bridge is unavailable.
+      // Core chat remains available even when the Firebase + Cloudinary media backend is unavailable.
       // Creation is limited to a 1-to-1 conversation containing the authenticated user.
       allow create: if signedIn()
         && request.resource.data.participantIds is list

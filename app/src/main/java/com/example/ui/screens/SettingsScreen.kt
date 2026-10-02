@@ -162,7 +162,7 @@ fun SettingsScreen(
             }
           }
           SettingRow("Blocked contacts", "Manage people you blocked") { dialog = "Blocked contacts" }
-          SettingRow("Developer Diagnostics", "Firebase, Appwrite, FCM and backend status", onNavigateToDiagnostics)
+          SettingRow("Developer Diagnostics", "Firebase, Cloudinary, FCM and backend status", onNavigateToDiagnostics)
         }
 
         SettingsSection("Account & support") {
@@ -303,7 +303,7 @@ fun SettingsScreen(
 
           "Data & Storage" -> {
             Text("Temporary cache: ${cacheSize / 1024 / 1024} MB")
-            Text("Chat attachments are encrypted on-device before Appwrite storage. Maximum attachment size: 25 MB.")
+            Text("Chat attachments are encrypted on-device before Cloudinary storage. Maximum attachment size: 25 MB.")
             Text("Liquid Chat does not back up app data or E2EE private keys.")
             Text("After an uninstall, the next sign-in detects the new installation and permanently clears the previous Liquid Chat data before syncing.")
             Text("Clearing temporary cache does not delete server data; logout does.")
@@ -341,7 +341,7 @@ fun SettingsScreen(
             Text("Liquid Chat ${BuildConfig.VERSION_NAME}")
             Text("Developed by Pritam Pal")
             Text("© 2026 Pritam Pal")
-            Text("Firebase authentication + Firestore realtime transport + Appwrite encrypted media storage.")
+            Text("Firebase authentication + Firestore realtime transport + Cloudinary encrypted media storage.")
             Text("New message text and chat media use device-bound end-to-end encryption with signed key metadata. Security keys can be compared from a contact profile.")
             TextButton(
               onClick = {

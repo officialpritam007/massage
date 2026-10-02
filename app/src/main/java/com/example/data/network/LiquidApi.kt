@@ -26,20 +26,18 @@ object LiquidApi {
     .retryOnConnectionFailure(true)
     .build()
 
-  private var jwt = ""
-  private var jwtUntil = 0L
   private data class ResolvedMedia(val url: String, val validUntil: Long)
   private val resolvedMedia = ConcurrentHashMap<String, ResolvedMedia>()
   private val mediaSecrets = ConcurrentHashMap<String, E2eeCrypto.MediaSecret>()
 
   fun registerMediaSecret(url: String, secret: E2eeCrypto.MediaSecret) {
-    if (!url.startsWith("appwrite:")) return
-    mediaSecrets[url.removePrefix("appwrite:")] = secret
+    if (!url.startsWith("cloudinary:")) return
+    mediaSecrets[url.removePrefix("cloudinary:")] = secret
   }
 
   fun mediaSecret(url: String): E2eeCrypto.MediaSecret? {
-    if (!url.startsWith("appwrite:")) return null
-    val fileId = url.removePrefix("appwrite:")
+    if (!url.startsWith("cloudinary:")) return null
+    val fileId = url.removePrefix("cloudinary:")
     mediaSecrets[fileId]?.let { return it }
     if (!::context.isInitialized) return null
     val uid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
@@ -49,8 +47,8 @@ object LiquidApi {
   }
 
   fun forgetPendingMediaSecret(url: String) {
-    if (!url.startsWith("appwrite:") || !::context.isInitialized) return
-    val fileId = url.removePrefix("appwrite:")
+    if (!url.startsWith("cloudinary:") || !::context.isInitialized) return
+    val fileId = url.removePrefix("cloudinary:")
     val uid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
     E2eeCrypto.deletePendingMediaSecret(context, uid, fileId)
     mediaSecrets.remove(fileId)
@@ -59,106 +57,40 @@ object LiquidApi {
 
   suspend fun call(action: String, data: Map<String, Any?> = emptyMap()): JSONObject = withContext(Dispatchers.IO) {
     check(BuildConfig.LIQUID_API_URL.startsWith("https://")) {
-      "Backend setup required: configure LIQUID_API_URL in GitHub Actions."
+      "Backend setup required: configure LIQUID_API_URL with the Firebase liquidApi function URL."
     }
     val user = FirebaseAuth.getInstance().currentUser ?: error("Please sign in again")
     var token = user.getIdToken(false).await().token ?: error("Please sign in again")
     val payloadJson = JSONObject(data).put("action", action).toString()
 
-    fun directRequest(idToken: String): Response {
-      return http.newCall(
-        Request.Builder()
-          .url(BuildConfig.LIQUID_API_URL)
-          .header("Authorization", "Bearer $idToken")
-          .post(payloadJson.toRequestBody("application/json".toMediaType()))
-          .build()
-      ).execute()
-    }
+    fun execute(idToken: String): Response = http.newCall(
+      Request.Builder()
+        .url(BuildConfig.LIQUID_API_URL)
+        .header("Authorization", "Bearer $idToken")
+        .header("Content-Type", "application/json")
+        .post(payloadJson.toRequestBody("application/json".toMediaType()))
+        .build()
+    ).execute()
 
-    fun parseDirect(response: Response): JSONObject {
-      response.use { responseValue ->
-        val raw = responseValue.body?.string().orEmpty()
+    fun parse(response: Response): JSONObject {
+      response.use { value ->
+        val raw = value.body?.string().orEmpty()
         val json = runCatching { JSONObject(raw.ifBlank { "{}" }) }.getOrElse {
-          JSONObject().put("error", "Invalid backend response (${responseValue.code})")
+          JSONObject().put("error", "Invalid backend response (${value.code})")
         }
-        check(responseValue.isSuccessful) {
-          json.optString("error", "Request failed (${responseValue.code})")
-        }
+        check(value.isSuccessful) { json.optString("error", "Request failed (${value.code})") }
         return json
       }
     }
 
-    fun executeThroughAppwrite(idToken: String): JSONObject {
-      val executionRequest = JSONObject()
-        .put("body", payloadJson)
-        .put("async", false)
-        .put("path", "/")
-        .put("method", "POST")
-        .put(
-          "headers",
-          JSONObject()
-            .put("Authorization", "Bearer $idToken")
-            .put("content-type", "application/json")
-        )
-
-      val endpoint = BuildConfig.APPWRITE_ENDPOINT.trimEnd('/') +
-        "/functions/firebase-appwrite-bridge/executions"
-      http.newCall(
-        Request.Builder()
-          .url(endpoint)
-          .header("X-Appwrite-Project", BuildConfig.APPWRITE_PROJECT_ID)
-          .header("Content-Type", "application/json")
-          .post(executionRequest.toString().toRequestBody("application/json".toMediaType()))
-          .build()
-      ).execute().use { responseValue ->
-        val raw = responseValue.body?.string().orEmpty()
-        val envelope = runCatching { JSONObject(raw.ifBlank { "{}" }) }.getOrElse {
-          JSONObject().put("message", "Invalid Appwrite response (${responseValue.code})")
-        }
-        check(responseValue.isSuccessful) {
-          envelope.optString("message", "Backend fallback failed (${responseValue.code})")
-        }
-
-        val backendStatus = envelope.optInt("responseStatusCode", 0)
-        val backendRaw = envelope.optString("responseBody", "")
-        val backendJson = runCatching {
-          JSONObject(backendRaw.ifBlank { "{}" })
-        }.getOrElse {
-          JSONObject().put("error", "Invalid backend response ($backendStatus)")
-        }
-        check(backendStatus in 200..299) {
-          backendJson.optString(
-            "error",
-            if (backendStatus > 0) "Request failed ($backendStatus)" else "Backend execution failed"
-          )
-        }
-        return backendJson
-      }
-    }
-
-    var response = directRequest(token)
+    var response = execute(token)
     if (response.code == 401) {
       response.close()
       token = user.getIdToken(true).await().token ?: error("Please sign in again")
-      response = directRequest(token)
+      response = execute(token)
     }
-
-    if (response.code == 402) {
-      response.close()
-      return@withContext executeThroughAppwrite(token)
-    }
-
-    parseDirect(response)
+    parse(response)
   }
-
-  private suspend fun session(): String {
-    if (System.currentTimeMillis() >= jwtUntil || jwt.isBlank()) {
-      jwt = call("session").getString("jwt")
-      jwtUntil = System.currentTimeMillis() + 8 * 60_000
-    }
-    return jwt
-  }
-
   fun clearMediaCachesOnly() {
     resolvedMedia.clear()
     mediaSecrets.clear()
@@ -169,15 +101,11 @@ object LiquidApi {
     }
   }
 
-  fun clear() {
-    jwt = ""
-    jwtUntil = 0L
-    clearMediaCachesOnly()
-  }
+  fun clear() = clearMediaCachesOnly()
 
   fun invalidateMedia(url: String, purgeCaches: Boolean = true) {
-    if (url.startsWith("appwrite:")) {
-      val fileId = url.removePrefix("appwrite:")
+    if (url.startsWith("cloudinary:")) {
+      val fileId = url.removePrefix("cloudinary:")
       resolvedMedia.remove(fileId)
       mediaSecrets.remove(fileId)
       if (::context.isInitialized) {
@@ -203,7 +131,7 @@ object LiquidApi {
   fun peekCachedPrivateMedia(url: String?): File? {
     localFile(url)?.let { return it }
     if (!::context.isInitialized || url.isNullOrBlank()) return null
-    val id = if (url.startsWith("appwrite:")) url.removePrefix("appwrite:") else Integer.toHexString(url.hashCode())
+    val id = if (url.startsWith("cloudinary:")) url.removePrefix("cloudinary:") else Integer.toHexString(url.hashCode())
     val cached = File(File(context.cacheDir, "private-media"), "$id.bin")
     return cached.takeIf { it.exists() && it.length() > 0 }
   }
@@ -211,7 +139,7 @@ object LiquidApi {
   suspend fun cachedPrivateMedia(url: String, forceRefresh: Boolean = false): File = withContext(Dispatchers.IO) {
     localFile(url)?.let { return@withContext it }
     require(::context.isInitialized) { "App context is unavailable" }
-    if (!url.startsWith("appwrite:")) {
+    if (!url.startsWith("cloudinary:")) {
       val id = Integer.toHexString(url.hashCode())
       val dir = File(context.cacheDir, "private-media").apply { mkdirs() }
       val cached = File(dir, "$id.bin")
@@ -229,7 +157,7 @@ object LiquidApi {
       return@withContext cached
     }
 
-    val fileId = url.removePrefix("appwrite:")
+    val fileId = url.removePrefix("cloudinary:")
     val dir = File(context.cacheDir, "private-media").apply { mkdirs() }
     val cached = File(dir, "$fileId.bin")
     if (cached.exists() && cached.length() > 0 && !forceRefresh) return@withContext cached
@@ -286,9 +214,6 @@ object LiquidApi {
       "mp4" -> "video/mp4"
       else -> "application/octet-stream"
     }
-
-    // File Uris produced by MediaRecorder are not always classified consistently by OEMs.
-    // Prefer the actual recording extension so AAC voice notes remain audio/* in Appwrite.
     if (extension == "aac") mime = "audio/aac"
     if (extension == "m4a" && !mime.startsWith("audio/")) mime = "audio/mp4"
 
@@ -327,93 +252,62 @@ object LiquidApi {
 
       require(file.length() > 0) { "Empty file" }
       val encryptedChatMedia = conversationId != null
-      val begin = call(
-        "uploadBegin",
-        mapOf(
-          "conversationId" to conversationId,
-          "encrypted" to encryptedChatMedia,
-          "originalMime" to mime
-        )
-      )
+      val begin = call("uploadBegin", mapOf(
+        "conversationId" to conversationId,
+        "encrypted" to encryptedChatMedia,
+        "originalMime" to mime
+      ))
       val id = begin.getString("fileId")
-      val owner = begin.getString("ownerId")
-      val auth = session()
+      val uploadUrl = begin.getString("uploadUrl")
+      val apiKey = begin.getString("apiKey")
+      val timestamp = begin.getLong("timestamp").toString()
+      val signature = begin.getString("signature")
+      val publicId = begin.getString("publicId")
+      val deliveryType = begin.optString("deliveryType", "authenticated")
 
-      val encryptedFile = if (encryptedChatMedia) {
-        File.createTempFile("upload-e2ee-", ".bin", context.cacheDir)
-      } else {
-        null
-      }
+      val encryptedFile = if (encryptedChatMedia) File.createTempFile("upload-e2ee-", ".bin", context.cacheDir) else null
       val uploadFile: File
       val uploadMime: String
-      val suffix: String
+      val filename: String
 
       if (encryptedFile != null) {
         val secret = E2eeCrypto.encryptMediaFile(file, encryptedFile, id)
         mediaSecrets[id] = secret
-        val uid = FirebaseAuth.getInstance().currentUser?.uid
-          ?: error("Please sign in again")
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: error("Please sign in again")
         E2eeCrypto.storePendingMediaSecret(context, uid, id, secret)
         uploadFile = encryptedFile
         uploadMime = "application/octet-stream"
-        suffix = "bin"
+        filename = "$id.bin"
       } else {
         uploadFile = file
         uploadMime = mime
-        suffix = when {
-          mime.startsWith("image/") -> "jpg"
-          mime == "audio/aac" -> "aac"
-          mime.startsWith("audio/") -> "m4a"
-          mime.startsWith("video/") -> "mp4"
-          else -> "bin"
-        }
+        filename = if (mime.startsWith("image/")) "$id.jpg" else "$id.bin"
       }
 
       try {
-        var offset = 0L
-        uploadFile.inputStream().use { input ->
-          while (offset < uploadFile.length()) {
-            kotlinx.coroutines.currentCoroutineContext().ensureActiveCompat()
-            val bytes = ByteArray(
-              minOf(5L * 1024 * 1024, uploadFile.length() - offset).toInt()
-            )
-            var read = 0
-            while (read < bytes.size) {
-              val n = input.read(bytes, read, bytes.size - read)
-              if (n < 0) break
-              read += n
-            }
-            require(read > 0) { "Upload stream ended unexpectedly" }
-            val body = MultipartBody.Builder().setType(MultipartBody.FORM)
-              .addFormDataPart("fileId", id)
-              .addFormDataPart("permissions[]", "read(\"user:$owner\")")
-              .addFormDataPart("permissions[]", "update(\"user:$owner\")")
-              .addFormDataPart("permissions[]", "delete(\"user:$owner\")")
-              .addFormDataPart(
-                "file",
-                "$id.$suffix",
-                bytes.copyOf(read).toRequestBody(uploadMime.toMediaType())
-              )
-              .build()
-            val request = Request.Builder()
-              .url("${BuildConfig.APPWRITE_ENDPOINT}/storage/buckets/${BuildConfig.APPWRITE_BUCKET_ID}/files")
-              .header("X-Appwrite-Project", BuildConfig.APPWRITE_PROJECT_ID)
-              .header("X-Appwrite-JWT", auth)
-              .header(
-                "Content-Range",
-                "bytes $offset-${offset + read - 1}/${uploadFile.length()}"
-              )
-            if (offset > 0) request.header("X-Appwrite-ID", id)
-            http.newCall(request.post(body).build()).execute().use { responseValue ->
-              check(responseValue.isSuccessful) {
-                "Upload failed (${responseValue.code}). Check bucket permissions and file limits."
-              }
-            }
-            offset += read
-            progress(offset.toFloat() / uploadFile.length())
-          }
+        progress(0f)
+        val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+          .addFormDataPart("api_key", apiKey)
+          .addFormDataPart("timestamp", timestamp)
+          .addFormDataPart("signature", signature)
+          .addFormDataPart("public_id", publicId)
+          .addFormDataPart("type", deliveryType)
+          .addFormDataPart("file", filename, uploadFile.readBytes().toRequestBody(uploadMime.toMediaType()))
+          .build()
+        val response = http.newCall(Request.Builder().url(uploadUrl).post(body).build()).execute()
+        val uploaded = response.use { value ->
+          val raw = value.body?.string().orEmpty()
+          val json = runCatching { JSONObject(raw.ifBlank { "{}" }) }.getOrElse { JSONObject() }
+          check(value.isSuccessful) { json.optJSONObject("error")?.optString("message") ?: "Cloudinary upload failed (${value.code})" }
+          json
         }
-        call("uploadFinish", mapOf("fileId" to id)).getString("url")
+        progress(1f)
+        call("uploadFinish", mapOf(
+          "fileId" to id,
+          "publicId" to uploaded.optString("public_id"),
+          "resourceType" to uploaded.optString("resource_type"),
+          "version" to uploaded.optLong("version", 0L)
+        )).getString("url")
       } finally {
         encryptedFile?.delete()
       }
@@ -421,23 +315,18 @@ object LiquidApi {
       file.delete()
     }
   }
-
   suspend fun resolve(url: String, forceRefresh: Boolean = false): String {
-    if (!url.startsWith("appwrite:")) return url
-    val fileId = url.removePrefix("appwrite:")
+    if (!url.startsWith("cloudinary:")) return url
+    val fileId = url.removePrefix("cloudinary:")
     val now = System.currentTimeMillis()
     if (!forceRefresh) {
       resolvedMedia[fileId]?.takeIf { it.validUntil > now + 15_000 }?.let { return it.url }
     }
-    val resolved = call("mediaAccess", mapOf("fileId" to fileId)).getString("url")
-    // Server media tokens are intentionally short-lived; refresh before expiry.
-    resolvedMedia[fileId] = ResolvedMedia(resolved, now + 45_000)
+    val access = call("mediaAccess", mapOf("fileId" to fileId))
+    val resolved = access.getString("url")
+    val validFor = access.optLong("validForMs", 45_000L).coerceIn(15_000L, 5 * 60_000L)
+    resolvedMedia[fileId] = ResolvedMedia(resolved, now + validFor)
     return resolved
   }
 }
 
-private fun kotlin.coroutines.CoroutineContext.ensureActiveCompat() {
-  this[kotlinx.coroutines.Job]?.let {
-    if (!it.isActive) throw kotlinx.coroutines.CancellationException()
-  }
-}
