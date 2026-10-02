@@ -2,7 +2,7 @@ import {onRequest} from 'firebase-functions/v2/https';
 import handler from './src/main.js';
 
 export const liquidApi = onRequest(
-  {cors: true, timeoutSeconds: 120, memory: '512MiB'},
+  {cors: true, timeoutSeconds: 120, memory: '512MiB', secrets: ['CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET']},
   async (request, response) => {
     const req = {
       headers: request.headers,
