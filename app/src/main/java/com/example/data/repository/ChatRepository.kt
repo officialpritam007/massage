@@ -27,6 +27,7 @@ class ChatRepository(
   private val auth = FirebaseAuth.getInstance()
   private val db = FirebaseFirestore.getInstance()
   private val prefs get() = LiquidApi.context.getSharedPreferences("liquid-private", 0)
+  private val installPrefs get() = LiquidApi.context.getSharedPreferences("liquid-install", 0)
   private val uid get() = auth.currentUser?.uid.orEmpty()
 
   private val listeners = mutableListOf<ListenerRegistration>()
@@ -93,7 +94,25 @@ class ChatRepository(
   val historyLoading = _historyLoading.asStateFlow()
 
   init {
-    if (isUserLoggedIn()) startSync() else _loading.value = false
+    if (isUserLoggedIn()) {
+      scope.launch {
+        val ready = runCatching {
+          enforceInstallationPrivacy()
+          true
+        }.getOrElse {
+          _error.value = "Secure reinstall cleanup failed: " + friendlyError(it)
+          false
+        }
+        if (ready) {
+          startSync()
+        } else {
+          auth.signOut()
+          _loading.value = false
+        }
+      }
+    } else {
+      _loading.value = false
+    }
   }
 
   fun clearError() { _error.value = null }
@@ -182,6 +201,72 @@ class ChatRepository(
         if (it !is CancellationException) _error.value = friendlyError(it)
       }
     }
+  }
+
+  private fun installationId(): String {
+    return installPrefs.getString("installationId", null)
+      ?: UUID.randomUUID().toString().replace("-", "").also { id ->
+        installPrefs.edit().putString("installationId", id).apply()
+      }
+  }
+
+  private suspend fun enforceInstallationPrivacy() {
+    val account = uid
+    if (account.isBlank()) return
+
+    val localInstallationId = installationId()
+    val ref = db.document("users/$account")
+    val snapshot = ref.get().await()
+    if (!snapshot.exists()) return
+
+    val remoteInstallationId = snapshot.safeString("installationId")
+    when {
+      remoteInstallationId.isBlank() -> {
+        ref.update("installationId", localInstallationId).await()
+      }
+      remoteInstallationId != localInstallationId -> {
+        LiquidApi.call(
+          "purgeUserData",
+          mapOf("installationId" to localInstallationId)
+        )
+        prefs.edit().clear().apply()
+        LiquidApi.clearMediaCachesOnly()
+        deletedBefore.clear()
+        legacyDeleteMigrations.clear()
+        deleteTombstones.clear()
+        pendingPeers.clear()
+        _conversations.value = emptyList()
+        _messages.value = emptyMap()
+      }
+    }
+  }
+
+  private fun finishLocalLogout() {
+    stopSync()
+    appearanceJob?.cancel()
+    uploadJob?.cancel()
+    uploadQueue.clear()
+    activeUpload = null
+    failedUpload = null
+    retryUpload = null
+    LiquidApi.clear()
+    prefs.edit().clear().apply()
+    auth.signOut()
+    deletedBefore.clear()
+    legacyDeleteMigrations.clear()
+    deleteTombstones.clear()
+    pendingPeers.clear()
+    _currentUser.value = User()
+    _users.value = emptyList()
+    _conversations.value = emptyList()
+    _messages.value = emptyMap()
+    _blockedUserIds.value = emptySet()
+    _appearance.value = AppearanceSettings()
+    _privacy.value = PrivacySettings()
+    _notifications.value = NotificationSettings()
+    _searchHistory.value = emptyList()
+    _error.value = null
+    _loading.value = false
   }
 
   private suspend fun updateProfileDirect(
@@ -274,6 +359,9 @@ class ChatRepository(
       runCatching { created.user?.delete()?.await() }
       throw t
     }
+    db.document("users/$uid")
+      .update("installationId", installationId())
+      .await()
     auth.currentUser?.sendEmailVerification()?.await()
     startSync()
     _currentUser.value
@@ -281,6 +369,12 @@ class ChatRepository(
 
   suspend fun signInWithEmail(email: String, pass: String): Result<User> = runCatching {
     auth.signInWithEmailAndPassword(email.trim(), pass).await()
+    try {
+      enforceInstallationPrivacy()
+    } catch (t: Throwable) {
+      auth.signOut()
+      throw t
+    }
     startSync()
     _currentUser.value
   }
@@ -298,35 +392,29 @@ class ChatRepository(
   fun logout() {
     setPresence(false)
     val account = uid
-    val tokenKey = prefs.getString("deviceId", "").orEmpty()
-    if (account.isNotBlank() && tokenKey.isNotBlank()) {
-      db.document("users/$account").update("tokens.$tokenKey", FieldValue.delete())
+    if (account.isBlank()) {
+      finishLocalLogout()
+      return
     }
-    stopSync()
-    appearanceJob?.cancel()
-    uploadJob?.cancel()
-    uploadQueue.clear()
-    activeUpload = null
-    failedUpload = null
-    retryUpload = null
-    LiquidApi.clear()
-    // Keep uid-namespaced local state. Logout must never erase account history,
-    // drafts, wallpaper or migration markers; remote chat/profile/media resyncs.
-    auth.signOut()
-    deletedBefore.clear()
-    legacyDeleteMigrations.clear()
-    deleteTombstones.clear()
-    pendingPeers.clear()
-    _currentUser.value = User()
-    _users.value = emptyList()
-    _conversations.value = emptyList()
-    _messages.value = emptyMap()
-    _blockedUserIds.value = emptySet()
-    _appearance.value = AppearanceSettings()
-    _privacy.value = PrivacySettings()
-    _notifications.value = NotificationSettings()
-    _searchHistory.value = emptyList()
-    _loading.value = false
+
+    _loading.value = true
+    scope.launch {
+      val wiped = runCatching {
+        LiquidApi.call(
+          "purgeUserData",
+          mapOf("installationId" to installationId())
+        )
+      }
+      if (wiped.isFailure) {
+        _loading.value = false
+        _error.value = "Secure logout could not erase server data: " +
+          friendlyError(wiped.exceptionOrNull() ?: IllegalStateException("Unknown error"))
+        return@launch
+      }
+
+      LiquidApi.clearMediaCachesOnly()
+      finishLocalLogout()
+    }
   }
 
   fun close() {
