@@ -373,7 +373,7 @@ fun ConversationScreenV2(
         if (!e2eeReady) {
             android.widget.Toast.makeText(
                 context,
-                "Encryption setup pending. Ask this contact to open Liquid Chat 4.1.0.",
+                "Encryption setup pending. Ask this contact to open or update Liquid Chat.",
                 android.widget.Toast.LENGTH_LONG
             ).show()
             return
@@ -387,7 +387,7 @@ fun ConversationScreenV2(
         if (!e2eeReady) {
             android.widget.Toast.makeText(
                 context,
-                "Encryption setup pending. Ask this contact to open Liquid Chat 4.1.0.",
+                "Encryption setup pending. Ask this contact to open or update Liquid Chat.",
                 android.widget.Toast.LENGTH_LONG
             ).show()
             return
@@ -653,7 +653,7 @@ fun ConversationScreenV2(
                             } else {
                                 Color.White.copy(alpha = .60f)
                             },
-                            elevation = 4.dp,
+                            elevation = 2.dp,
                             onClick = { onNavigateToProfile(other.uid) }
                         ) {
                             Row(
@@ -739,7 +739,7 @@ fun ConversationScreenV2(
                                     tint = MaterialTheme.colorScheme.error
                                 )
                                 Text(
-                                    "Encryption setup pending — this contact must open Liquid Chat 4.1.0",
+                                    "Encryption setup pending — ask this contact to open or update Liquid Chat",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.weight(1f)
@@ -851,7 +851,7 @@ fun ConversationScreenV2(
                         } else {
                             Color.White.copy(alpha = .62f)
                         },
-                        elevation = 7.dp
+                        elevation = 4.dp
                     ) {
                         Column(
                             Modifier
@@ -914,7 +914,7 @@ fun ConversationScreenV2(
                                         } else {
                                             android.widget.Toast.makeText(
                                                 context,
-                                                "Encryption setup pending. Ask this contact to open Liquid Chat 4.1.0.",
+                                                "Encryption setup pending. Ask this contact to open or update Liquid Chat.",
                                                 android.widget.Toast.LENGTH_LONG
                                             ).show()
                                         }
@@ -955,7 +955,7 @@ fun ConversationScreenV2(
                                                     } else {
                                                         android.widget.Toast.makeText(
                                                             context,
-                                                            "Encryption setup pending. Ask this contact to open Liquid Chat 4.1.0.",
+                                                            "Encryption setup pending. Ask this contact to open or update Liquid Chat.",
                                                             android.widget.Toast.LENGTH_LONG
                                                         ).show()
                                                     }
@@ -1036,7 +1036,7 @@ fun ConversationScreenV2(
                                                     if (!e2eeReady) {
                                                         android.widget.Toast.makeText(
                                                             context,
-                                                            "Encryption setup pending. Ask this contact to open Liquid Chat 4.1.0.",
+                                                            "Encryption setup pending. Ask this contact to open or update Liquid Chat.",
                                                             android.widget.Toast.LENGTH_LONG
                                                         ).show()
                                                         return@GlassIconButton
@@ -1132,10 +1132,20 @@ fun ConversationScreenV2(
                     }
                 }
                 if (!stickToBottom && listState.layoutInfo.totalItemsCount > 0) {
-                    SmallFloatingActionButton(onClick = {
-                        stickToBottom = true
-                        scope.launch { listState.animateScrollToItem((listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)) }
-                    }, modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp)) { Icon(Icons.Default.KeyboardArrowDown, "Jump to newest") }
+                    GlassIconButton(
+                        icon = Icons.Default.KeyboardArrowDown,
+                        contentDescription = "Jump to newest",
+                        onClick = {
+                            stickToBottom = true
+                            scope.launch {
+                                listState.animateScrollToItem(
+                                    (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
+                                )
+                            }
+                        },
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
+                        size = 42.dp
+                    )
                 }
             }
         }
