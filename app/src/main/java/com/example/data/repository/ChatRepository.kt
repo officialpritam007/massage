@@ -46,7 +46,18 @@ class ChatRepository(
   private var heartbeat: Job? = null
   private var outboxJob: Job? = null
   private var appearanceJob: Job? = null
+  private data class QueuedMediaUpload(
+    val id: String = UUID.randomUUID().toString(),
+    val conversationId: String,
+    val uri: Uri,
+    val type: MessageType,
+    val onResult: (Result<String>) -> Unit
+  )
+
   private var uploadJob: Job? = null
+  private val uploadQueue = ArrayDeque<QueuedMediaUpload>()
+  private var activeUpload: QueuedMediaUpload? = null
+  private var failedUpload: QueuedMediaUpload? = null
   private var retryUpload: (() -> Unit)? = null
   private var resumed = false
 
@@ -200,6 +211,9 @@ class ChatRepository(
     stopSync()
     appearanceJob?.cancel()
     uploadJob?.cancel()
+    uploadQueue.clear()
+    activeUpload = null
+    failedUpload = null
     retryUpload = null
     LiquidApi.clear()
     prefs.edit().clear().apply()
@@ -714,37 +728,74 @@ class ChatRepository(
     type: MessageType,
     onResult: (Result<String>) -> Unit = {}
   ) {
-    retryUpload = { uploadChatMedia(cid, uri, type, onResult) }
-    uploadJob?.cancel()
+    uploadQueue.addLast(
+      QueuedMediaUpload(
+        conversationId = cid,
+        uri = uri,
+        type = type,
+        onResult = onResult
+      )
+    )
+    pumpMediaUploads()
+  }
+
+  private fun pumpMediaUploads() {
+    if (activeUpload != null || uploadJob?.isActive == true) return
+    val queued = uploadQueue.removeFirstOrNull() ?: run {
+      _upload.value = null
+      return
+    }
+
+    activeUpload = queued
     _upload.value = 0f
     uploadJob = scope.launch {
       val result = runCatching {
+        val cid = queued.conversationId
         if (_conversations.value.none { it.id == cid }) {
           val peer = pendingPeers[cid]?.uid?.takeIf { it.isNotBlank() }
             ?: throw IllegalStateException("Contact is not ready yet")
-          // Ensure the server-side conversation document exists before uploadBegin.
-          // This does not resurrect deleted history; only a subsequent new send unhides the fresh chat.
           LiquidApi.call("conversation", mapOf("otherUid" to peer))
         }
-        LiquidApi.upload(uri, cid) { progress -> scope.launch { _upload.value = progress } }
+        LiquidApi.upload(queued.uri, cid) { progress ->
+          scope.launch {
+            if (activeUpload?.id == queued.id) _upload.value = progress
+          }
+        }
       }
+
+      val failure = result.exceptionOrNull()
+      if (failure != null && failure !is CancellationException) {
+        _error.value = friendlyError(failure)
+        failedUpload = queued
+        retryUpload = {
+          val retry = failedUpload
+          if (retry != null && uploadQueue.none { it.id == retry.id } && activeUpload?.id != retry.id) {
+            failedUpload = null
+            retryUpload = null
+            uploadQueue.addFirst(retry)
+            pumpMediaUploads()
+          }
+        }
+      } else if (result.isSuccess && failedUpload?.id == queued.id) {
+        failedUpload = null
+        retryUpload = null
+      }
+
+      queued.onResult(result)
+      if (activeUpload?.id == queued.id) activeUpload = null
+      uploadJob = null
       _upload.value = null
-      if (result.isFailure && result.exceptionOrNull() !is CancellationException) {
-        _error.value = result.exceptionOrNull()?.let { friendlyError(it) }
-      }
-      if (result.isSuccess) retryUpload = null
-      onResult(result)
+      pumpMediaUploads()
     }
   }
 
   fun cancelUpload() {
-    uploadJob?.cancel()
-    retryUpload = null
-    _upload.value = null
+    uploadJob?.cancel(CancellationException("Upload cancelled"))
   }
 
-  fun hasUploadRetry() = retryUpload != null && _upload.value == null
+  fun hasUploadRetry() = retryUpload != null && activeUpload == null
   fun retryUpload() { retryUpload?.invoke() }
+
 
   fun uploadProfilePhoto(uri: Uri, onResult: (Result<String>) -> Unit = {}) {
     runAction {
