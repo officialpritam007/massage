@@ -68,7 +68,23 @@ class LiquidChatViewModel(
         conversations = cList.filter {
           it.otherUser.displayName.contains(trimmed, true) || it.lastMessageText.contains(trimmed, true)
         },
-        messages = mMaps.values.flatten().filter { it.text.contains(trimmed, true) }
+        messages = mMaps.values
+          .flatten()
+          .filter { message ->
+            val thread = cList.firstOrNull { it.id == message.conversationId }
+            thread != null &&
+              message.senderId in thread.participantIds &&
+              message.text.contains(trimmed, true)
+          }
+          .distinctBy { it.conversationId to it.id }
+          .map { message ->
+            val senderName = if (message.senderId == currentUser.value.uid) {
+              currentUser.value.displayName
+            } else {
+              uList.firstOrNull { it.uid == message.senderId }?.displayName
+            }
+            message.copy(senderName = senderName?.takeIf { it.isNotBlank() } ?: message.senderName)
+          }
       )
     }
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SearchResults())
