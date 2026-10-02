@@ -1,0 +1,85 @@
+name: Deploy Firebase Function
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'firebase-functions/liquid-api/**'
+      - 'firebase.json'
+      - '.firebaserc'
+      - '.github/workflows/deploy-firebase-function.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Publish liquidApi
+    runs-on: ubuntu-latest
+    env:
+      FIREBASE_PROJECT_ID: liquid-chat-v2
+      LIQUID_API_URL: ${{ vars.LIQUID_API_URL || 'https://us-central1-liquid-chat-v2.cloudfunctions.net/liquidApi' }}
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate Firebase service account secret
+        shell: bash
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [[ -z "$FIREBASE_SERVICE_ACCOUNT_JSON" ]]; then
+            echo "::error::Missing repository secret FIREBASE_SERVICE_ACCOUNT_JSON."
+            exit 1
+          fi
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/firebase-service-account.json"
+          python3 - <<'PY'
+          import json, os
+          path = os.path.join(os.environ['RUNNER_TEMP'], 'firebase-service-account.json')
+          with open(path, encoding='utf-8') as f:
+              data = json.load(f)
+          required = {'project_id', 'client_email', 'private_key'}
+          missing = sorted(required - set(data))
+          if missing:
+              raise SystemExit('Service account JSON is missing: ' + ', '.join(missing))
+          if data['project_id'] != os.environ['FIREBASE_PROJECT_ID']:
+              raise SystemExit(
+                  f"Service account project_id {data['project_id']} does not match {os.environ['FIREBASE_PROJECT_ID']}"
+              )
+          print('Firebase service account validated for', data['project_id'])
+          PY
+
+      - name: Validate backend source
+        run: |
+          npm install --prefix firebase-functions/liquid-api --ignore-scripts
+          node --check firebase-functions/liquid-api/index.js
+          node --check firebase-functions/liquid-api/src/main.js
+
+      - name: Deploy liquidApi
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
+        run: |
+          npx --yes firebase-tools@14.15.1 deploy             --only functions:liquidApi             --project "$FIREBASE_PROJECT_ID"             --non-interactive
+
+      - name: Verify deployed endpoint
+        shell: bash
+        run: |
+          status="$(curl --silent --show-error --output "$RUNNER_TEMP/liquid-api-response.json"             --write-out '%{http_code}'             --request POST             --header 'Content-Type: application/json'             --data '{"action":"health"}'             "$LIQUID_API_URL")"
+          cat "$RUNNER_TEMP/liquid-api-response.json" || true
+          if [[ "$status" != "401" ]]; then
+            echo "::error::Expected deployed liquidApi to answer 401 without a Firebase token, got HTTP $status."
+            exit 1
+          fi
+          echo "liquidApi endpoint is reachable."
+
+      - name: Remove temporary credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/firebase-service-account.json"

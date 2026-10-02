@@ -1,41 +1,51 @@
-# GitHub update — Liquid Chat 4.0.0
+# GitHub update — Liquid Chat 4.1.1
 
-আগের repository-এর backup/branch রাখুন। ZIP extract করে `LiquidChat` folder-এর **ভেতরের** ফাইল repository root-এ বসান; আরেকটি nested app folder বানাবেন না। GitHub-এ এই কাজ স্বয়ংক্রিয়ভাবে push করা হয়নি।
+এই repository-তে current runtime architecture হলো **Firebase + Cloudinary**। পুরনো Appwrite backend source আর ব্যবহার করা হবে না।
 
-## কী রাখবেন
+## Current source of truth
 
-- নিজের সঠিক `app/google-services.json`।
-- application ID `com.aistudio.liquidchat.vwnxkp`।
-- আগের app-এর signing key; এই ZIP-এ original debug key আছে। Public release-এর private key/password repository-তে দেবেন না।
-- Git history এবং আপনার অন্য unrelated files।
-- Firebase users/chats ও Appwrite-এর existing media। Database/bucket delete করবেন না।
+- Android app: `app/`
+- Firebase backend: `firebase-functions/liquid-api/`
+- Firestore rules: `firestore.rules`
+- Cloudinary setup: `CLOUDINARY_SETUP.md`
+- APK build: `.github/workflows/build-apk.yml`
+- Firebase Function deploy: `.github/workflows/deploy-firebase-function.yml`
+- Firestore rules deploy: `.github/workflows/deploy-firebase-rules.yml`
 
-## পুরোনো source থেকে কী সরাবেন
+## GitHub configuration
 
-নিচের obsolete paths নতুন ZIP-এ নেই। শুধু নতুন files upload করলে GitHub পুরোনো files নিজে delete করে না, তাই এগুলো আগে সরান:
+Repository variable:
 
-- root-এর `ChatRepository.kt`, `ConversationScreen.kt`, `AppwriteStorageService.kt`, `app-build.gradle.kts`, `libs.versions.toml` — duplicate loose copies; `app/` ও `gradle/`-এর প্রকৃত files রাখুন।
-- `functions/` — পুরোনো Firebase Functions source। এটি সরানো মানে deployed function বন্ধ হওয়া নয়।
-- `appwrite-functions/firebase-appwrite-bridge/` — নতুন `liquid-api` দিয়ে প্রতিস্থাপিত।
-- `app/src/main/java/com/example/data/calls/` এবং `app/src/main/java/com/example/security/`।
-- `storage.rules`, `LIQUID_CHAT_UPDATE_NOTES.md`, `UPGRADE_NOTES.md` — পুরোনো setup নির্দেশনা।
-- `app/src/test/java/com/example/ExampleUnitTest.kt` — placeholder test।
+- `LIQUID_API_URL` → deployed Firebase `liquidApi` HTTPS URL.
 
-`app/src`, `app/build.gradle.kts`, `gradle/libs.versions.toml`, root build/settings files, `.github/workflows/build-apk.yml`, Firestore rules/indexes এবং docs নতুন ZIP থেকে replace করুন। `appwrite-functions/liquid-api/`, `tests/` ও `scripts/` যোগ করুন।
+Repository secret:
 
-`local.properties`, `.env`, build folders, node_modules, service-account JSON বা private release keystore upload করবেন না।
+- `FIREBASE_SERVICE_ACCOUNT_JSON` → service account JSON used only by the deployment workflow.
 
-## Backend বসানোর ক্রম
+Cloudinary API secret GitHub-এ দেবেন না।
 
-1. `APPWRITE_SETUP.md` পড়ে নতুন authenticated API ও private scheduled function configure/deploy করুন। দুইটি function-ই একই `liquid-api` source ব্যবহার করে; entry point আলাদা।
-2. `scripts/migrate-profiles.md` অনুযায়ী existing users-এর public directory তৈরি করুন। Migration-এর আগে database backup রাখুন।
-3. নতুন Firestore rules/indexes deploy করুন। পুরোনো app direct message writes করে থাকলে নতুন rules-এর পরে সেটি আর compatible হবে না—দুই account-এই নতুন APK লাগবে।
-4. GitHub Actions repository variables-এ `LIQUID_API_URL`, `APPWRITE_ENDPOINT`, `APPWRITE_PROJECT_ID`, `APPWRITE_BUCKET_ID` দিন। API key বা Firebase service-account JSON এখানে নয়; সেগুলো server secret।
-5. Actions → Build APK → Run workflow। সফল হলে artifact থেকে APK নিন।
-6. `VERIFICATION.md`-এর two-device checks শেষ করুন।
+## Firebase Functions secrets
 
-পুরোনো deployed Firebase Functions বা পুরোনো Appwrite bridge তখনই disable করবেন, যখন নতুন app দিয়ে send/upload/notification ঠিক কাজ করছে এবং পুরোনো clients update করেছে। পুরোনো media URLs স্বয়ংক্রিয়ভাবে Appwrite-এ migrate করা হয়নি।
+Firebase project `liquid-chat-v2`-এ একবার configure করুন:
 
-## Release সীমা
+```bash
+firebase functions:secrets:set CLOUDINARY_CLOUD_NAME
+firebase functions:secrets:set CLOUDINARY_API_KEY
+firebase functions:secrets:set CLOUDINARY_API_SECRET
+```
 
-এই update Android-এ reference-inspired frosted glass UI; Apple-এর native iOS rendering-এর pixel-identical copy নয়। Auth/API configuration ছাড়া শুধু ZIP upload করলেই live messaging চালু হবে না। Signed public release এবং বাস্তব ডিভাইসের পরীক্ষা আলাদা release gate।
+এরপর `main` branch-এ backend change merge হলে Firebase Function deployment workflow চলবে।
+
+## Media limit
+
+Cloudinary Free plan-এর connected account-এ raw asset limit 10 MB। Encrypted chat attachment raw asset হিসেবে যায়, তাই Android client limit 9 MB রাখা হয়েছে যাতে encryption overhead-এর পরেও upload safe থাকে।
+
+## Release check
+
+1. GitHub Actions-এর Android build সবুজ হতে হবে।
+2. Firebase Function deployment সবুজ হতে হবে।
+3. দুইটি real account/device দিয়ে text + photo + voice/video media + delivered/read + background notification test করতে হবে।
+4. Cloudinary Media Library-তে `liquid-chat/` asset তৈরি হচ্ছে কিনা verify করতে হবে।
+5. Delete-for-everyone/profile-photo replacement-এর পরে Cloudinary asset cleanup verify করতে হবে।
+
+Private release keystore, service-account JSON, Cloudinary API secret বা local `.env` repository-তে commit করবেন না।

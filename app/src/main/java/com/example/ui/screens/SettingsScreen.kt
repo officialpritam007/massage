@@ -303,7 +303,7 @@ fun SettingsScreen(
 
           "Data & Storage" -> {
             Text("Temporary cache: ${cacheSize / 1024 / 1024} MB")
-            Text("Chat attachments are encrypted on-device before Cloudinary storage. Maximum attachment size: 25 MB.")
+            Text("Chat attachments are encrypted on-device before Cloudinary storage. Maximum attachment size: 9 MB.")
             Text("Liquid Chat does not back up app data or E2EE private keys.")
             Text("After an uninstall, the next sign-in detects the new installation and permanently clears the previous Liquid Chat data before syncing.")
             Text("Clearing temporary cache does not delete server data; logout does.")
