@@ -24,7 +24,9 @@ data class User(
   val createdAt: Long = System.currentTimeMillis(),
   val isVerified: Boolean = false,
   val website: String = "",
-  val socialLinks: Map<String, String> = emptyMap()
+  val socialLinks: Map<String, String> = emptyMap(),
+  val e2eePublicKey: String = "",
+  val e2eeKeyId: String = ""
 )
 
 data class MessageReaction(
