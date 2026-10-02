@@ -146,12 +146,12 @@ fun SettingsScreen(
 
         SettingsSection("Personalize") {
           SettingRow("Appearance & Liquid Glass", "Theme, blur, tint, motion", onNavigateToAppearance)
-          SettingRow("Privacy", "Last seen, online, photo, receipts") { dialog = "Privacy" }
+          SettingRow("Privacy", "Last seen, receipts and E2EE identity") { dialog = "Privacy" }
           SettingRow("Notifications", "Messages, vibration and previews") { dialog = "Notifications" }
         }
 
         SettingsSection("Data & tools") {
-          SettingRow("Data & Storage", "Cache and attachment limits") {
+          SettingRow("Data & Storage", "Encrypted media, cache and reinstall wipe") {
             scope.launch {
               cacheSize = withContext(Dispatchers.IO) {
                 context.cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
@@ -171,7 +171,7 @@ fun SettingsScreen(
         GlassCard(Modifier.fillMaxWidth()) {
           Column(Modifier.padding(8.dp)) {
             TextButton(onClick = { dialog = "Log out" }, modifier = Modifier.fillMaxWidth()) {
-              Text("Log out", color = MaterialTheme.colorScheme.error)
+              Text("Log out & erase all data", color = MaterialTheme.colorScheme.error)
             }
             TextButton(onClick = { dialog = "Delete account" }, modifier = Modifier.fillMaxWidth()) {
               Text("Delete account", color = MaterialTheme.colorScheme.error)
@@ -301,8 +301,10 @@ fun SettingsScreen(
 
           "Data & Storage" -> {
             Text("Temporary cache: ${cacheSize / 1024 / 1024} MB")
-            Text("Private attachments are stored in Appwrite. Maximum attachment size: 25 MB.")
-            Text("Clearing cache never restores messages or chats deleted from your account.")
+            Text("Chat attachments are encrypted on-device before Appwrite storage. Maximum attachment size: 25 MB.")
+            Text("Liquid Chat does not back up app data or E2EE private keys.")
+            Text("After an uninstall, the next sign-in detects the new installation and permanently clears the previous Liquid Chat data before syncing.")
+            Text("Clearing temporary cache does not delete server data; logout does.")
             if (upload != null) {
               Text("Wait for the current upload to finish before clearing cache.")
             } else {
@@ -337,7 +339,8 @@ fun SettingsScreen(
             Text("Liquid Chat 4.0.0")
             Text("Developed by Pritam Pal")
             Text("© 2026 Pritam Pal")
-            Text("Firebase authentication + Firestore realtime data + Appwrite private media.")
+            Text("Firebase authentication + Firestore realtime transport + Appwrite encrypted media storage.")
+            Text("New message text and chat media use device-bound end-to-end encryption with signed key metadata. Security keys can be compared from a contact profile.")
             TextButton(
               onClick = {
                 context.startActivity(
