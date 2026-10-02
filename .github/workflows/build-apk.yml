@@ -42,7 +42,15 @@ jobs:
             -alias androiddebugkey \
             -storepass android \
             -keypass android \
-            | grep -E 'SHA1:|SHA256:'
+            | grep -E 'SHA1:|SHA256:' \
+            | tee firebase-signing-fingerprints.txt
+
+      - name: Upload Firebase signing fingerprints
+        uses: actions/upload-artifact@v4
+        with:
+          name: firebase-signing-fingerprints
+          path: firebase-signing-fingerprints.txt
+          if-no-files-found: error
 
       - name: Set up Node 20
         uses: actions/setup-node@v4
