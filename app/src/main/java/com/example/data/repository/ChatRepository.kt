@@ -381,12 +381,8 @@ class ChatRepository(
 
   suspend fun signInWithEmail(email: String, pass: String): Result<User> = runCatching {
     auth.signInWithEmailAndPassword(email.trim(), pass).await()
-    try {
-      enforceInstallationPrivacy()
-    } catch (t: Throwable) {
-      auth.signOut()
-      throw t
-    }
+    runCatching { enforceInstallationPrivacy() }
+      .onFailure { _syncWarning.value = "Session metadata: " + friendlyError(it) }
     startSync()
     _currentUser.value
   }
