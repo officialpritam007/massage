@@ -2,7 +2,10 @@ package com.example.data.repository
 
 import android.net.Uri
 import com.example.data.crypto.E2eeCrypto
+import com.example.data.local.LiquidChatDatabase
 import com.example.data.local.SecureSnippetStore
+import com.example.data.local.entity.ConversationEntity
+import com.example.data.local.entity.MessageEntity
 import com.example.data.model.*
 import com.example.data.network.LiquidApi
 import com.google.firebase.Timestamp
@@ -31,6 +34,7 @@ class ChatRepository(
   private val prefs get() = LiquidApi.context.getSharedPreferences("liquid-private", 0)
   private val installPrefs get() = LiquidApi.context.getSharedPreferences("liquid-install", 0)
   private val uid get() = auth.currentUser?.uid.orEmpty()
+  private val localDb by lazy { LiquidChatDatabase.getDatabase(LiquidApi.context) }
 
   private val listeners = mutableListOf<ListenerRegistration>()
   private val messageListeners = mutableMapOf<String, ListenerRegistration>()
@@ -69,6 +73,7 @@ class ChatRepository(
   private var resumed = false
   @Volatile private var lastPresenceWriteAt = 0L
   private val previewHydration = mutableSetOf<String>()
+  private val localMessageHydration = mutableSetOf<String>()
 
   private val _currentUser = MutableStateFlow(User())
   val currentUser = _currentUser.asStateFlow()
@@ -475,6 +480,105 @@ class ChatRepository(
     syncRecoveryJob = null
   }
 
+  private suspend fun prepareLocalCache(account: String) {
+    val previous = installPrefs.getString("localCacheUid", null)
+    if (previous != account) {
+      localDb.clearAllTables()
+      installPrefs.edit().putString("localCacheUid", account).commit()
+      localMessageHydration.clear()
+    }
+  }
+
+  private suspend fun persistConversations(conversations: List<Conversation>) {
+    val dao = localDb.conversationDao()
+    dao.clearConversations()
+    if (conversations.isNotEmpty()) dao.insertConversations(conversations.map { it.toEntity() })
+  }
+
+  private suspend fun persistMessages(cid: String, messages: List<Message>) {
+    val dao = localDb.messageDao()
+    dao.deleteMessagesForConversation(cid)
+    if (messages.isNotEmpty()) dao.insertMessages(messages.map { it.toEntity() })
+  }
+
+  private fun Conversation.toEntity() = ConversationEntity(
+    id = id,
+    otherUserId = otherUser.uid,
+    otherUserName = otherUser.displayName,
+    otherUserPhoto = otherUser.photoUrl,
+    lastMessageText = lastMessageText,
+    lastMessageTime = lastMessageTime,
+    lastMessageSenderId = lastMessageSenderId,
+    unreadCount = unreadCount,
+    isPinned = isPinned,
+    isMuted = isMuted,
+    isArchived = isArchived
+  )
+
+  private fun ConversationEntity.toConversation(account: String) = Conversation(
+    id = id,
+    participantIds = listOf(account, otherUserId),
+    otherUser = User(
+      uid = otherUserId,
+      displayName = otherUserName.ifBlank { "Contact" },
+      photoUrl = otherUserPhoto,
+      isOnline = false
+    ),
+    lastMessageText = lastMessageText,
+    lastMessageTime = lastMessageTime,
+    lastMessageSenderId = lastMessageSenderId,
+    unreadCount = unreadCount,
+    isPinned = isPinned,
+    isMuted = isMuted,
+    isArchived = isArchived,
+    isOnline = false,
+    wallpaperIndex = prefs.getInt("wallpaper:$account:$id", 0)
+  )
+
+  private fun Message.toEntity() = MessageEntity(
+    id = id,
+    conversationId = conversationId,
+    senderId = senderId,
+    senderName = senderName,
+    text = text,
+    type = type.name,
+    mediaUrl = mediaUrl,
+    voiceDurationSeconds = voiceDurationSeconds,
+    waveformCsv = waveform.joinToString(","),
+    createdAt = createdAt,
+    status = status.name,
+    replyToId = replyToId,
+    replyToText = replyToText,
+    replyToSender = replyToSender,
+    isEdited = isEdited,
+    isDeleted = isDeleted,
+    isPinned = isPinned,
+    isStarred = isStarred,
+    expiresAt = expiresAt
+  )
+
+  private fun MessageEntity.toMessage() = Message(
+    id = id,
+    conversationId = conversationId,
+    senderId = senderId,
+    senderName = senderName,
+    text = text,
+    type = runCatching { MessageType.valueOf(type) }.getOrDefault(MessageType.TEXT),
+    mediaUrl = mediaUrl,
+    voiceDurationSeconds = voiceDurationSeconds,
+    waveform = waveformCsv.split(',').mapNotNull { it.toFloatOrNull() }.take(80),
+    createdAt = createdAt,
+    status = runCatching { MessageDeliveryStatus.valueOf(status) }.getOrDefault(MessageDeliveryStatus.SENT),
+    replyToId = replyToId,
+    replyToText = replyToText,
+    replyToSender = replyToSender,
+    isEdited = isEdited,
+    isDeleted = isDeleted,
+    isPinned = isPinned,
+    isStarred = isStarred,
+    expiresAt = expiresAt
+  )
+
   private fun startSync() {
     stopSync()
     val account = uid
@@ -484,6 +588,19 @@ class ChatRepository(
     }
     _loading.value = true
     _currentUser.value = User(uid = account, email = auth.currentUser?.email.orEmpty())
+
+    scope.launch(Dispatchers.IO) {
+      runCatching {
+        prepareLocalCache(account)
+        val cached = localDb.conversationDao().getConversationSnapshot()
+          .map { it.toConversation(account) }
+          .sortedByDescending { it.lastMessageTime }
+        if (cached.isNotEmpty() && _conversations.value.isEmpty()) {
+          _conversations.value = cached
+          _loading.value = false
+        }
+      }.onFailure { reportSnapshotFailure("Local cache", it) }
+    }
 
     scope.launch {
       runCatching { ensureE2eeIdentityPublished() }
@@ -561,6 +678,9 @@ class ChatRepository(
           val next = snapshot.documents.mapNotNull { runCatching { toConversation(it) }.getOrNull() }
             .sortedByDescending { it.lastMessageTime }
           _conversations.value = next
+          scope.launch(Dispatchers.IO) {
+            runCatching { persistConversations(next) }
+          }
           val active = next.map { it.id }.toSet()
           messageListeners.keys.filter { it !in active }.toList().forEach {
             messageListeners.remove(it)?.remove()
@@ -741,6 +861,23 @@ class ChatRepository(
   }
 
   fun observeConversation(cid: String) {
+    if (localMessageHydration.add(cid)) {
+      scope.launch(Dispatchers.IO) {
+        runCatching {
+          val cached = localDb.messageDao().getMessagesSnapshot(cid)
+            .map { it.toMessage() }
+            .filter { it.expiresAt == null || it.expiresAt > System.currentTimeMillis() }
+          if (cached.isNotEmpty()) {
+            _messages.update { map ->
+              val live = map[cid].orEmpty()
+              val merged = (cached + live).associateBy { it.id }.values.sortedBy { it.createdAt }
+              map + (cid to merged)
+            }
+          }
+        }.onFailure { reportSnapshotFailure("Local messages", it) }
+      }
+    }
+
     // Keep a fixed recent-message realtime window. Older pages are loaded with one-shot
     // queries and merged into the same state, so loading history never tears down/restarts
     // the listener and the visible conversation does not flicker or reload.
@@ -813,6 +950,7 @@ class ChatRepository(
             .sortedBy { it.createdAt }
 
           _messages.update { it + (cid to merged) }
+          runCatching { persistMessages(cid, merged) }
           if (recent.any { it.senderId != uid }) markConversationActive(cid)
           recent.filter { it.senderId != uid && it.status == MessageDeliveryStatus.SENT }
             .forEach { receipt(cid, it.id, "DELIVERED") }
@@ -862,6 +1000,7 @@ class ChatRepository(
           .sortedBy { it.createdAt }
 
         _messages.update { it + (cid to merged) }
+        runCatching { persistMessages(cid, merged) }
         older.filter { it.senderId != uid && it.status == MessageDeliveryStatus.SENT }
           .forEach { receipt(cid, it.id, "DELIVERED") }
       } catch (t: Throwable) {
