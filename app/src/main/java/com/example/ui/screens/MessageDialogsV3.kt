@@ -44,9 +44,9 @@ fun CompactDeleteMessageDialogV3(
                 modifier = Modifier.fillMaxWidth().widthIn(max = 360.dp),
                 shape = RoundedCornerShape(27.dp),
                 backgroundColor = if (glass.isDark) {
-                    Color(0xFF111722).copy(alpha = .90f)
+                    Color(0xFF0A141F).copy(alpha = .72f)
                 } else {
-                    Color(0xFFFAFCFF).copy(alpha = .86f)
+                    Color(0xFFEAF4FF).copy(alpha = .58f)
                 },
                 elevation = 18.dp
             ) {
@@ -110,9 +110,9 @@ fun CompactEditMessageDialogV3(
                 modifier = Modifier.fillMaxWidth().widthIn(max = 400.dp),
                 shape = RoundedCornerShape(27.dp),
                 backgroundColor = if (glass.isDark) {
-                    Color(0xFF0D1723).copy(alpha = .90f)
+                    Color(0xFF0A141F).copy(alpha = .72f)
                 } else {
-                    Color(0xFFFAFCFF).copy(alpha = .86f)
+                    Color(0xFFEAF4FF).copy(alpha = .58f)
                 },
                 elevation = 18.dp
             ) {
