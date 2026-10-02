@@ -15,6 +15,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.example.BuildConfig
+import com.example.data.network.LiquidApi
 import com.example.ui.components.*
 import com.example.ui.viewmodel.LiquidChatViewModel
 import com.google.firebase.auth.FirebaseAuth
@@ -68,28 +69,21 @@ fun DiagnosticsScreen(
         token.exceptionOrNull()?.message ?: if (token.isSuccess) "FCM token available" else "Token unavailable"
       )
 
+      val backend = runCatching { LiquidApi.call("health") }
       result += DiagnosticItem(
-        "Optional media backend",
-        BuildConfig.LIQUID_API_URL.startsWith("https://"),
-        if (BuildConfig.LIQUID_API_URL.startsWith("https://")) {
-          "Configured • health call skipped so media quota cannot block chat diagnostics"
-        } else {
-          "Backend URL not configured"
-        }
+        "Firebase API + Cloudinary",
+        backend.isSuccess && backend.getOrNull()?.optBoolean("ok", false) == true,
+        backend.exceptionOrNull()?.message
+          ?: if (backend.getOrNull()?.optBoolean("ok", false) == true) {
+            "Authenticated API online • Cloudinary secrets available"
+          } else {
+            "Backend health check failed"
+          }
       )
     }
 
     result += DiagnosticItem(
-      "Cloudinary media",
-      BuildConfig.LIQUID_API_URL.startsWith("https://"),
-      if (BuildConfig.LIQUID_API_URL.startsWith("https://")) {
-        "Signed Cloudinary access is provided by the Firebase backend"
-      } else {
-        "Firebase backend URL missing"
-      }
-    )
-    result += DiagnosticItem(
-      "Backend configuration",
+      "Backend URL",
       BuildConfig.LIQUID_API_URL.startsWith("https://"),
       BuildConfig.LIQUID_API_URL.ifBlank { "LIQUID_API_URL missing" }
     )
@@ -122,7 +116,12 @@ fun DiagnosticsScreen(
       GlassHeader("Diagnostics", subtitle = "Firebase • Cloudinary • FCM", onBackClick = onBackClick)
 
       if (running) {
-        GlassCard(Modifier.fillMaxWidth()) {
+        GlassCard(
+          Modifier.fillMaxWidth(),
+          shape = androidx.compose.foundation.shape.RoundedCornerShape(22.dp),
+          elevation = 1.dp,
+          enableBlur = false
+        ) {
           Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
             CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
             Spacer(Modifier.width(12.dp))
@@ -132,7 +131,12 @@ fun DiagnosticsScreen(
       }
 
       items.forEach { item ->
-        GlassCard(Modifier.fillMaxWidth()) {
+        GlassCard(
+          Modifier.fillMaxWidth(),
+          shape = androidx.compose.foundation.shape.RoundedCornerShape(22.dp),
+          elevation = 1.dp,
+          enableBlur = false
+        ) {
           Row(
             Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
