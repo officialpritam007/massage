@@ -67,10 +67,8 @@ import com.example.ui.components.PrivateImage
 import com.example.ui.components.PrivateVideoThumbnail
 import com.example.ui.components.VoiceWaveformPlayer
 import com.example.ui.theme.LocalLiquidGlass
+import com.example.ui.util.TimeFormat
 import kotlinx.coroutines.delay
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import kotlin.math.roundToInt
 
 private object ReplyHighlightBusV2 {
@@ -398,7 +396,7 @@ private fun MessageMetaV2(
             )
         }
         Text(
-            SimpleDateFormat("h:mm", Locale.getDefault()).format(Date(message.createdAt)),
+            TimeFormat.messageTime(message.createdAt),
             fontSize = 9.sp,
             color = metaColor
         )
