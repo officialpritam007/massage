@@ -537,21 +537,30 @@ fun ConversationScreenV2(
         historyAnchorId = null
     }
 
-    LaunchedEffect(canLoadOlder, loadingOlder, rows.size, stickToBottom) {
-        if (!canLoadOlder || loadingOlder || rows.isEmpty()) return@LaunchedEffect
-
-        val firstVisible = listState.layoutInfo.visibleItemsInfo.firstOrNull()
-        val atTop = listState.firstVisibleItemIndex <= 1 &&
-            listState.firstVisibleItemScrollOffset < 96
-        val tooShortToScroll = !listState.canScrollBackward &&
-            !listState.canScrollForward &&
-            rows.size < 18
-
-        if ((!stickToBottom && atTop) || tooShortToScroll) {
-            historyAnchorId = firstVisible?.key as? String
-            historyAnchorOffset = firstVisible?.offset ?: 0
-            repo.loadOlder(conversationId)
+    LaunchedEffect(listState, canLoadOlder, loadingOlder, rows.size) {
+        snapshotFlow {
+            Triple(
+                listState.isScrollInProgress,
+                listState.firstVisibleItemIndex,
+                listState.firstVisibleItemScrollOffset
+            )
         }
+            .distinctUntilChanged()
+            .collect { (scrolling, firstIndex, firstOffset) ->
+                if (!scrolling || !canLoadOlder || loadingOlder || rows.isEmpty()) {
+                    return@collect
+                }
+
+                val atTop = firstIndex <= 1 && firstOffset < 72
+                if (!atTop || historyAnchorId != null) return@collect
+
+                val firstVisible = listState.layoutInfo.visibleItemsInfo.firstOrNull { item ->
+                    rows.any { it.id == item.key }
+                }
+                historyAnchorId = firstVisible?.key as? String
+                historyAnchorOffset = firstVisible?.offset ?: 0
+                repo.loadOlder(conversationId)
+            }
     }
 
     LaunchedEffect(imeBottom, stickToBottom, rows.size) {
