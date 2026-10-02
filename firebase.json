@@ -17,5 +17,8 @@
       "enabled": false
     },
     "singleProjectMode": true
+  },
+  "functions": {
+    "source": "firebase-functions/liquid-api"
   }
 }
