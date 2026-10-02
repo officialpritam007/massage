@@ -10,6 +10,7 @@ on:
     branches:
       - main
       - 'chatgpt/**'
+      - 'free/**'
   pull_request:
     branches:
       - main
@@ -19,7 +20,8 @@ jobs:
     name: Verify and Build Debug APK
     runs-on: ubuntu-latest
     env:
-      LIQUID_API_URL: ${{ vars.LIQUID_API_URL || 'https://us-central1-liquid-chat-v2.cloudfunctions.net/liquidApi' }}
+      CLOUDINARY_CLOUD_NAME: ${{ vars.CLOUDINARY_CLOUD_NAME || 'mthzgqhv' }}
+      CLOUDINARY_UPLOAD_PRESET: ${{ vars.CLOUDINARY_UPLOAD_PRESET || 'liquid_chat_unsigned' }}
       APP_CHECK_PROVIDER: ${{ vars.APP_CHECK_PROVIDER || 'none' }}
 
     steps:
@@ -39,23 +41,23 @@ jobs:
           cache: npm
           cache-dependency-path: tests/firestore/package-lock.json
 
-      - name: Validate backend configuration
+      - name: Validate free-tier configuration
         shell: bash
         run: |
-          if [[ -z "$LIQUID_API_URL" ]]; then
-            echo "::error::Missing LIQUID_API_URL."
+          if [[ -z "$CLOUDINARY_CLOUD_NAME" || -z "$CLOUDINARY_UPLOAD_PRESET" ]]; then
+            echo "::error::Cloudinary cloud name and unsigned upload preset are required."
             exit 1
           fi
-          if [[ "$LIQUID_API_URL" != https://* ]]; then
-            echo "::error::LIQUID_API_URL must start with https://"
-            exit 1
-          fi
-          echo "Backend configuration is present."
+          echo "Firebase Auth + Firestore + direct Cloudinary configuration is present."
 
       - name: Create environment files
         run: |
-          printf '%s\n' '# Environment variables are supplied by GitHub Actions env' > .env.example
-          printf '%s\n' '# Environment variables are supplied by GitHub Actions env' > .env
+          cat > .env <<EOF
+          CLOUDINARY_CLOUD_NAME=$CLOUDINARY_CLOUD_NAME
+          CLOUDINARY_UPLOAD_PRESET=$CLOUDINARY_UPLOAD_PRESET
+          APP_CHECK_PROVIDER=$APP_CHECK_PROVIDER
+          EOF
+          cp .env .env.example
 
       - name: Create local.properties
         run: |
@@ -72,12 +74,6 @@ jobs:
         run: |
           npm ci --prefix tests/firestore
           npx --yes firebase-tools@14.15.1 emulators:exec --only firestore --project demo-liquid-chat "cd tests/firestore && npm test"
-
-      - name: Validate Firebase + Cloudinary backend source
-        run: |
-          npm install --prefix firebase-functions/liquid-api --ignore-scripts
-          node --check firebase-functions/liquid-api/index.js
-          node --check firebase-functions/liquid-api/src/main.js
 
       - name: Run unit tests
         run: |
