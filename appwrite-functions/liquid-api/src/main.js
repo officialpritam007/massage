@@ -172,7 +172,11 @@ async function notify(db, cid, id) {
       messageId: id,
       title: showPreview ? (m.senderName || 'Liquid Chat') : 'Liquid Chat',
       body: showPreview
-        ? (m.type === 'TEXT' ? String(m.text || '').slice(0, 120) : m.type.toLowerCase() + ' message')
+        ? (
+            m.e2ee
+              ? 'Encrypted message'
+              : (m.type === 'TEXT' ? String(m.text || '').slice(0, 120) : m.type.toLowerCase() + ' message')
+          )
         : 'New message',
       vibration: String(u.notifications?.vibration !== false),
       preview: String(showPreview)
@@ -545,6 +549,19 @@ export default async ({req, res, error}) => {
       await own.delete();
       await aw('/users/' + appUser(uid), 'DELETE').catch(() => {});
       await getAuth().deleteUser(uid);
+      return res.json({ok: true});
+    }
+
+    if (p.action === 'notifyExisting') {
+      const access = await allowed(db, String(p.conversationId || ''), uid);
+      const messageId = String(p.messageId || '');
+      if (!messageId) throw new Error('Missing message');
+      const messageRef = access.ref.collection('messages').doc(messageId);
+      const message = (await messageRef.get()).data();
+      if (!message || message.senderId !== uid) throw new Error('Message unavailable');
+      await notify(db, p.conversationId, messageId)
+        .then(() => messageRef.update({notificationPending: false}))
+        .catch(() => {});
       return res.json({ok: true});
     }
 
