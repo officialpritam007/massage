@@ -505,7 +505,9 @@ fun ConversationScreenV2(
                 locallyHiddenDeletes = locallyHiddenDeletes - message.id
                 deleteRetry = message to mode
             } else {
-                locallyHiddenDeletes = locallyHiddenDeletes - message.id
+                // Keep the local tombstone until the Firestore listener confirms
+                // the message is actually gone/hidden. Clearing it immediately
+                // causes a brief ghost reappearance between API success and sync.
                 deleteRetry = null
             }
         }
@@ -515,6 +517,15 @@ fun ConversationScreenV2(
     val morphMessage = filtered.firstOrNull { it.id == morphId }
     val rows = filtered.filterNot { it.id == morphId || it.id in locallyHiddenDeletes }
     val latestRemoteId = rows.lastOrNull { it.senderId != me.uid && !it.isDeleted }?.id
+
+    LaunchedEffect(messages.map { it.id }, locallyHiddenDeletes) {
+        if (locallyHiddenDeletes.isEmpty()) return@LaunchedEffect
+        val liveIds = messages.asSequence().map { it.id }.toSet()
+        val confirmedGone = locallyHiddenDeletes.filterNot { it in liveIds }.toSet()
+        if (confirmedGone.isNotEmpty()) {
+            locallyHiddenDeletes = locallyHiddenDeletes - confirmedGone
+        }
+    }
 
     LaunchedEffect(loadingOlder, rows.size) {
         val anchorId = historyAnchorId ?: return@LaunchedEffect
