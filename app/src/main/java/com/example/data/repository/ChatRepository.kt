@@ -753,7 +753,7 @@ class ChatRepository(
     observePresence(cid)
     if (messageListeners.containsKey(cid)) return
 
-    val recentLimit = 60L
+    val recentLimit = 50L
     messageListeners[cid] = db.collection("conversations/$cid/messages")
       .orderBy("createdAt", Query.Direction.DESCENDING)
       .limit(recentLimit + 1)
@@ -834,7 +834,7 @@ class ChatRepository(
 
     scope.launch(Dispatchers.IO) {
       try {
-        val pageSize = 60L
+        val pageSize = 50L
         val snapshot = db.collection("conversations/$cid/messages")
           .orderBy("createdAt", Query.Direction.DESCENDING)
           .startAfter(cursor)
