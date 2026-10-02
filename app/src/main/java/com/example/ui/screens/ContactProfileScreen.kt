@@ -225,6 +225,44 @@ fun ContactProfileScreen(
                 }
             }
 
+            if (user.uid != me.uid) {
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(26.dp),
+                    elevation = 1.dp
+                ) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            "End-to-end encryption",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            if (user.e2eeKeyId.isBlank()) {
+                                "Encryption key unavailable — contact must update Liquid Chat."
+                            } else {
+                                "Security key • " + user.e2eeKeyId.chunked(4).joinToString(" ")
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (user.e2eeKeyId.isBlank()) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                        Text(
+                            "Messages use device-bound encryption keys. A reinstall changes this key.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
             Text(
                 "Shared media",
                 style = MaterialTheme.typography.titleMedium,
