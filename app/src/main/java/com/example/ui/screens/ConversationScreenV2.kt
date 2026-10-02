@@ -60,6 +60,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -659,18 +660,31 @@ fun ConversationScreenV2(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     val label = compactPresenceLabelV3(other)
-                                    if (label.isNotBlank()) {
-                                        Text(
-                                            label,
-                                            fontSize = 10.sp,
-                                            color = if (other.isOnline) {
-                                                EmeraldOnline
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurfaceVariant
-                                            },
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
+                                    if (label.isNotBlank() || other.e2eeKeyId.isNotBlank()) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                        ) {
+                                            if (other.e2eeKeyId.isNotBlank()) {
+                                                Icon(
+                                                    Icons.Default.Lock,
+                                                    "End-to-end encrypted",
+                                                    modifier = Modifier.size(10.dp),
+                                                    tint = config.accentColor
+                                                )
+                                            }
+                                            Text(
+                                                if (label.isNotBlank()) label else "End-to-end encrypted",
+                                                fontSize = 10.sp,
+                                                color = if (other.isOnline) {
+                                                    EmeraldOnline
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                                },
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
                                     }
                                 }
                             }
