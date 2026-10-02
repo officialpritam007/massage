@@ -62,6 +62,26 @@ service cloud.firestore {
         && request.resource.data.lastSeen <= request.time.toMillis() + 60000;
     }
 
+    function validE2eePayload(data) {
+      return data is map
+        && data.keys().hasOnly([
+          'e2eeVersion', 'e2eeEphemeralKey', 'e2eeCiphertext', 'e2eeContentIv',
+          'e2eeSenderWrappedKey', 'e2eeSenderWrapIv',
+          'e2eeRecipientWrappedKey', 'e2eeRecipientWrapIv',
+          'e2eeSenderKeyId', 'e2eeRecipientKeyId'
+        ])
+        && data.e2eeVersion == 1
+        && data.e2eeEphemeralKey is string
+        && data.e2eeCiphertext is string
+        && data.e2eeContentIv is string
+        && data.e2eeSenderWrappedKey is string
+        && data.e2eeSenderWrapIv is string
+        && data.e2eeRecipientWrappedKey is string
+        && data.e2eeRecipientWrapIv is string
+        && data.e2eeSenderKeyId is string
+        && data.e2eeRecipientKeyId is string;
+    }
+
     match /users/{uid} {
       // A private user document is readable only by its owner. Public contact data lives in /directory.
       allow read: if owner(uid);
@@ -152,6 +172,14 @@ service cloud.firestore {
           && request.resource.data.text is string
           && request.resource.data.text.size() <= 8000
           && request.resource.data.type in ['TEXT', 'IMAGE', 'VIDEO', 'AUDIO', 'VOICE', 'FILE', 'LOCATION']
+          && (
+            request.resource.data.type != 'TEXT'
+            || (
+              request.resource.data.text == ''
+              && request.resource.data.keys().hasAny(['e2ee'])
+              && validE2eePayload(request.resource.data.e2ee)
+            )
+          )
           && request.resource.data.status == 'SENT'
           && request.resource.data.createdAt is int
           && request.resource.data.createdAt <= request.time.toMillis() + 60000
@@ -168,10 +196,22 @@ service cloud.firestore {
         allow update: if participant(cid) && (
           (
             resource.data.senderId == request.auth.uid
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'isEdited'])
-            && request.resource.data.text is string
-            && request.resource.data.text.size() > 0
-            && request.resource.data.text.size() <= 8000
+            && (
+              (
+                !resource.data.keys().hasAny(['e2ee'])
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'isEdited'])
+                && request.resource.data.text is string
+                && request.resource.data.text.size() > 0
+                && request.resource.data.text.size() <= 8000
+              )
+              ||
+              (
+                resource.data.keys().hasAny(['e2ee'])
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'e2ee', 'isEdited'])
+                && request.resource.data.text == ''
+                && validE2eePayload(request.resource.data.e2ee)
+              )
+            )
             && request.resource.data.isEdited == true
           )
           ||
