@@ -1114,7 +1114,7 @@ fun ConversationScreenV2(
                                     val target = rows.indexOfFirst { it.id == replyId }
                                     if (target >= 0) scope.launch { listState.animateScrollToItem(target + 1) }
                                 },
-                                onMedia = { viewer = message },
+                                onMedia = { if (message.mediaUrl.isNotBlank()) viewer = message },
                                 onReaction = { emoji -> viewModel.addReaction(conversationId, message.id, emoji) },
                                 onRetrySend = { repo.retryMessage(conversationId, message.id) }
                             )
@@ -1199,7 +1199,7 @@ fun ConversationScreenV2(
             )
         }
 
-        viewer?.let { message -> MediaViewer(message) { viewer = null } }
+        viewer?.takeIf { it.mediaUrl.isNotBlank() }?.let { message -> MediaViewer(message) { viewer = null } }
     }
 }
 
