@@ -849,6 +849,30 @@ class ChatRepository(
     val expires = if (rawExpires == null) null else anyLong(rawExpires, 0L).takeIf { it > 0L }
     if (expires != null && expires <= System.currentTimeMillis()) return null
 
+    val storedMediaUrl = snapshot.safeString("mediaUrl")
+    val mediaEncryptedMap = (snapshot.get("mediaE2ee") as? Map<*, *>)
+      ?.entries
+      ?.filter { it.key is String }
+      ?.associate { it.key as String to it.value }
+    val mediaSecret = mediaEncryptedMap?.let { fields ->
+      E2eeCrypto.unwrapMediaSecret(
+        context = LiquidApi.context,
+        uid = uid,
+        senderId = senderId,
+        conversationId = cid,
+        messageId = snapshot.id,
+        fields = fields
+      )
+    }
+    if (storedMediaUrl.isNotBlank() && mediaSecret != null) {
+      LiquidApi.registerMediaSecret(storedMediaUrl, mediaSecret)
+    }
+    val readableMediaUrl = if (mediaEncryptedMap != null && mediaSecret == null) {
+      ""
+    } else {
+      storedMediaUrl
+    }
+
     return Message(
       id = snapshot.id,
       conversationId = cid,
@@ -860,7 +884,7 @@ class ChatRepository(
         else -> snapshot.safeString("text")
       },
       type = runCatching { MessageType.valueOf(snapshot.safeString("type", "TEXT")) }.getOrDefault(MessageType.TEXT),
-      mediaUrl = snapshot.safeString("mediaUrl"),
+      mediaUrl = readableMediaUrl,
       voiceDurationSeconds = snapshot.safeLong("voiceDurationSeconds").toInt().coerceAtLeast(0),
       waveform = safeWaveform(snapshot.get("waveform")),
       createdAt = createdAt,
@@ -946,6 +970,17 @@ class ChatRepository(
     val waveform = (data["waveform"] as? List<*>)?.mapNotNull { (it as? Number)?.toFloat() }
       ?.map { it.coerceIn(.05f, 1f) }?.take(80).orEmpty()
 
+    var recipientPublicKey = ""
+    var recipientKeyId = ""
+    if (type == "TEXT" || mediaUrl.isNotBlank()) {
+      val recipient = db.document("directory/$otherUid").get().await()
+      recipientPublicKey = recipient.safeString("e2eePublicKey")
+      recipientKeyId = recipient.safeString("e2eeKeyId")
+      require(recipientPublicKey.isNotBlank() && recipientKeyId.isNotBlank()) {
+        "This contact must update Liquid Chat before encrypted messaging can start"
+      }
+    }
+
     val message = mutableMapOf<String, Any>(
       "senderId" to uid,
       "senderName" to _currentUser.value.displayName.ifBlank { "User" },
@@ -967,13 +1002,6 @@ class ChatRepository(
 
     var encryptedText = false
     if (type == "TEXT") {
-      val recipient = db.document("directory/$otherUid").get().await()
-      val recipientPublicKey = recipient.safeString("e2eePublicKey")
-      val recipientKeyId = recipient.safeString("e2eeKeyId")
-      require(recipientPublicKey.isNotBlank() && recipientKeyId.isNotBlank()) {
-        "This contact must update Liquid Chat before encrypted messaging can start"
-      }
-
       val encrypted = E2eeCrypto.encryptText(
         context = LiquidApi.context,
         uid = uid,
@@ -991,6 +1019,40 @@ class ChatRepository(
       message["text"] = ""
       message["e2ee"] = encrypted.fields
       encryptedText = true
+    } else if (mediaUrl.isNotBlank()) {
+      val mediaSecret = LiquidApi.mediaSecret(mediaUrl)
+        ?: error("Attachment encryption key unavailable. Please attach the file again.")
+      message["mediaE2ee"] = E2eeCrypto.wrapMediaSecret(
+        context = LiquidApi.context,
+        uid = uid,
+        recipientPublicKeyBase64 = recipientPublicKey,
+        recipientKeyId = recipientKeyId,
+        conversationId = cid,
+        messageId = id,
+        secret = mediaSecret
+      )
+
+      val replyId = data["replyToId"] as? String
+      val replyTextValue = (data["replyToText"] as? String)?.take(500)
+      val replySenderValue = (data["replyToSender"] as? String)?.take(60)
+      if (text.isNotBlank() || !replyId.isNullOrBlank()) {
+        val encryptedMeta = E2eeCrypto.encryptText(
+          context = LiquidApi.context,
+          uid = uid,
+          recipientPublicKeyBase64 = recipientPublicKey,
+          recipientKeyId = recipientKeyId,
+          conversationId = cid,
+          messageId = id,
+          plaintextJson = E2eeCrypto.payloadJson(
+            text = text,
+            replyToId = replyId,
+            replyToText = replyTextValue,
+            replyToSender = replySenderValue
+          )
+        )
+        message["e2ee"] = encryptedMeta.fields
+      }
+      message["text"] = ""
     } else {
       (data["replyToId"] as? String)?.takeIf { it.isNotBlank() }?.let {
         message["replyToId"] = it
@@ -1308,7 +1370,7 @@ class ChatRepository(
         if (_conversations.value.none { it.id == cid }) {
           val peer = pendingPeers[cid]?.uid?.takeIf { it.isNotBlank() }
             ?: throw IllegalStateException("Contact is not ready yet")
-          LiquidApi.call("conversation", mapOf("otherUid" to peer))
+          ensureConversationDirect(cid, peer)
         }
         LiquidApi.upload(queued.uri, cid) { progress ->
           scope.launch {
