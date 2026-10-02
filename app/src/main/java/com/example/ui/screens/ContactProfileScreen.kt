@@ -34,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -83,6 +84,11 @@ fun ContactProfileScreen(
     else users.find { it.uid == userId } ?: User(uid = userId, displayName = "Contact")
 
     val conversation = conversations.find { user.uid in it.participantIds }
+
+    LaunchedEffect(conversation?.id) {
+        conversation?.id?.let { viewModel.observeConversation(it) }
+    }
+
     val shared = conversation?.let { messages[it.id] }.orEmpty()
         .filter { it.mediaUrl.isNotBlank() && !it.isDeleted }
         .sortedByDescending { it.createdAt }
@@ -244,6 +250,14 @@ fun ContactProfileScreen(
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(shared.take(30), key = { it.id }) { message ->
                         SharedMediaCard(message = message, onClick = { media = message })
+                    }
+                }
+                conversation?.let { current ->
+                    TextButton(
+                        onClick = { viewModel.repository.loadOlder(current.id) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Load older shared media")
                     }
                 }
             }
