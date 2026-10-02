@@ -298,10 +298,26 @@ fun MessageBubbleV2(
                         }
                     }
 
-                    Row(Modifier.align(Alignment.End), horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
-                        if (message.isStarred) Text("★", fontSize = 10.sp, color = metaColor)
-                        if (message.isEdited) Text("edited", style = MaterialTheme.typography.labelSmall, color = metaColor)
-                        Text(SimpleDateFormat("h:mm", Locale.getDefault()).format(Date(message.createdAt)), style = MaterialTheme.typography.labelSmall, color = metaColor)
+                    Row(
+                        Modifier.align(Alignment.End),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (message.isStarred) {
+                            Text("★", fontSize = 9.sp, color = metaColor)
+                        }
+                        if (message.isEdited) {
+                            Text(
+                                "edited",
+                                fontSize = 9.sp,
+                                color = metaColor.copy(alpha = .86f)
+                            )
+                        }
+                        Text(
+                            SimpleDateFormat("h:mm", Locale.getDefault()).format(Date(message.createdAt)),
+                            fontSize = 9.sp,
+                            color = metaColor
+                        )
                         if (isMe) {
                             AnimatedContent(
                                 targetState = message.status,
@@ -318,7 +334,12 @@ fun MessageBubbleV2(
                                     MessageDeliveryStatus.SENT -> Icons.Default.Done
                                     else -> Icons.Default.DoneAll
                                 }
-                                Icon(icon, status.name, Modifier.size(14.dp), tint = if (status == MessageDeliveryStatus.READ) Color(0xFF73E4FF) else metaColor)
+                                Icon(
+                                    icon,
+                                    status.name,
+                                    Modifier.size(12.dp),
+                                    tint = if (status == MessageDeliveryStatus.READ) Color(0xFF73E4FF) else metaColor
+                                )
                             }
                         }
                     }
