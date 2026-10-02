@@ -80,9 +80,9 @@ fun MessageActionSheetV3(
                 modifier = Modifier.fillMaxWidth().widthIn(max = 370.dp),
                 shape = RoundedCornerShape(28.dp),
                 backgroundColor = if (glass.isDark) {
-                    Color(0xFF0C1723).copy(alpha = .88f)
+                    Color(0xFF08131E).copy(alpha = .72f)
                 } else {
-                    Color(0xFFF7FBFF).copy(alpha = .82f)
+                    Color(0xFFEAF4FF).copy(alpha = .56f)
                 },
                 elevation = 18.dp
             ) {
@@ -114,7 +114,7 @@ fun MessageActionSheetV3(
                     GlassCard(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(22.dp),
-                        backgroundColor = glass.accentColor.copy(alpha = if (glass.isDark) .10f else .065f),
+                        backgroundColor = glass.accentColor.copy(alpha = if (glass.isDark) .12f else .08f),
                         elevation = 0.dp
                     ) {
                         Row(
@@ -217,8 +217,8 @@ private fun MessageActionTileV3(
     GlassCard(
         modifier = modifier,
         shape = RoundedCornerShape(19.dp),
-        backgroundColor = if (glass.isDark) Color.White.copy(alpha = .05f)
-        else Color.White.copy(alpha = .44f),
+        backgroundColor = if (glass.isDark) Color.White.copy(alpha = .055f)
+        else Color.White.copy(alpha = .24f),
         elevation = 0.dp,
         onClick = onClick
     ) {
@@ -259,8 +259,8 @@ private fun MessageActionRowV3(
         shape = RoundedCornerShape(19.dp),
         backgroundColor = when {
             destructive -> MaterialTheme.colorScheme.error.copy(alpha = .065f)
-            glass.isDark -> Color.White.copy(alpha = .045f)
-            else -> Color.White.copy(alpha = .44f)
+            glass.isDark -> Color.White.copy(alpha = .05f)
+            else -> Color.White.copy(alpha = .24f)
         },
         elevation = 0.dp,
         onClick = onClick
