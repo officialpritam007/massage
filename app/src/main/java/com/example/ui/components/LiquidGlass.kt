@@ -81,8 +81,8 @@ fun GlassCard(
   backgroundColor: Color? = null,
   borderColor: Color? = null,
   elevation: Dp = 3.dp,
-  enableBlur: Boolean = true,
   onClick: (() -> Unit)? = null,
+  enableBlur: Boolean = true,
   content: @Composable () -> Unit
 ) {
   val config = LocalLiquidGlass.current
