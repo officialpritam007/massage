@@ -4,7 +4,7 @@
 
 **Firebase Auth + Cloud Firestore + Cloudinary direct upload**
 
-Firebase Functions, Appwrite এবং Firebase Storage runtime থেকে বাদ দেওয়া হয়েছে।
+Firebase Auth ও Firestore app data পরিচালনা করে; media সরাসরি Cloudinary-তে upload হয়। Firebase Functions এবং Firebase Storage runtime-এ ব্যবহার করা হয় না।
 
 ## GitHub variables
 

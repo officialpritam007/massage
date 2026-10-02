@@ -16,7 +16,6 @@ Connected Cloudinary account: Free plan.
 
 - Firebase Cloud Functions
 - Firebase Storage
-- Appwrite
 - Custom paid server
 
 ## Important distinction

@@ -10,7 +10,7 @@ A Kotlin/Jetpack Compose **1-to-1 realtime messaging app** using a zero-paid-bac
 - **Firebase Authentication** — account/session identity.
 - **Cloud Firestore** — profiles, directory, 1-to-1 conversations, messages, typing, presence, settings and delivery/read state.
 - **Cloudinary Free** — direct unsigned media uploads. Firestore stores the returned `secure_url`.
-- **No Firebase Functions, Appwrite, Firebase Storage or paid custom backend.**
+- **No Firebase Functions, Firebase Storage or paid custom backend.**
 
 ## Messaging
 

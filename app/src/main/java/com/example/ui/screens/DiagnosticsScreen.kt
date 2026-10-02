@@ -76,7 +76,7 @@ fun DiagnosticsScreen(
     result += DiagnosticItem(
       "Paid backend",
       true,
-      "Not used • Firebase Functions and Appwrite are not required"
+      "Not required • Firebase Auth, Firestore and direct Cloudinary"
     )
 
     val visibleAppError = appError?.takeUnless { message ->

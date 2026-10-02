@@ -6,7 +6,8 @@
 - Cloud Firestore owns profiles, directory, conversations, messages, typing, presence and delivery/read state.
 - Cloudinary owns media bytes.
 - Firestore stores Cloudinary `secure_url` values; no binary payload is stored in Firestore.
-- No Firebase Functions, Appwrite or Firebase Storage runtime dependency is allowed.
+- Application data and media use Firebase Auth, Cloud Firestore and direct Cloudinary uploads only.
+- No Firebase Functions or Firebase Storage runtime dependency is allowed.
 
 ## Security
 
