@@ -16,6 +16,8 @@ import java.security.SecureRandom
 import java.security.spec.ECGenParameterSpec
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
+import java.io.File
+import javax.crypto.CipherOutputStream
 import javax.crypto.Cipher
 import javax.crypto.KeyAgreement
 import javax.crypto.KeyGenerator
@@ -36,6 +38,11 @@ object E2eeCrypto {
 
   data class EncryptedPayload(
     val fields: Map<String, Any>
+  )
+
+  data class MediaSecret(
+    val key: ByteArray,
+    val fileIv: ByteArray
   )
 
   private data class Identity(
@@ -116,6 +123,131 @@ object E2eeCrypto {
         "e2eeRecipientKeyId" to recipientKeyId
       )
     )
+  }
+
+  fun encryptMediaFile(
+    input: File,
+    output: File,
+    fileId: String
+  ): MediaSecret {
+    val key = ByteArray(32).also(random::nextBytes)
+    val iv = ByteArray(12).also(random::nextBytes)
+    val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+    cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, iv))
+    cipher.updateAAD("media:$fileId:liquid-e2ee-v1".toByteArray(Charsets.UTF_8))
+
+    input.inputStream().use { source ->
+      CipherOutputStream(output.outputStream(), cipher).use { target ->
+        source.copyTo(target, 64 * 1024)
+      }
+    }
+    return MediaSecret(key, iv)
+  }
+
+  fun decryptMediaFile(
+    input: File,
+    output: File,
+    fileId: String,
+    secret: MediaSecret
+  ) {
+    val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+    cipher.init(
+      Cipher.DECRYPT_MODE,
+      SecretKeySpec(secret.key, "AES"),
+      GCMParameterSpec(128, secret.fileIv)
+    )
+    cipher.updateAAD("media:$fileId:liquid-e2ee-v1".toByteArray(Charsets.UTF_8))
+
+    input.inputStream().use { source ->
+      CipherOutputStream(output.outputStream(), cipher).use { target ->
+        source.copyTo(target, 64 * 1024)
+      }
+    }
+  }
+
+  fun wrapMediaSecret(
+    context: Context,
+    uid: String,
+    recipientPublicKeyBase64: String,
+    recipientKeyId: String,
+    conversationId: String,
+    messageId: String,
+    secret: MediaSecret
+  ): Map<String, Any> {
+    val sender = loadOrCreateIdentity(context, uid)
+    val recipientPublic = decodePublicKey(recipientPublicKeyBase64)
+    val ephemeral = KeyPairGenerator.getInstance("EC").apply {
+      initialize(ECGenParameterSpec("secp256r1"))
+    }.generateKeyPair()
+
+    val senderWrap = wrapContentKey(
+      ephemeral.private,
+      sender.publicKey,
+      secret.key,
+      "$conversationId:$messageId:media:$uid"
+    )
+    val recipientWrap = wrapContentKey(
+      ephemeral.private,
+      recipientPublic,
+      secret.key,
+      "$conversationId:$messageId:media:recipient"
+    )
+
+    return mapOf(
+      "e2eeVersion" to VERSION,
+      "e2eeEphemeralKey" to b64(ephemeral.public.encoded),
+      "e2eeSenderWrappedKey" to b64(senderWrap.first),
+      "e2eeSenderWrapIv" to b64(senderWrap.second),
+      "e2eeRecipientWrappedKey" to b64(recipientWrap.first),
+      "e2eeRecipientWrapIv" to b64(recipientWrap.second),
+      "e2eeSenderKeyId" to sender.keyId,
+      "e2eeRecipientKeyId" to recipientKeyId,
+      "e2eeFileIv" to b64(secret.fileIv)
+    )
+  }
+
+  fun unwrapMediaSecret(
+    context: Context,
+    uid: String,
+    senderId: String,
+    conversationId: String,
+    messageId: String,
+    fields: Map<String, Any?>
+  ): MediaSecret? {
+    if ((fields["e2eeVersion"] as? Number)?.toInt() != VERSION) return null
+    return runCatching {
+      val identity = loadOrCreateIdentity(context, uid)
+      val ephemeral = decodePublicKey(fields["e2eeEphemeralKey"] as String)
+      val senderCopy = senderId == uid
+      val wrappedKey = unb64(
+        fields[if (senderCopy) "e2eeSenderWrappedKey" else "e2eeRecipientWrappedKey"] as String
+      )
+      val wrapIv = unb64(
+        fields[if (senderCopy) "e2eeSenderWrapIv" else "e2eeRecipientWrapIv"] as String
+      )
+      val info = if (senderCopy) {
+        "$conversationId:$messageId:media:$uid"
+      } else {
+        "$conversationId:$messageId:media:recipient"
+      }
+      val shared = ecdh(identity.privateKey, ephemeral)
+      val wrappingKey = hkdfSha256(
+        shared,
+        null,
+        info.toByteArray(Charsets.UTF_8),
+        32
+      )
+      val mediaKey = aesGcmDecrypt(
+        wrappingKey,
+        wrapIv,
+        wrappedKey,
+        aadFromInfo(info)
+      )
+      MediaSecret(
+        key = mediaKey,
+        fileIv = unb64(fields["e2eeFileIv"] as String)
+      )
+    }.getOrNull()
   }
 
   fun decryptText(
