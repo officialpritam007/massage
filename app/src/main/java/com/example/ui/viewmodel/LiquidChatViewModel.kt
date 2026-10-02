@@ -135,6 +135,8 @@ class LiquidChatViewModel(
   fun isUserLoggedIn(): Boolean = repository.isUserLoggedIn()
 
   suspend fun signInWithEmail(email: String, pass: String): Result<User> = repository.signInWithEmail(email, pass)
+  suspend fun signInWithGoogleIdToken(idToken: String): Result<User> =
+    repository.signInWithGoogleIdToken(idToken)
   suspend fun registerWithEmail(
     email: String,
     pass: String,
