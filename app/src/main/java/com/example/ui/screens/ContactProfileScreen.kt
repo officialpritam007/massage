@@ -118,7 +118,7 @@ fun ContactProfileScreen(
                 } else {
                     Color.White.copy(alpha = .58f)
                 },
-                elevation = 7.dp
+                elevation = 4.dp
             ) {
                 Column(
                     Modifier
@@ -229,7 +229,8 @@ fun ContactProfileScreen(
                 GlassCard(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(26.dp),
-                    elevation = 1.dp
+                    elevation = 1.dp,
+                    enableBlur = false
                 ) {
                     Column(
                         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
@@ -243,7 +244,7 @@ fun ContactProfileScreen(
                         )
                         Text(
                             if (user.e2eeKeyId.isBlank()) {
-                                "Encryption key unavailable — contact must update Liquid Chat."
+                                "Encryption key unavailable — ask the contact to open or update Liquid Chat."
                             } else {
                                 "Security key • " + user.e2eeKeyId.chunked(4).joinToString(" ")
                             },
@@ -304,7 +305,8 @@ fun ContactProfileScreen(
                 GlassCard(
                     Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(28.dp),
-                    elevation = 1.dp
+                    elevation = 1.dp,
+                    enableBlur = false
                 ) {
                     Column(Modifier.fillMaxWidth().padding(8.dp)) {
                         conversation?.let { current ->
@@ -405,7 +407,8 @@ private fun SharedMediaCard(
         backgroundColor = if (glass.isDark) Color(0xFF0D1723).copy(alpha = .62f)
         else Color.White.copy(alpha = .58f),
         elevation = 1.dp,
-        onClick = onClick
+        onClick = onClick,
+        enableBlur = false
     ) {
         when (message.type) {
             MessageType.IMAGE -> PrivateImage(
