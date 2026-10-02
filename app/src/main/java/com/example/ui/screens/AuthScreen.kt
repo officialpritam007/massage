@@ -1,5 +1,8 @@
 package com.example.ui.screens
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
@@ -49,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -62,12 +66,18 @@ import com.airbnb.lottie.compose.LottieCompositionSpec
 import com.airbnb.lottie.compose.LottieConstants
 import com.airbnb.lottie.compose.animateLottieCompositionAsState
 import com.airbnb.lottie.compose.rememberLottieComposition
+import androidx.credentials.CredentialManager
+import androidx.credentials.CustomCredential
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialException
 import com.example.R
 import com.example.ui.components.GlassCard
 import com.example.ui.components.GlassTextField
 import com.example.ui.components.LiquidBackground
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import kotlinx.coroutines.launch
 
 private val AuthEmailRegex =
@@ -98,6 +108,12 @@ private fun validateUsername(value: String): String? = when {
   else -> null
 }
 
+private fun Context.findActivity(): Activity? = when (this) {
+  is Activity -> this
+  is ContextWrapper -> baseContext.findActivity()
+  else -> null
+}
+
 @Composable
 fun AuthScreen(
   onAuthenticated: () -> Unit,
@@ -112,6 +128,7 @@ fun AuthScreen(
   var username by remember { mutableStateOf("") }
   var passwordVisible by remember { mutableStateOf(false) }
   var busy by remember { mutableStateOf(false) }
+  var googleBusy by remember { mutableStateOf(false) }
   var backendError by remember { mutableStateOf<String?>(null) }
 
   var emailTouched by remember { mutableStateOf(false) }
@@ -121,6 +138,9 @@ fun AuthScreen(
   var submitAttempted by remember { mutableStateOf(false) }
 
   val scope = rememberCoroutineScope()
+  val context = LocalContext.current
+  val activity = remember(context) { context.findActivity() }
+  val credentialManager = remember(activity) { activity?.let { CredentialManager.create(it) } }
   val focusManager = LocalFocusManager.current
   val glass = LocalLiquidGlass.current
 
@@ -139,10 +159,12 @@ fun AuthScreen(
       currentPasswordError == null &&
       (!register || (currentNameError == null && currentUsernameError == null))
 
+  val authBusy = busy || googleBusy
+
   fun submit() {
     submitAttempted = true
     backendError = null
-    if (!formValid || busy) return
+    if (!formValid || authBusy) return
 
     focusManager.clearFocus()
     busy = true
@@ -164,6 +186,69 @@ fun AuthScreen(
         onSuccess = { onAuthenticated() },
         onFailure = { backendError = it.message ?: "Unable to continue. Please try again." }
       )
+    }
+  }
+
+  fun submitGoogle() {
+    if (authBusy) return
+    backendError = null
+    focusManager.clearFocus()
+
+    if (onGoogleSignIn != null) {
+      onGoogleSignIn()
+      return
+    }
+
+    val host = activity
+    val manager = credentialManager
+    if (host == null || manager == null) {
+      backendError = "Google sign-in is unavailable on this screen."
+      return
+    }
+
+    googleBusy = true
+    scope.launch {
+      try {
+        val webClientId = host.getString(R.string.default_web_client_id)
+        require(webClientId.isNotBlank()) { "Google OAuth client ID is missing." }
+
+        val googleOption = GetSignInWithGoogleOption.Builder(
+          serverClientId = webClientId
+        ).build()
+        val request = GetCredentialRequest.Builder()
+          .addCredentialOption(googleOption)
+          .build()
+
+        val response = manager.getCredential(
+          context = host,
+          request = request
+        )
+        val credential = response.credential
+        val googleCredential = if (
+          credential is CustomCredential &&
+          credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
+        ) {
+          GoogleIdTokenCredential.createFrom(credential.data)
+        } else {
+          error("Google returned an unsupported credential type.")
+        }
+
+        viewModel.signInWithGoogleIdToken(googleCredential.idToken).fold(
+          onSuccess = { onAuthenticated() },
+          onFailure = {
+            backendError = it.message ?: "Google sign-in failed. Please try again."
+          }
+        )
+      } catch (t: GetCredentialException) {
+        val cancelled = t::class.simpleName.orEmpty().contains("cancel", ignoreCase = true)
+        if (!cancelled) {
+          backendError = t.message ?: "Could not open Google sign-in."
+        }
+      } catch (t: Throwable) {
+        backendError = t.message ?: "Google sign-in failed. Please try again."
+      } finally {
+        googleBusy = false
+      }
     }
   }
 
@@ -394,7 +479,7 @@ fun AuthScreen(
               Box(modifier = Modifier.fillMaxWidth()) {
                 TextButton(
                   onClick = { viewModel.repository.resetPassword(email.trim()) },
-                  enabled = currentEmailError == null && !busy,
+                  enabled = currentEmailError == null && !authBusy,
                   modifier = Modifier.align(Alignment.CenterEnd)
                 ) {
                   Text("Forgot password?")
@@ -406,7 +491,7 @@ fun AuthScreen(
               text = if (register) "Create account" else "Sign in",
               loadingText = if (register) "Creating account…" else "Signing in…",
               loading = busy,
-              enabled = formValid && !busy,
+              enabled = formValid && !authBusy,
               onClick = { submit() }
             )
 
@@ -414,15 +499,8 @@ fun AuthScreen(
               OrDivider()
 
               OutlinedButton(
-                onClick = {
-                  backendError = null
-                  if (onGoogleSignIn != null) {
-                    onGoogleSignIn()
-                  } else {
-                    backendError = "Google sign-in is not configured in this build yet."
-                  }
-                },
-                enabled = !busy,
+                onClick = { submitGoogle() },
+                enabled = !authBusy,
                 modifier = Modifier
                   .fillMaxWidth()
                   .height(54.dp),
@@ -432,30 +510,43 @@ fun AuthScreen(
                   MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)
                 )
               ) {
-                Box(
-                  modifier = Modifier
-                    .size(24.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
-                  contentAlignment = Alignment.Center
-                ) {
+                if (googleBusy) {
+                  androidx.compose.material3.CircularProgressIndicator(
+                    modifier = Modifier.size(22.dp),
+                    strokeWidth = 2.dp
+                  )
+                  Spacer(Modifier.size(10.dp))
                   Text(
-                    text = "G",
+                    text = "Connecting to Google…",
                     style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.SemiBold
+                  )
+                } else {
+                  Box(
+                    modifier = Modifier
+                      .size(24.dp)
+                      .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
+                    contentAlignment = Alignment.Center
+                  ) {
+                    Text(
+                      text = "G",
+                      style = MaterialTheme.typography.labelLarge,
+                      fontWeight = FontWeight.Bold
+                    )
+                  }
+                  Spacer(Modifier.size(10.dp))
+                  Text(
+                    text = "Continue with Google",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
                   )
                 }
-                Spacer(Modifier.size(10.dp))
-                Text(
-                  text = "Continue with Google",
-                  style = MaterialTheme.typography.labelLarge,
-                  fontWeight = FontWeight.SemiBold
-                )
               }
             }
 
             TextButton(
               onClick = {
-                if (!busy) {
+                if (!authBusy) {
                   register = !register
                   submitAttempted = false
                   backendError = null
@@ -465,7 +556,7 @@ fun AuthScreen(
                   passwordTouched = false
                 }
               },
-              enabled = !busy,
+              enabled = !authBusy,
               modifier = Modifier.align(Alignment.CenterHorizontally)
             ) {
               Text(
