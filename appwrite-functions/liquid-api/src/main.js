@@ -271,22 +271,26 @@ async function purgeUserData(db, uid, claims, nextInstallationId, now) {
 
   await aw('/users/' + appUser(uid), 'DELETE').catch(() => {});
 
-  const username = String(old.username || '').trim().toLowerCase();
+  const previousUsername = String(old.username || '').trim().toLowerCase();
   const cleanInstallationId = String(nextInstallationId || '').trim().slice(0, 80);
   if (!cleanInstallationId) throw new Error('Missing installation identity');
 
-  const cleanName = String(old.displayName || claims.name || 'User').trim().slice(0, 60) || 'User';
+  if (previousUsername) {
+    await db.doc('usernames/' + previousUsername).delete().catch(() => {});
+  }
+
   const cleanEmail = String(claims.email || old.email || '').slice(0, 160);
-  const cleanPhone = String(old.phoneNumber || '').slice(0, 30);
   const createdAt = Number(old.createdAt) || now;
 
+  // Keep only the authentication-linked shell needed to sign back in. All app profile,
+  // chat, media, privacy/settings and E2EE identity data starts fresh.
   await own.set({
     uid,
-    displayName: cleanName,
-    username,
+    displayName: 'User',
+    username: '',
     bio: '',
     email: cleanEmail,
-    phoneNumber: cleanPhone,
+    phoneNumber: '',
     createdAt,
     installationId: cleanInstallationId,
     dataEpoch: now,
@@ -297,18 +301,13 @@ async function purgeUserData(db, uid, claims, nextInstallationId, now) {
     notifications: {}
   });
 
-  const directory = {
+  await db.doc('directory/' + uid).set({
     uid,
-    displayName: cleanName,
-    username,
+    displayName: 'User',
+    username: '',
     bio: '',
     createdAt
-  };
-  await db.doc('directory/' + uid).set(directory);
-
-  if (username) {
-    await db.doc('usernames/' + username).set({uid});
-  }
+  });
 
   return {ok: true, dataEpoch: now};
 }
