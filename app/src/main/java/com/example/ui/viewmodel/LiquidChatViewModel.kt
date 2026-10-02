@@ -143,7 +143,11 @@ class LiquidChatViewModel(
     phoneNumber: String
   ): Result<User> = repository.registerWithEmail(email, pass, fullName, username, phoneNumber)
 
-  fun logout() = repository.logout()
+  fun logout(onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
+    repository.logout { result ->
+      onResult(result.isSuccess, result.exceptionOrNull()?.message)
+    }
+  }
   fun updateNotifications(settings: NotificationSettings) = repository.updateNotifications(settings)
 
   fun deleteAccount(onResult: (Boolean, String?) -> Unit) {
