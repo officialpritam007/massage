@@ -62,6 +62,7 @@ import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Icon
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -163,6 +164,10 @@ fun ConversationScreenV2(
     val messageJump by viewModel.messageJump.collectAsState()
     val config = LocalLiquidGlass.current
     val repo = viewModel.repository
+    val historyHasOlder by repo.historyHasOlder.collectAsState()
+    val historyLoading by repo.historyLoading.collectAsState()
+    val canLoadOlder = historyHasOlder[conversationId] == true
+    val loadingOlder = historyLoading[conversationId] == true
 
     val conversation = conversations.firstOrNull { it.id == conversationId }
     val other = conversation?.otherUser ?: repo.peerForConversation(conversationId) ?: User(displayName = "Contact")
@@ -213,6 +218,8 @@ fun ConversationScreenV2(
     var unreadAnchorId by rememberSaveable(conversationId) { mutableStateOf<String?>(null) }
     var stickToBottom by remember(conversationId) { mutableStateOf(true) }
     var searchHighlightId by remember(conversationId) { mutableStateOf<String?>(null) }
+    var historyAnchorId by remember(conversationId) { mutableStateOf<String?>(null) }
+    var historyAnchorOffset by remember(conversationId) { mutableIntStateOf(0) }
 
     val nearBottom by remember { derivedStateOf { !listState.canScrollForward } }
 
@@ -458,6 +465,17 @@ fun ConversationScreenV2(
     val rows = filtered.filterNot { it.id == morphId }
     val latestRemoteId = rows.lastOrNull { it.senderId != me.uid && !it.isDeleted }?.id
 
+    LaunchedEffect(loadingOlder, rows.size, canLoadOlder) {
+        val anchorId = historyAnchorId ?: return@LaunchedEffect
+        if (loadingOlder) return@LaunchedEffect
+        val index = rows.indexOfFirst { it.id == anchorId }
+        if (index >= 0) {
+            val headerCount = if (canLoadOlder) 1 else 0
+            listState.scrollToItem(index + headerCount, historyAnchorOffset)
+        }
+        historyAnchorId = null
+    }
+
     LaunchedEffect(imeBottom, stickToBottom, rows.size) {
         if (!stickToBottom || rows.isEmpty()) return@LaunchedEffect
         delay(40)
@@ -697,8 +715,33 @@ fun ConversationScreenV2(
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.Bottom)
                 ) {
-                    item(key = "load-earlier") {
-                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { TextButton(onClick = { repo.loadOlder(conversationId) }) { Text("Load earlier messages") } }
+                    if (canLoadOlder || loadingOlder) {
+                        item(key = "load-earlier") {
+                            Box(
+                                Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (loadingOlder) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    TextButton(
+                                        onClick = {
+                                            val visibleAnchor = listState.layoutInfo.visibleItemsInfo.firstOrNull { item ->
+                                                rows.any { it.id == item.key }
+                                            }
+                                            historyAnchorId = visibleAnchor?.key as? String
+                                            historyAnchorOffset = visibleAnchor?.offset ?: 0
+                                            repo.loadOlder(conversationId)
+                                        }
+                                    ) {
+                                        Text("Load earlier messages")
+                                    }
+                                }
+                            }
+                        }
                     }
                     itemsIndexed(rows, key = { _, item -> item.id }) { _, message ->
                         if (message.id == unreadAnchorId) UnreadSeparatorV2()
