@@ -4,7 +4,7 @@ import {getAuth} from 'firebase-admin/auth';
 import {getFirestore, FieldValue} from 'firebase-admin/firestore';
 import {getMessaging} from 'firebase-admin/messaging';
 import {randomUUID} from 'node:crypto';
-import {assertPair, validateMessage} from './policy.js';
+import {assertPair} from './policy.js';
 
 const env = process.env;
 
@@ -611,25 +611,8 @@ export default async ({req, res, error}) => {
       return res.json({ok: true});
     }
 
-    if (p.action === 'send' && typeof p.otherUid === 'string' && p.otherUid !== uid) {
-      const ids = [uid, p.otherUid].sort();
-      if (p.conversationId !== ids.join('_')) throw new Error('Invalid conversation');
-      if (!(await db.doc('users/' + p.otherUid).get()).exists) throw new Error('Contact unavailable');
-      const cr = db.doc('conversations/' + p.conversationId);
-      await db.runTransaction(async t => {
-        if (!(await t.get(cr)).exists) {
-          t.set(cr, {
-            participantIds: ids,
-            lastMessageId: '',
-            lastMessageTime: 0,
-            lastMessageText: '',
-            lastMessageSenderId: '',
-            unreadCounts: {},
-            deletedFor: [],
-            deletedBefore: {}
-          });
-        }
-      });
+    if (['send', 'forward', 'edit'].includes(p.action)) {
+      throw new Error('Legacy plaintext mutation is disabled');
     }
 
     const {ref, c, other} = await allowed(db, p.conversationId, uid);
@@ -669,127 +652,6 @@ export default async ({req, res, error}) => {
         revokedFrom: FieldValue.arrayRemove(target.ref.id)
       });
       return res.json({ok: true});
-    }
-
-    if (p.action === 'forward') {
-      const sourceSnap = await ref.collection('messages').doc(String(p.messageId)).get();
-      const source = sourceSnap.data();
-      if (!source || source.deletedForEveryone || (source.hiddenFor || []).includes(uid) || source.expiresAt && source.expiresAt < now) {
-        throw new Error('Message unavailable');
-      }
-      const target = await allowed(db, p.targetId, uid);
-      if (source.mediaUrl?.startsWith('cloudinary:')) {
-        const mr = db.doc('media/' + source.mediaUrl.replace('cloudinary:', ''));
-        await mr.update({forwardedTo: FieldValue.arrayUnion(p.targetId)});
-      }
-      const u = (await own.get()).data();
-      validateMessage({id: p.id, type: source.type, text: source.text});
-      const tomb = db.doc(`messageTombstones/${p.targetId}_${p.id}`);
-      await db.runTransaction(async t => {
-        const dest = target.ref.collection('messages').doc(p.id);
-        if ((await t.get(tomb)).exists) return;
-        if ((await t.get(dest)).exists) return;
-        t.set(dest, {
-          senderId: uid,
-          senderName: u?.displayName || 'User',
-          text: source.text,
-          type: source.type,
-          mediaUrl: source.mediaUrl || '',
-          voiceDurationSeconds: source.voiceDurationSeconds || 0,
-          waveform: sanitizeWaveform(source.waveform),
-          createdAt: now,
-          status: 'SENT',
-          isDeleted: false,
-          deletedForEveryone: false,
-          hiddenFor: [],
-          isEdited: false,
-          isPinned: false,
-          reactions: [],
-          notificationPending: true
-        });
-        t.update(target.ref, {
-          lastMessageId: p.id,
-          lastMessageText: previewFor(source),
-          lastMessageTime: now,
-          lastMessageSenderId: uid,
-          [`unreadCounts.${target.other}`]: FieldValue.increment(1),
-          deletedFor: FieldValue.arrayRemove(uid, target.other),
-          [`hiddenLastFor.${uid}`]: FieldValue.delete(),
-          [`hiddenLastFor.${target.other}`]: FieldValue.delete()
-        });
-      });
-      return res.json({ok: true});
-    }
-
-    if (p.action === 'send') {
-      validateMessage(p);
-      if (p.mediaUrl) {
-        const mm = (await db.doc('media/' + String(p.mediaUrl).replace('cloudinary:', '')).get()).data();
-        if (!mm?.ready || mm.owner !== uid || mm.conversationId !== p.conversationId) throw new Error('Invalid media attachment');
-        const prefix = expectedMimePrefix(p.type);
-        const mime = String(mm.mimeType || '').toLowerCase();
-        if (prefix && !mime.startsWith(prefix)) throw new Error(`Attachment type does not match ${p.type.toLowerCase()} message`);
-        if (p.type === 'FILE' && !mime) throw new Error('Unknown attachment type');
-      }
-      if (p.type !== 'TEXT' && !p.mediaUrl) throw new Error('Upload media first');
-      const u = (await own.get()).data();
-      const mref = ref.collection('messages').doc(p.id);
-      const tomb = db.doc(`messageTombstones/${p.conversationId}_${p.id}`);
-      await db.runTransaction(async t => {
-        if ((await t.get(tomb)).exists) return;
-        const existing = await t.get(mref);
-        const current = await t.get(ref);
-        if (existing.exists) {
-          if (existing.data().senderId !== uid) throw new Error('Invalid message ID');
-          return;
-        }
-        const hiddenFor = [];
-        for (const participant of c.participantIds) {
-          const hidden = await t.get(db.doc(`messageHiddenTombstones/${p.conversationId}_${p.id}_${participant}`));
-          if (hidden.exists) hiddenFor.push(participant);
-        }
-        const sec = current.data().disappearingSeconds || 0;
-        const m = {
-          senderId: uid,
-          senderName: u?.displayName || 'User',
-          text: p.text,
-          type: p.type,
-          mediaUrl: p.mediaUrl || '',
-          voiceDurationSeconds: Math.min(600, Math.max(0, Number(p.voiceDurationSeconds) || 0)),
-          waveform: p.type === 'VOICE' ? sanitizeWaveform(p.waveform) : [],
-          createdAt: now,
-          status: 'SENT',
-          isDeleted: false,
-          deletedForEveryone: false,
-          hiddenFor,
-          isEdited: false,
-          isPinned: false,
-          reactions: [],
-          notificationPending: true
-        };
-        if (sec) m.expiresAt = now + sec * 1000;
-        if (p.replyToId) {
-          m.replyToId = String(p.replyToId);
-          m.replyToText = String(p.replyToText || '').slice(0, 500);
-          m.replyToSender = String(p.replyToSender || '').slice(0, 60);
-        }
-        t.set(mref, m);
-        t.update(ref, {
-          lastMessageId: p.id,
-          lastMessageText: previewFor(m),
-          lastMessageTime: now,
-          lastMessageSenderId: uid,
-          [`unreadCounts.${other}`]: FieldValue.increment(1),
-          deletedFor: FieldValue.arrayRemove(uid, other),
-          [`hiddenLastFor.${uid}`]: FieldValue.delete(),
-          [`hiddenLastFor.${other}`]: FieldValue.delete()
-        });
-      });
-      const created = await mref.get();
-      if (created.exists) {
-        await notify(db, p.conversationId, p.id).then(() => mref.update({notificationPending: false})).catch(() => {});
-      }
-      return res.json({ok: true, tombstoned: !created.exists});
     }
 
     const mref = ref.collection('messages').doc(String(p.messageId));
@@ -838,21 +700,12 @@ export default async ({req, res, error}) => {
       return res.json({ok: true});
     }
 
-    if (['edit', 'react', 'pin', 'receipt'].includes(p.action)) {
+    if (['react', 'pin', 'receipt'].includes(p.action)) {
       await db.runTransaction(async t => {
         const s = await t.get(mref);
         const m = s.data();
         if (!m || m.deletedForEveryone || (m.hiddenFor || []).includes(uid)) throw new Error('Message unavailable');
-        const currentConversation = p.action === 'edit' ? await t.get(ref) : null;
-
-        if (p.action === 'edit') {
-          if (m.senderId !== uid) throw new Error('Only the sender can do this');
-          if (m.type !== 'TEXT' || !String(p.text).trim() || String(p.text).length > 8000) throw new Error('Invalid edit');
-          t.update(mref, {text: p.text, isEdited: true});
-          if (currentConversation?.data()?.lastMessageId === String(p.messageId)) {
-            t.update(ref, {lastMessageText: String(p.text).slice(0, 500)});
-          }
-        } else if (p.action === 'receipt') {
+        if (p.action === 'receipt') {
           if (m.senderId === uid) return;
           const u = (await t.get(own)).data();
           const nextStatus = p.status === 'READ' && u?.privacy?.readReceipts !== false ? 'READ' : 'DELIVERED';
