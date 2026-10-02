@@ -1326,7 +1326,7 @@ class ChatRepository(
           } catch (timeout: TimeoutCancellationException) {
             failed += id
             updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.FAILED) }
-            _error.value = "Message send timed out. Tap the failed message to retry."
+            _syncWarning.value = "Message send timed out. Tap the failed message to retry."
             continue
           }
           val committedMediaUrl = (data["mediaUrl"] as? String).orEmpty()
@@ -1354,7 +1354,7 @@ class ChatRepository(
           if (e !is java.io.IOException) {
             failed += id
             updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.FAILED) }
-            _error.value = friendlyError(e)
+            _syncWarning.value = "Message: " + friendlyError(e)
           }
         }
       }
