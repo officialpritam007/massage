@@ -22,6 +22,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.data.model.MessageType
 import com.example.ui.components.GlassDialog
+import com.example.ui.components.GlassCard
 import com.example.ui.components.NetworkStatusBanner
 import com.example.ui.navigation.Screen
 import com.example.ui.screens.*
