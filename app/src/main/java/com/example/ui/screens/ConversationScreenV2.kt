@@ -412,12 +412,6 @@ fun ConversationScreenV2(
             pendingAttachment = PendingAttachmentV3(uri, MessageType.IMAGE)
         }
     }
-    val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) {
-            attachmentCaption = ""
-            pendingAttachment = PendingAttachmentV3(uri, MessageType.VIDEO)
-        }
-    }
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
             attachmentCaption = ""
@@ -453,7 +447,7 @@ fun ConversationScreenV2(
     LaunchedEffect(conversation?.isTyping) { if (conversation?.isTyping == true) typingAt = System.currentTimeMillis() }
     LaunchedEffect(messages.lastOrNull()?.id) {
         val remote = messages.lastOrNull { it.senderId != me.uid }
-        if (remote != null && remote.id != lastRemoteId && remote.type == MessageType.TEXT && System.currentTimeMillis() - typingAt < 8000) {
+        if (remote != null && remote.id != lastRemoteId && remote.type == MessageType.TEXT && System.currentTimeMillis() - typingAt < 3_000) {
             morphId = remote.id
             delay(if (config.isReducedMotion) 120 else 1050)
             morphId = null
@@ -1144,7 +1138,6 @@ fun ConversationScreenV2(
             GlassDialog("Share content", { attachmentSheet = false }) {
                 TextButton(onClick = { attachmentSheet = false; onNavigateToCamera() }) { Text("Camera") }
                 TextButton(onClick = { attachmentSheet = false; imagePicker.launch("image/*") }) { Text("Photo gallery") }
-                TextButton(onClick = { attachmentSheet = false; videoPicker.launch("video/*") }) { Text("Video gallery") }
                 TextButton(onClick = { attachmentSheet = false; filePicker.launch("*/*") }) { Text("Document") }
             }
         }
