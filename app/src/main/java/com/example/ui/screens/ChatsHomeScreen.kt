@@ -253,7 +253,8 @@ fun ChatsHomeScreen(
                             shape = RoundedCornerShape(31.dp),
                             backgroundColor = if (glass.isDark) darkRow else lightRow,
                             borderColor = Color.White.copy(alpha = if (glass.isDark) .13f else .55f),
-                            elevation = if (glass.isDark) 7.dp else 4.dp,
+                            elevation = if (glass.isDark) 2.dp else 1.dp,
+                            enableBlur = false,
                             onClick = {
                                 if (deletingId != conversation.id) {
                                     onNavigateToConversation(conversation.id)
@@ -381,7 +382,8 @@ fun ChatsHomeScreen(
                             Modifier.fillMaxWidth().padding(top = 28.dp),
                             shape = RoundedCornerShape(32.dp),
                             backgroundColor = if (glass.isDark) darkRow else lightRow,
-                            elevation = 3.dp
+                            elevation = 2.dp,
+                            enableBlur = false
                         ) {
                             Column(
                                 Modifier.fillMaxWidth().padding(vertical = 38.dp),
