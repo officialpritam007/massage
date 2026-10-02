@@ -824,6 +824,11 @@ class ChatRepository(
 
     val createdAt = snapshot.safeLong("createdAt")
     val senderId = snapshot.safeString("senderId")
+    val expectedSenderKeyId = if (senderId == uid) {
+      E2eeCrypto.ensureIdentity(LiquidApi.context, uid).keyId
+    } else {
+      _users.value.find { it.uid == senderId }?.e2eeKeyId.orEmpty()
+    }
     val encryptedMap = (snapshot.get("e2ee") as? Map<*, *>)
       ?.entries
       ?.filter { it.key is String }
@@ -836,7 +841,8 @@ class ChatRepository(
         senderId = senderId,
         conversationId = cid,
         messageId = snapshot.id,
-        fields = fields
+        fields = fields,
+        expectedSenderKeyId = expectedSenderKeyId
       )
     }?.let { raw ->
       runCatching { JSONObject(raw) }.getOrNull()
@@ -864,7 +870,8 @@ class ChatRepository(
         senderId = senderId,
         conversationId = cid,
         messageId = snapshot.id,
-        fields = fields
+        fields = fields,
+        expectedSenderKeyId = expectedSenderKeyId
       )
     }
     if (storedMediaUrl.isNotBlank() && mediaSecret != null) {
