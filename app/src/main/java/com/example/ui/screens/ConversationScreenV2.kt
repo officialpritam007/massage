@@ -909,6 +909,7 @@ fun ConversationScreenV2(
                                             "Send",
                                             {
                                                 if (text.isNotBlank() && other.uid !in blocked) {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                                     viewModel.sendMessage(
                                                         conversationId,
                                                         text.trim(),
@@ -969,7 +970,16 @@ fun ConversationScreenV2(
                     }
                     itemsIndexed(rows, key = { _, item -> item.id }) { _, message ->
                         if (message.id == unreadAnchorId) UnreadSeparatorV2()
-                        Box(Modifier.animateItem().fillMaxWidth()) {
+                        Box(
+                            Modifier
+                                .animateItem(
+                                    fadeInSpec = if (config.isReducedMotion) tween(0) else tween(170),
+                                    placementSpec = if (config.isReducedMotion) tween(0)
+                                    else spring(dampingRatio = .78f, stiffness = 390f),
+                                    fadeOutSpec = if (config.isReducedMotion) tween(0) else tween(130)
+                                )
+                                .fillMaxWidth()
+                        ) {
                             MessageBubbleV2(
                                 message = message,
                                 isMe = message.senderId == me.uid,
@@ -1051,6 +1061,7 @@ fun ConversationScreenV2(
                 forEveryone = mode == DeleteModeV2.FOR_EVERYONE,
                 onDismiss = { deleteTarget = null },
                 onConfirm = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     deleteTarget = null
                     performDelete(message, mode)
                 }
