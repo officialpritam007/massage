@@ -972,7 +972,7 @@ class ChatRepository(
 
     var recipientPublicKey = ""
     var recipientKeyId = ""
-    if (type == "TEXT" || mediaUrl.isNotBlank()) {
+    if (type == "TEXT" || mediaUrl.isNotBlank() || text.isNotBlank()) {
       val recipient = db.document("directory/$otherUid").get().await()
       recipientPublicKey = recipient.safeString("e2eePublicKey")
       recipientKeyId = recipient.safeString("e2eeKeyId")
@@ -1001,7 +1001,7 @@ class ChatRepository(
     )
 
     var encryptedText = false
-    if (type == "TEXT") {
+    if (type == "TEXT" || (mediaUrl.isBlank() && text.isNotBlank())) {
       val encrypted = E2eeCrypto.encryptText(
         context = LiquidApi.context,
         uid = uid,
