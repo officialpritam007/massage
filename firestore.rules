@@ -80,7 +80,10 @@ service cloud.firestore {
           'appearance', 'privacy', 'notifications', 'blockedUserIds', 'tokens',
           'installationId', 'dataEpoch', 'e2eePublicKey', 'e2eeKeyId'
         ])
-        && validOptionalCloudinaryPhoto(request.resource.data);
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['photoUrl'])
+          || validOptionalCloudinaryPhoto(request.resource.data)
+        );
 
       allow delete: if owner(uid);
     }
@@ -108,7 +111,10 @@ service cloud.firestore {
           'displayName', 'username', 'bio', 'photoUrl', 'e2eePublicKey', 'e2eeKeyId',
           'isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'
         ])
-        && validOptionalCloudinaryPhoto(request.resource.data)
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['photoUrl'])
+          || validOptionalCloudinaryPhoto(request.resource.data)
+        )
         && (
           !request.resource.data.diff(resource.data).affectedKeys().hasAny([
             'isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'
