@@ -76,6 +76,12 @@ jobs:
           npm ci --prefix tests/firestore
           npx --yes firebase-tools@14.15.1 emulators:exec --only firestore --project demo-liquid-chat "cd tests/firestore && npm test"
 
+      - name: Run Appwrite backend tests
+        run: |
+          npm ci --prefix appwrite-functions/liquid-api
+          node --check appwrite-functions/liquid-api/src/main.js
+          npm test --prefix appwrite-functions/liquid-api
+
       - name: Run unit tests
         run: |
           /tmp/gradle-9.3.1/bin/gradle testDebugUnitTest --no-daemon --stacktrace
