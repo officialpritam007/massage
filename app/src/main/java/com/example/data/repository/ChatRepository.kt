@@ -1521,25 +1521,15 @@ class ChatRepository(
         check(snap.safeString("senderId") == uid) { "Only the sender can do this" }
         val mediaUrl = snap.safeString("mediaUrl")
 
+        // Permanent deletion is always server-authoritative so tombstones,
+        // conversation summary, remote notification cleanup and Cloudinary
+        // revocation cannot be bypassed by a direct Firestore delete.
+        LiquidApi.call(
+          "deleteForEveryone",
+          mapOf("conversationId" to cid, "messageId" to id)
+        )
         if (mediaUrl.startsWith("cloudinary:")) {
-          // A media delete is complete only after the storage object and Firestore
-          // message are removed by the authenticated backend together.
-          LiquidApi.call(
-            "deleteForEveryone",
-            mapOf("conversationId" to cid, "messageId" to id)
-          )
           LiquidApi.invalidateMedia(mediaUrl)
-        } else {
-          ref.delete().await()
-          refreshConversationSummaryDirect(cid)
-          scope.launch {
-            runCatching {
-              LiquidApi.call(
-                "deleteForEveryone",
-                mapOf("conversationId" to cid, "messageId" to id)
-              )
-            }
-          }
         }
       }
       removeLocalMessage(cid, id)
