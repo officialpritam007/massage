@@ -97,6 +97,8 @@ dependencies {
   implementation(libs.androidx.navigation.compose)
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
+  implementation("androidx.sqlite:sqlite:2.7.0")
+  implementation("net.zetetic:sqlcipher-android:4.19.1@aar")
   implementation("androidx.work:work-runtime-ktx:2.10.1")
   implementation(libs.coil.compose)
   implementation(libs.converter.moshi)
