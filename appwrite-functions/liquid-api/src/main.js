@@ -427,6 +427,8 @@ export default async ({req, res, error}) => {
         conversationId: p.conversationId || null,
         createdAt: now,
         ready: false,
+        encrypted: Boolean(p.conversationId && p.encrypted === true),
+        originalMime: String(p.originalMime || '').slice(0, 120),
         forwardedTo: [],
         revokedFrom: []
       });
@@ -440,11 +442,17 @@ export default async ({req, res, error}) => {
       if (meta?.owner !== uid) throw new Error('File access denied');
       const path = `/storage/buckets/${env.APPWRITE_BUCKET_ID}/files/${p.fileId}`;
       const file = await aw(path);
-      if (file.chunksUploaded !== file.chunksTotal || file.sizeOriginal > 25 * 1024 * 1024) throw new Error('Incomplete or oversized file');
+      const maxStoredSize = 25 * 1024 * 1024 + (meta.encrypted ? 1024 : 0);
+      if (file.chunksUploaded !== file.chunksTotal || file.sizeOriginal > maxStoredSize) throw new Error('Incomplete or oversized file');
       if (!meta.conversationId && !String(file.mimeType).startsWith('image/')) throw new Error('Profile photo must be an image');
       if (meta.conversationId) await allowed(db, meta.conversationId, uid);
       await aw(path, 'PUT', {name: file.name, permissions: []});
-      await metaRef.update({ready: true, mimeType: file.mimeType || '', size: file.sizeOriginal || 0});
+      await metaRef.update({
+        ready: true,
+        mimeType: meta.encrypted ? String(meta.originalMime || '') : (file.mimeType || ''),
+        storageMimeType: file.mimeType || '',
+        size: file.sizeOriginal || 0
+      });
       if (!meta.conversationId) {
         const previousPhoto = String((await own.get()).data()?.photoUrl || '');
         const nextPhoto = 'appwrite:' + p.fileId;
