@@ -229,7 +229,8 @@ fun MessageBubbleV2(
                 shape = shape,
                 backgroundColor = bg,
                 borderColor = borderColor,
-                elevation = if (effectiveHighlighted) 7.dp else 2.dp
+                elevation = if (effectiveHighlighted) 5.dp else 1.dp,
+                enableBlur = false
             ) {
                 Column(
                     Modifier
@@ -360,7 +361,8 @@ fun MessageBubbleV2(
                     modifier = Modifier.padding(top = 2.dp),
                     shape = RoundedCornerShape(999.dp),
                     backgroundColor = if (config.isDark) Color(0xFF0B151F).copy(alpha = .82f) else Color.White.copy(alpha = .76f),
-                    elevation = 1.dp
+                    elevation = 1.dp,
+                    enableBlur = false
                 ) {
                     Row(Modifier.padding(horizontal = 7.dp, vertical = 3.dp)) {
                         message.reactions.forEach { reaction ->
