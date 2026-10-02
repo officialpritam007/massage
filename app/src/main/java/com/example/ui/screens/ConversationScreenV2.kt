@@ -761,7 +761,10 @@ fun ConversationScreenV2(
                                 isMe = message.senderId == me.uid,
                                 reduced = config.isReducedMotion,
                                 deleting = deletingId == message.id,
-                                highlighted = message.id == searchHighlightId,
+                                highlighted = message.id == searchHighlightId ||
+                                    actionMessage?.id == message.id ||
+                                    deleteTarget?.first?.id == message.id ||
+                                    editMessage?.id == message.id,
                                 voiceAvatarUrl = if (message.senderId == me.uid) me.photoUrl else other.photoUrl,
                                 voiceAvatarName = if (message.senderId == me.uid) me.displayName else other.displayName,
                                 onLongClick = { actionMessage = message; haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
@@ -830,20 +833,28 @@ fun ConversationScreenV2(
         }
 
         deleteTarget?.let { (message, mode) ->
-            GlassDialog(if (mode == DeleteModeV2.FOR_EVERYONE) "Delete for everyone?" else "Delete message?", { deleteTarget = null }) {
-                Text(if (mode == DeleteModeV2.FOR_EVERYONE) "This message will be removed for both people." else "This message will be removed from your chat.")
-                GlassButton("Delete", { deleteTarget = null; performDelete(message, mode) }, modifier = Modifier.fillMaxWidth())
-            }
+            CompactDeleteMessageDialogV3(
+                forEveryone = mode == DeleteModeV2.FOR_EVERYONE,
+                onDismiss = { deleteTarget = null },
+                onConfirm = {
+                    deleteTarget = null
+                    performDelete(message, mode)
+                }
+            )
         }
 
         editMessage?.let { message ->
-            GlassDialog("Edit message", { editMessage = null }) {
-                GlassTextField(editText, { if (it.length <= 8000) editText = it }, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None), singleLine = false, maxLines = 6)
-                GlassButton("Save", {
-                    if (editText.isNotBlank()) viewModel.editMessage(conversationId, message.id, editText.trim())
+            CompactEditMessageDialogV3(
+                value = editText,
+                onValueChange = { editText = it },
+                onDismiss = { editMessage = null },
+                onSave = {
+                    if (editText.isNotBlank()) {
+                        viewModel.editMessage(conversationId, message.id, editText.trim())
+                    }
                     editMessage = null
-                }, modifier = Modifier.fillMaxWidth(), enabled = editText.isNotBlank())
-            }
+                }
+            )
         }
 
         viewer?.let { message -> MediaViewer(message) { viewer = null } }
