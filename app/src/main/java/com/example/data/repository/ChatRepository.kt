@@ -109,8 +109,6 @@ class ChatRepository(
           false
         }
         if (ready) {
-          runCatching { ensureE2eeIdentityPublished() }
-            .onFailure { _error.value = friendlyError(it, "E2EE identity setup failed") }
           startSync()
         } else {
           auth.signOut()
@@ -302,6 +300,8 @@ class ChatRepository(
     _notifications.value = NotificationSettings()
     _searchHistory.value = emptyList()
     _error.value = null
+    _syncWarning.value = null
+    syncRecoveryAttempts.clear()
     _loading.value = false
   }
 
@@ -398,7 +398,6 @@ class ChatRepository(
     db.document("users/$uid")
       .update("installationId", installationId())
       .await()
-    ensureE2eeIdentityPublished()
     auth.currentUser?.sendEmailVerification()?.await()
     startSync()
     _currentUser.value
@@ -408,7 +407,6 @@ class ChatRepository(
     auth.signInWithEmailAndPassword(email.trim(), pass).await()
     try {
       enforceInstallationPrivacy()
-      ensureE2eeIdentityPublished()
     } catch (t: Throwable) {
       auth.signOut()
       throw t
@@ -491,6 +489,12 @@ class ChatRepository(
     }
     _loading.value = true
     _currentUser.value = User(uid = account, email = auth.currentUser?.email.orEmpty())
+
+    scope.launch {
+      runCatching { ensureE2eeIdentityPublished() }
+        .onFailure { scheduleSyncRecovery("Encryption identity", it) }
+    }
+
     val device = prefs.getString("deviceId", null)
       ?: UUID.randomUUID().toString().replace("-", "").also {
         prefs.edit().putString("deviceId", it).apply()
