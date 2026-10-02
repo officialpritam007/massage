@@ -162,6 +162,42 @@ test('profile photo accepts only the configured Cloudinary environment', async (
   await assertFails(updateDoc(doc(alice, 'users/alice'), {photoUrl: 'https://example.com/avatar.jpg'}));
 });
 
+test('legacy photo URL does not block unrelated session or presence updates', async () => {
+  await env.withSecurityRulesDisabled(async c => {
+    const db = c.firestore();
+    await updateDoc(doc(db, 'users/alice'), {
+      photoUrl: 'https://legacy.example.com/avatar.jpg'
+    });
+    await updateDoc(doc(db, 'directory/alice'), {
+      photoUrl: 'https://legacy.example.com/avatar.jpg'
+    });
+  });
+
+  const alice = env.authenticatedContext('alice').firestore();
+
+  await assertSucceeds(updateDoc(
+    doc(alice, 'users/alice'),
+    {installationId: 'install-123'}
+  ));
+
+  const now = Date.now();
+  await assertSucceeds(updateDoc(
+    doc(alice, 'directory/alice'),
+    {
+      isOnline: true,
+      onlineVisible: true,
+      lastSeenVisible: true,
+      heartbeatAt: now,
+      lastSeen: now
+    }
+  ));
+
+  await assertFails(updateDoc(
+    doc(alice, 'users/alice'),
+    {photoUrl: 'https://legacy.example.com/new-avatar.jpg'}
+  ));
+});
+
 test('participants can create valid E2EE text messages', async () => {
   const alice = env.authenticatedContext('alice').firestore();
   await assertSucceeds(setDoc(doc(alice, 'conversations/newpair'), conversation));
