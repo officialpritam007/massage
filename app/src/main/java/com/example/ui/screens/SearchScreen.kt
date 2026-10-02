@@ -51,7 +51,6 @@ import com.example.ui.components.GlassAvatar
 import com.example.ui.components.GlassCard
 import com.example.ui.components.GlassTextField
 import com.example.ui.components.LiquidBackground
-import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.GlassBorderStroke
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
@@ -77,7 +76,7 @@ fun SearchScreen(
         GlassCard(
           modifier = Modifier.fillMaxWidth().statusBarsPadding(),
           shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
-          elevation = 8.dp
+          elevation = 4.dp
         ) {
           Row(
             modifier = Modifier
@@ -98,7 +97,7 @@ fun SearchScreen(
               placeholder = "Search messages and people...",
               modifier = Modifier.weight(1f),
               leadingIcon = {
-                Icon(Icons.Default.Search, contentDescription = null, tint = CyanAccent, modifier = Modifier.size(20.dp))
+                Icon(Icons.Default.Search, contentDescription = null, tint = glassConfig.accentColor, modifier = Modifier.size(20.dp))
               },
               trailingIcon = {
                 if (searchQuery.isNotEmpty()) {
@@ -144,7 +143,7 @@ fun SearchScreen(
 
                 Text(
                   text = "Clear All",
-                  style = MaterialTheme.typography.labelSmall.copy(color = CyanAccent),
+                  style = MaterialTheme.typography.labelSmall.copy(color = glassConfig.accentColor),
                   modifier = Modifier.clickable { viewModel.clearSearchHistory() }
                 )
               }
@@ -181,14 +180,16 @@ fun SearchScreen(
             item {
               Text(
                 text = "PEOPLE & CONTACTS",
-                style = MaterialTheme.typography.labelSmall.copy(color = CyanAccent, fontWeight = FontWeight.Bold)
+                style = MaterialTheme.typography.labelSmall.copy(color = glassConfig.accentColor, fontWeight = FontWeight.Bold)
               )
             }
             items(searchResults.users) { user ->
               GlassCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                onClick = { onNavigateToProfile(user.uid) }
+                shape = RoundedCornerShape(22.dp),
+                elevation = 1.dp,
+                onClick = { onNavigateToProfile(user.uid) },
+                enableBlur = false
               ) {
                 Row(
                   modifier = Modifier
@@ -209,7 +210,7 @@ fun SearchScreen(
                     },
                     modifier = Modifier.size(36.dp)
                   ) {
-                    Icon(Icons.Default.Chat, contentDescription = "Chat", tint = CyanAccent, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.Chat, contentDescription = "Chat", tint = glassConfig.accentColor, modifier = Modifier.size(20.dp))
                   }
                 }
               }
@@ -220,14 +221,16 @@ fun SearchScreen(
             item {
               Text(
                 text = "CHATS",
-                style = MaterialTheme.typography.labelSmall.copy(color = CyanAccent, fontWeight = FontWeight.Bold)
+                style = MaterialTheme.typography.labelSmall.copy(color = glassConfig.accentColor, fontWeight = FontWeight.Bold)
               )
             }
             items(searchResults.conversations) { conv ->
               GlassCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                onClick = { onNavigateToConversation(conv.id) }
+                shape = RoundedCornerShape(22.dp),
+                elevation = 1.dp,
+                onClick = { onNavigateToConversation(conv.id) },
+                enableBlur = false
               ) {
                 Row(
                   modifier = Modifier
@@ -250,17 +253,19 @@ fun SearchScreen(
             item {
               Text(
                 text = "MESSAGES",
-                style = MaterialTheme.typography.labelSmall.copy(color = CyanAccent, fontWeight = FontWeight.Bold)
+                style = MaterialTheme.typography.labelSmall.copy(color = glassConfig.accentColor, fontWeight = FontWeight.Bold)
               )
             }
             items(searchResults.messages) { msg ->
               GlassCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(22.dp),
+                elevation = 1.dp,
                 onClick = {
                   viewModel.requestMessageJump(msg.conversationId, msg.id)
                   onNavigateToConversation(msg.conversationId)
-                }
+                },
+                enableBlur = false
               ) {
                 Row(
                   modifier = Modifier
@@ -268,7 +273,7 @@ fun SearchScreen(
                     .padding(12.dp),
                   verticalAlignment = Alignment.CenterVertically
                 ) {
-                  Icon(Icons.Default.Chat, contentDescription = null, tint = CyanAccent, modifier = Modifier.size(24.dp))
+                  Icon(Icons.Default.Chat, contentDescription = null, tint = glassConfig.accentColor, modifier = Modifier.size(24.dp))
                   Spacer(modifier = Modifier.width(12.dp))
                   Column(modifier = Modifier.weight(1f)) {
                     Text(msg.senderName, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
