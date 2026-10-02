@@ -130,7 +130,9 @@ class ChatRepository(
   }
 
   private inline fun guardSnapshot(area: String, block: () -> Unit) {
-    runCatching(block).onFailure { reportSnapshotFailure(area, it) }
+    runCatching(block)
+      .onSuccess { clearRecoveredSyncError() }
+      .onFailure { reportSnapshotFailure(area, it) }
   }
 
   private fun anyLong(value: Any?, default: Long = 0L): Long = when (value) {
