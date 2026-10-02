@@ -516,15 +516,31 @@ fun ConversationScreenV2(
     val rows = filtered.filterNot { it.id == morphId || it.id in locallyHiddenDeletes }
     val latestRemoteId = rows.lastOrNull { it.senderId != me.uid && !it.isDeleted }?.id
 
-    LaunchedEffect(loadingOlder, rows.size, canLoadOlder) {
+    LaunchedEffect(loadingOlder, rows.size) {
         val anchorId = historyAnchorId ?: return@LaunchedEffect
         if (loadingOlder) return@LaunchedEffect
         val index = rows.indexOfFirst { it.id == anchorId }
         if (index >= 0) {
-            val headerCount = if (canLoadOlder) 1 else 0
-            listState.scrollToItem(index + headerCount, historyAnchorOffset)
+            listState.scrollToItem(index, historyAnchorOffset)
         }
         historyAnchorId = null
+    }
+
+    LaunchedEffect(canLoadOlder, loadingOlder, rows.size, stickToBottom) {
+        if (!canLoadOlder || loadingOlder || rows.isEmpty()) return@LaunchedEffect
+
+        val firstVisible = listState.layoutInfo.visibleItemsInfo.firstOrNull()
+        val atTop = listState.firstVisibleItemIndex <= 1 &&
+            listState.firstVisibleItemScrollOffset < 96
+        val tooShortToScroll = !listState.canScrollBackward &&
+            !listState.canScrollForward &&
+            rows.size < 18
+
+        if ((!stickToBottom && atTop) || tooShortToScroll) {
+            historyAnchorId = firstVisible?.key as? String
+            historyAnchorOffset = firstVisible?.offset ?: 0
+            repo.loadOlder(conversationId)
+        }
     }
 
     LaunchedEffect(imeBottom, stickToBottom, rows.size) {
@@ -940,31 +956,16 @@ fun ConversationScreenV2(
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.Bottom)
                 ) {
-                    if (canLoadOlder || loadingOlder) {
-                        item(key = "load-earlier") {
+                    if (loadingOlder) {
+                        item(key = "history-loading") {
                             Box(
-                                Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                Modifier.fillMaxWidth().padding(vertical = 5.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                if (loadingOlder) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(20.dp),
-                                        strokeWidth = 2.dp
-                                    )
-                                } else {
-                                    TextButton(
-                                        onClick = {
-                                            val visibleAnchor = listState.layoutInfo.visibleItemsInfo.firstOrNull { item ->
-                                                rows.any { it.id == item.key }
-                                            }
-                                            historyAnchorId = visibleAnchor?.key as? String
-                                            historyAnchorOffset = visibleAnchor?.offset ?: 0
-                                            repo.loadOlder(conversationId)
-                                        }
-                                    ) {
-                                        Text("Load earlier messages")
-                                    }
-                                }
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp
+                                )
                             }
                         }
                     }
