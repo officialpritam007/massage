@@ -34,9 +34,9 @@ fun GlassDialog(
 ) {
   val config = LocalLiquidGlass.current
   val denseGlass = if (config.isDark) {
-    Color(0xFF0D1723).copy(alpha = 0.82f)
+    Color(0xFF08131E).copy(alpha = 0.70f)
   } else {
-    Color(0xFFF8FBFF).copy(alpha = 0.78f)
+    Color(0xFFEAF4FF).copy(alpha = 0.56f)
   }
 
   Dialog(
@@ -48,14 +48,14 @@ fun GlassDialog(
       contentAlignment = Alignment.Center
     ) {
       GlassCard(
-        modifier = Modifier.fillMaxWidth().widthIn(max = 520.dp),
-        shape = RoundedCornerShape(34.dp),
+        modifier = Modifier.fillMaxWidth().widthIn(max = 440.dp),
+        shape = RoundedCornerShape(30.dp),
         backgroundColor = denseGlass,
         elevation = 18.dp
       ) {
         Column(
           Modifier
-            .padding(horizontal = 18.dp, vertical = 16.dp)
+            .padding(horizontal = 15.dp, vertical = 13.dp)
             .heightIn(max = 640.dp)
             .verticalScroll(rememberScrollState()),
           verticalArrangement = Arrangement.spacedBy(10.dp)
