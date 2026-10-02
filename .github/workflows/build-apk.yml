@@ -78,6 +78,7 @@ jobs:
           npm install --prefix firebase-functions/liquid-api --ignore-scripts
           node --check firebase-functions/liquid-api/index.js
           node --check firebase-functions/liquid-api/src/main.js
+          node --input-type=module -e "import { v2 as cloudinary } from './firebase-functions/liquid-api/node_modules/cloudinary/index.js'; if (typeof cloudinary.utils.api_sign_request !== 'function' || typeof cloudinary.utils.private_download_url !== 'function') process.exit(1); console.log('Cloudinary SDK signing helpers available')"
 
       - name: Run unit tests
         run: |
