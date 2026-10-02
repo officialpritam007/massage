@@ -10,10 +10,11 @@ import com.example.data.local.dao.UserDao
 import com.example.data.local.entity.ConversationEntity
 import com.example.data.local.entity.MessageEntity
 import com.example.data.local.entity.UserEntity
+import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
   entities = [UserEntity::class, ConversationEntity::class, MessageEntity::class],
-  version = 1,
+  version = 2,
   exportSchema = false
 )
 abstract class LiquidChatDatabase : RoomDatabase() {
@@ -25,13 +26,21 @@ abstract class LiquidChatDatabase : RoomDatabase() {
     @Volatile
     private var INSTANCE: LiquidChatDatabase? = null
 
+    const val DATABASE_NAME = "liquid_chat_secure_v2.db"
+
     fun getDatabase(context: Context): LiquidChatDatabase {
       return INSTANCE ?: synchronized(this) {
+        System.loadLibrary("sqlcipher")
+        val passphrase = DatabaseKeyManager.getOrCreatePassphrase(context)
+        val factory = SupportOpenHelperFactory(passphrase)
         val instance = Room.databaseBuilder(
           context.applicationContext,
           LiquidChatDatabase::class.java,
-          "liquid_chat_db"
-        ).fallbackToDestructiveMigration().build()
+          context.getDatabasePath(DATABASE_NAME).absolutePath
+        )
+          .openHelperFactory(factory)
+          .fallbackToDestructiveMigration()
+          .build()
         INSTANCE = instance
         instance
       }

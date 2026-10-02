@@ -75,7 +75,7 @@ fun LiquidChatApp(
 
     LaunchedEffect(notificationConversation) {
       if (!notificationConversation.isNullOrBlank() && chatViewModel.isUserLoggedIn()) {
-        navController.navigate(Screen.Conversation.createRoute(notificationConversation))
+        navController.navigate(Screen.Conversation.createRoute(notificationConversation)) { launchSingleTop = true }
         onNotificationHandled()
       }
     }
@@ -147,7 +147,7 @@ fun LiquidChatApp(
       composable(Screen.Chats.route) {
         ChatsHomeScreen(
           viewModel = chatViewModel,
-          onNavigateToConversation = { navController.navigate(Screen.Conversation.createRoute(it)) },
+          onNavigateToConversation = { navController.navigate(Screen.Conversation.createRoute(it)) { launchSingleTop = true } },
           onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
           onNavigateToSearch = { navController.navigate(Screen.Search.route) },
           onNavigateToAppearance = { navController.navigate(Screen.Appearance.route) },

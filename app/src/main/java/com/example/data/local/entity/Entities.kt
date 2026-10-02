@@ -24,9 +24,11 @@ data class ConversationEntity(
   val otherUserPhoto: String,
   val lastMessageText: String,
   val lastMessageTime: Long,
+  val lastMessageSenderId: String = "",
   val unreadCount: Int,
   val isPinned: Boolean,
-  val isMuted: Boolean
+  val isMuted: Boolean,
+  val isArchived: Boolean = false
 )
 
 @Entity(tableName = "messages")
@@ -39,8 +41,15 @@ data class MessageEntity(
   val type: String,
   val mediaUrl: String,
   val voiceDurationSeconds: Int,
+  val waveformCsv: String = "",
   val createdAt: Long,
   val status: String,
+  val replyToId: String? = null,
+  val replyToText: String? = null,
+  val replyToSender: String? = null,
   val isEdited: Boolean,
-  val isPinned: Boolean
+  val isDeleted: Boolean = false,
+  val isPinned: Boolean,
+  val isStarred: Boolean = false,
+  val expiresAt: Long? = null
 )

@@ -143,17 +143,18 @@ object LiquidApi {
           )
         }
         file.outputStream().use {
-          bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 86, it)
+          @Suppress("DEPRECATION")
+          bitmap.compress(android.graphics.Bitmap.CompressFormat.WEBP, 84, it)
         }
         bitmap.recycle()
-        mime = "image/jpeg"
+        mime = "image/webp"
       }
 
       require(file.length() > 0) { "Empty file" }
 
       progress(0f)
       val filename = when {
-        mime.startsWith("image/") -> "image.jpg"
+        mime.startsWith("image/") -> "image.webp"
         mime.startsWith("video/") -> "video.mp4"
         mime.startsWith("audio/") -> "voice.m4a"
         else -> "attachment.bin"
