@@ -1299,6 +1299,10 @@ class ChatRepository(
             continue
           }
           val created = sendMessageDirect(data)
+          val committedMediaUrl = (data["mediaUrl"] as? String).orEmpty()
+          if (committedMediaUrl.isNotBlank()) {
+            LiquidApi.forgetPendingMediaSecret(committedMediaUrl)
+          }
           prefs.edit().remove(key).apply()
           if (!created) {
             removeLocalMessage(cid, id)
