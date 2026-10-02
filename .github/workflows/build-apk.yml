@@ -34,6 +34,16 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Show debug signing fingerprints
+        shell: bash
+        run: |
+          keytool -list -v \
+            -keystore debug.keystore \
+            -alias androiddebugkey \
+            -storepass android \
+            -keypass android \
+            | grep -E 'SHA1:|SHA256:'
+
       - name: Set up Node 20
         uses: actions/setup-node@v4
         with:
