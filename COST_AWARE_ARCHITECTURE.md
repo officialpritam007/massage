@@ -1,32 +1,28 @@
-# Liquid Chat — cost-aware Firebase + Cloudinary architecture
+# Cost-aware architecture
 
-Liquid Chat uses each provider for a distinct responsibility and avoids storing large binaries in Firestore.
+Target: run Liquid Chat without a paid application backend.
 
 ## Firebase
 
-- Firebase Authentication: account and session identity.
-- Cloud Firestore: 1-to-1 conversation metadata, realtime message snapshots, presence and typing state.
-- Firebase Cloud Messaging: push delivery.
-- Firebase App Check: abuse protection where supported.
-- Firebase Functions `liquidApi`: authenticated server-authoritative mutations, notification dispatch and Cloudinary signing.
-- Firebase Storage is intentionally not used by the Android client.
+Firebase Authentication and Cloud Firestore provide the application data layer. Firestore contains user/profile data, conversation metadata, messages, typing/presence and Cloudinary media URLs.
 
 ## Cloudinary
 
-- Profile photos and encrypted chat-media objects.
-- Chat media is uploaded as authenticated assets after the Firebase backend issues a short-lived signed upload authorization.
-- Authorized reads use short-lived signed delivery URLs.
-- The Android client limits chat attachments to 9 MB, below the connected Free-plan 10 MB raw-asset limit.
+Android uploads media directly with an unsigned preset. No Cloudinary API secret is stored in the APK. The app caps attachments at 9 MB.
 
-## Cost guardrails
+Connected Cloudinary account: Free plan.
 
-1. Firestore realtime listeners stay bounded and older message history is paginated.
-2. Typing/presence writes are throttled.
-3. Large binary data never goes into Firestore.
-4. Cloudinary transformations are not required for encrypted chat-media objects.
-5. Server secrets are stored in Firebase Functions secrets, never in the app.
-6. Monitor Firebase/Google Cloud billing settings and Cloudinary usage. Firebase Functions deployment may require a billing-enabled Firebase/Google Cloud project even when actual usage remains within no-cost quotas.
+## Not used
 
-## Security boundary
+- Firebase Cloud Functions
+- Firebase Storage
+- Appwrite
+- Custom paid server
 
-Android authenticates with Firebase. The backend verifies the Firebase ID token and conversation authorization before issuing Cloudinary upload or delivery authorization. Cloudinary API secrets remain server-side.
+## Important distinction
+
+Free architecture means no paid backend is required by design. It is not unlimited usage: exceeding Firebase or Cloudinary free quotas can throttle or stop requests.
+
+## Push notifications
+
+A secure FCM send operation needs a trusted sender. Because this mode deliberately has no trusted backend, reliable push notifications to a fully killed app are not included. Realtime Firestore sync works while the process is active and catches up when reopened.

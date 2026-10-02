@@ -1,59 +1,45 @@
-# Firebase + Cloudinary setup
+# Cloudinary direct-upload setup — zero paid backend
 
-Liquid Chat uses:
+Liquid Chat 4.2.0 uses Firebase Auth + Cloud Firestore + Cloudinary direct unsigned uploads.
 
-- Firebase Authentication for identity.
-- Cloud Firestore for realtime users, conversations, messages, typing and delivery/read state.
-- Firebase Cloud Messaging for push notifications.
-- Firebase Functions `liquidApi` for server-authoritative actions and Cloudinary authorization.
-- Cloudinary for profile photos and encrypted chat media.
+## Create the unsigned upload preset
 
-## Cloudinary secrets
+In Cloudinary Console:
 
-The Android APK must never contain the Cloudinary API secret.
+1. Open **Settings → Upload → Upload presets**.
+2. Create a new preset.
+3. Set **Signing mode = Unsigned**.
+4. Set preset name to **`liquid_chat_unsigned`**.
+5. Set the asset folder to **`liquid-chat`**.
+6. Restrict allowed formats. Recommended:
+   - images: jpg, jpeg, png, webp
+   - optional voice/video: m4a, aac, mp4
+7. Keep paid/expensive add-ons, AI analysis and eager transformations disabled.
 
-Set these Firebase Functions secrets in project `liquid-chat-v2`:
+Connected cloud name: **`mthzgqhv`**.
 
-```bash
-firebase functions:secrets:set CLOUDINARY_CLOUD_NAME
-firebase functions:secrets:set CLOUDINARY_API_KEY
-firebase functions:secrets:set CLOUDINARY_API_SECRET
-```
+## GitHub variables
 
-Do not put `CLOUDINARY_API_SECRET` in GitHub Actions variables, Gradle properties, the APK, Firestore or source control.
+Optional repository variables:
 
-## Deploy the backend
+- `CLOUDINARY_CLOUD_NAME=mthzgqhv`
+- `CLOUDINARY_UPLOAD_PRESET=liquid_chat_unsigned`
 
-Manual deployment:
+These are public identifiers, not secrets.
 
-```bash
-firebase use liquid-chat-v2
-firebase deploy --only functions:liquidApi,firestore:rules
-```
+## Never add the API secret
 
-GitHub automation:
+Do not put the Cloudinary API secret, Firebase service-account JSON, or private release-key passwords in the APK or public repository.
 
-- `.github/workflows/deploy-firebase-function.yml` deploys `liquidApi` after matching changes reach `main`.
-- `.github/workflows/deploy-firebase-rules.yml` publishes Firestore rules.
+## Runtime flow
 
-Set GitHub repository variable `LIQUID_API_URL` to the deployed HTTPS endpoint. The normal default is:
+1. User signs in with Firebase Auth.
+2. User/profile/chat/message data is written to Cloud Firestore.
+3. Android uploads media directly to Cloudinary.
+4. Cloudinary returns `secure_url`.
+5. That URL is saved in the Firestore message/profile document.
+6. Other participants read the Firestore document and load the Cloudinary URL.
 
-`https://us-central1-liquid-chat-v2.cloudfunctions.net/liquidApi`
+## Privacy limitation
 
-## Media limits
-
-The connected Cloudinary Free plan reports a 10 MB maximum raw-asset size. Encrypted chat attachments are stored as raw assets, so the Android client caps attachments at 9 MB to leave room for encryption overhead.
-
-## Security model
-
-Chat attachments are encrypted on-device before upload. Firebase verifies the signed-in user and conversation membership before providing Cloudinary upload authorization or a signed delivery URL. Cloudinary secret operations and deletion remain server-side.
-
-## Live verification
-
-After installing the current APK:
-
-1. Upload/change a profile photo.
-2. Send a small photo or voice message.
-3. Confirm a new Cloudinary asset exists under `liquid-chat/`.
-4. Open the media from the receiving account.
-5. Delete/replace it and confirm the backend revokes or removes the asset as expected.
+Firestore controls who may read a message document, but the Cloudinary delivery URL itself is public-by-URL. Direct unsigned mode also cannot securely issue Cloudinary Admin deletion calls from the APK.
