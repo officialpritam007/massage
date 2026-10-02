@@ -46,6 +46,17 @@ class LiquidChatViewModel(
   private val _searchQuery = MutableStateFlow("")
   val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
+  private val _messageJump = MutableStateFlow<Pair<String, String>?>(null)
+  val messageJump: StateFlow<Pair<String, String>?> = _messageJump.asStateFlow()
+
+  fun requestMessageJump(conversationId: String, messageId: String) {
+    _messageJump.value = conversationId to messageId
+  }
+
+  fun clearMessageJump(conversationId: String, messageId: String) {
+    if (_messageJump.value == (conversationId to messageId)) _messageJump.value = null
+  }
+
   val searchResults = combine(searchQuery, users, conversations, messages) { query, uList, cList, mMaps ->
     if (query.isBlank()) SearchResults()
     else {
