@@ -18,6 +18,7 @@ import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ServerValue
 import com.google.firebase.database.ValueEventListener
+import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.tasks.await
@@ -624,6 +625,13 @@ class ChatRepository(
       runCatching { ensureE2eeIdentityPublished() }
         .onFailure { scheduleSyncRecovery("Encryption identity", it) }
     }
+
+    FirebaseMessaging.getInstance().token
+      .addOnSuccessListener { token ->
+        if (token.isNotBlank() && uid == account) {
+          db.document("users/$account").update("tokens", FieldValue.arrayUnion(token))
+        }
+      }
 
     listeners += db.document("users/$account").addSnapshotListener { snapshot, error ->
       if (error != null) {
