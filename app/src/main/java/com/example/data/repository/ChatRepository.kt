@@ -1,6 +1,7 @@
 package com.example.data.repository
 
 import android.net.Uri
+import com.example.data.crypto.E2eeCrypto
 import com.example.data.model.*
 import com.example.data.network.LiquidApi
 import com.google.firebase.Timestamp
@@ -104,6 +105,8 @@ class ChatRepository(
           false
         }
         if (ready) {
+          runCatching { ensureE2eeIdentityPublished() }
+            .onFailure { _error.value = friendlyError(it, "E2EE identity setup failed") }
           startSync()
         } else {
           auth.signOut()
@@ -210,6 +213,18 @@ class ChatRepository(
       }
   }
 
+  private suspend fun ensureE2eeIdentityPublished() {
+    val account = uid
+    if (account.isBlank()) return
+    val identity = E2eeCrypto.ensureIdentity(LiquidApi.context, account)
+    val fields = mapOf(
+      "e2eePublicKey" to identity.publicKey,
+      "e2eeKeyId" to identity.keyId
+    )
+    db.document("users/$account").set(fields, SetOptions.merge()).await()
+    db.document("directory/$account").set(fields, SetOptions.merge()).await()
+  }
+
   private suspend fun enforceInstallationPrivacy() {
     val account = uid
     if (account.isBlank()) return
@@ -242,6 +257,7 @@ class ChatRepository(
   }
 
   private fun finishLocalLogout() {
+    val account = uid
     stopSync()
     appearanceJob?.cancel()
     uploadJob?.cancel()
@@ -251,6 +267,7 @@ class ChatRepository(
     retryUpload = null
     LiquidApi.clear()
     prefs.edit().clear().apply()
+    if (account.isNotBlank()) E2eeCrypto.deleteIdentity(LiquidApi.context, account)
     auth.signOut()
     deletedBefore.clear()
     legacyDeleteMigrations.clear()
@@ -362,6 +379,7 @@ class ChatRepository(
     db.document("users/$uid")
       .update("installationId", installationId())
       .await()
+    ensureE2eeIdentityPublished()
     auth.currentUser?.sendEmailVerification()?.await()
     startSync()
     _currentUser.value
@@ -371,6 +389,7 @@ class ChatRepository(
     auth.signInWithEmailAndPassword(email.trim(), pass).await()
     try {
       enforceInstallationPrivacy()
+      ensureE2eeIdentityPublished()
     } catch (t: Throwable) {
       auth.signOut()
       throw t
@@ -579,7 +598,9 @@ class ChatRepository(
       lastSeen = snapshot.safeLong("lastSeen"),
       lastActiveAt = heartbeatAt,
       onlineVisible = snapshot.safeBoolean("onlineVisible", true),
-      lastSeenVisible = snapshot.safeBoolean("lastSeenVisible", true)
+      lastSeenVisible = snapshot.safeBoolean("lastSeenVisible", true),
+      e2eePublicKey = snapshot.safeString("e2eePublicKey"),
+      e2eeKeyId = snapshot.safeString("e2eeKeyId")
     )
   }
 
