@@ -1466,7 +1466,7 @@ class ChatRepository(
   }
 
   fun forwardMedia(message: Message, target: String) = runAction {
-    require(message.mediaUrl.startsWith("appwrite:")) { "Media unavailable" }
+    require(message.mediaUrl.startsWith("cloudinary:")) { "Media unavailable" }
     require(LiquidApi.mediaSecret(message.mediaUrl) != null) {
       "Legacy media cannot be forwarded securely. Download and attach it again."
     }
@@ -1521,7 +1521,7 @@ class ChatRepository(
         check(snap.safeString("senderId") == uid) { "Only the sender can do this" }
         val mediaUrl = snap.safeString("mediaUrl")
 
-        if (mediaUrl.startsWith("appwrite:")) {
+        if (mediaUrl.startsWith("cloudinary:")) {
           // A media delete is complete only after the storage object and Firestore
           // message are removed by the authenticated backend together.
           LiquidApi.call(
