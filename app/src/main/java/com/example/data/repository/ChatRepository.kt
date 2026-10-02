@@ -171,6 +171,78 @@ class ChatRepository(
     }
   }
 
+  private suspend fun updateProfileDirect(
+    displayName: String,
+    username: String,
+    bio: String = "",
+    phoneNumber: String = ""
+  ) {
+    val account = uid
+    require(account.isNotBlank()) { "Please sign in again" }
+
+    val cleanName = displayName.trim().ifBlank { "User" }.take(60)
+    val cleanUsername = username.trim().lowercase()
+    require(Regex("^[a-z0-9_.]{3,32}$").matches(cleanUsername)) {
+      "Username must have 3–32 letters, numbers, dots or underscores"
+    }
+    val cleanBio = bio.trim().take(160)
+    val cleanPhone = phoneNumber.trim().take(30)
+    val ownRef = db.document("users/$account")
+    val directoryRef = db.document("directory/$account")
+    val usernameRef = db.document("usernames/$cleanUsername")
+    val email = auth.currentUser?.email.orEmpty()
+    val now = System.currentTimeMillis()
+
+    db.runTransaction { tx ->
+      val own = tx.get(ownRef)
+      val reserved = tx.get(usernameRef)
+      val previousUsername = own.safeString("username").trim().lowercase()
+      val previousRef = previousUsername
+        .takeIf { it.isNotBlank() && it != cleanUsername }
+        ?.let { db.document("usernames/$it") }
+      val previousReservation = previousRef?.let { tx.get(it) }
+
+      if (reserved.exists() && reserved.safeString("uid") != account) {
+        error("Username already taken")
+      }
+
+      tx.set(usernameRef, mapOf("uid" to account))
+      if (
+        previousRef != null &&
+        previousReservation?.exists() == true &&
+        previousReservation.safeString("uid") == account
+      ) {
+        tx.delete(previousRef)
+      }
+
+      val createdAt = own.safeLong("createdAt", now).takeIf { it > 0L } ?: now
+      tx.set(
+        ownRef,
+        mapOf(
+          "uid" to account,
+          "displayName" to cleanName,
+          "username" to cleanUsername,
+          "bio" to cleanBio,
+          "email" to email,
+          "phoneNumber" to cleanPhone,
+          "createdAt" to createdAt
+        ),
+        SetOptions.merge()
+      )
+      tx.set(
+        directoryRef,
+        mapOf(
+          "uid" to account,
+          "displayName" to cleanName,
+          "username" to cleanUsername,
+          "bio" to cleanBio,
+          "createdAt" to createdAt
+        ),
+        SetOptions.merge()
+      )
+    }.await()
+  }
+
   suspend fun registerWithEmail(
     email: String,
     pass: String,
@@ -178,12 +250,17 @@ class ChatRepository(
     username: String,
     phoneNumber: String
   ): Result<User> = runCatching {
-    auth.createUserWithEmailAndPassword(email.trim(), pass).await()
-    LiquidApi.call("profile", mapOf(
-      "displayName" to fullName,
-      "username" to username,
-      "phoneNumber" to phoneNumber
-    ))
+    val created = auth.createUserWithEmailAndPassword(email.trim(), pass).await()
+    try {
+      updateProfileDirect(
+        displayName = fullName,
+        username = username,
+        phoneNumber = phoneNumber
+      )
+    } catch (t: Throwable) {
+      runCatching { created.user?.delete()?.await() }
+      throw t
+    }
     auth.currentUser?.sendEmailVerification()?.await()
     startSync()
     _currentUser.value
@@ -191,11 +268,6 @@ class ChatRepository(
 
   suspend fun signInWithEmail(email: String, pass: String): Result<User> = runCatching {
     auth.signInWithEmailAndPassword(email.trim(), pass).await()
-
-    // Firebase authentication is the source of truth for login. Backend profile
-    // bootstrap is retried by startSync(), so a transient Appwrite edge/domain
-    // failure must not trap an already-authenticated user on the sign-in screen.
-    runCatching { LiquidApi.call("profile") }
     startSync()
     _currentUser.value
   }
@@ -270,12 +342,6 @@ class ChatRepository(
     }
     _loading.value = true
     _currentUser.value = User(uid = account, email = auth.currentUser?.email.orEmpty())
-    scope.launch {
-      // Profile bootstrap is optional for existing Firebase users. Appwrite media/backend
-      // quota must never block core chat startup.
-      runCatching { LiquidApi.call("profile") }
-    }
-
     val device = prefs.getString("deviceId", null)
       ?: UUID.randomUUID().toString().replace("-", "").also {
         prefs.edit().putString("deviceId", it).apply()
@@ -285,7 +351,9 @@ class ChatRepository(
       if (uid == account) {
         db.document("users/$account")
           .set(mapOf("tokens" to mapOf(device to token)), SetOptions.merge())
-          .addOnFailureListener { runAction { LiquidApi.call("profile") } }
+          .addOnFailureListener { error ->
+            _error.value = friendlyError(error, "Notifications could not be registered")
+          }
       }
     }
 
@@ -1205,16 +1273,16 @@ class ChatRepository(
   fun saveDraft(cid: String, text: String) { prefs.edit().putString("draft:$uid:$cid", text).apply() }
 
   suspend fun checkUsernameAvailability(username: String): Result<Boolean> = runCatching {
-    LiquidApi.call("usernameCheck", mapOf("username" to username.trim().lowercase())).optBoolean("available", false)
+    val clean = username.trim().lowercase()
+    require(Regex("^[a-z0-9_.]{3,32}$").matches(clean)) {
+      "Username must have 3–32 letters, numbers, dots or underscores"
+    }
+    val reserved = db.document("usernames/$clean").get().await()
+    !reserved.exists() || reserved.safeString("uid") == uid
   }
 
   fun updateProfile(displayName: String, username: String, bio: String, phoneNumber: String) = runAction {
-    LiquidApi.call("profile", mapOf(
-      "displayName" to displayName,
-      "username" to username,
-      "bio" to bio,
-      "phoneNumber" to phoneNumber
-    ))
+    updateProfileDirect(displayName, username, bio, phoneNumber)
   }
 
   fun updateAppearance(settings: AppearanceSettings) {
