@@ -879,8 +879,17 @@ class ChatRepository(
           }
           val created = sendMessageDirect(data)
           prefs.edit().remove(key).apply()
-          if (!created) removeLocalMessage(cid, id)
-          else updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.SENT) }
+          if (!created) {
+            removeLocalMessage(cid, id)
+          } else {
+            updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.SENT) }
+            // Core delivery is already committed to Firestore. When the optional
+            // bridge is available, replaying the same id is idempotent and lets
+            // the server send FCM without making message delivery depend on Appwrite.
+            scope.launch {
+              runCatching { LiquidApi.call("send", data) }
+            }
+          }
         } catch (e: Exception) {
           if (e is CancellationException) throw e
           if (e !is java.io.IOException) {
@@ -908,7 +917,9 @@ class ChatRepository(
   private fun removeLocalMessage(cid: String, id: String) {
     failed -= id
     receipts.removeAll { it.contains(":$id:") }
-    prefs.edit().remove("outbox:$uid:$id").remove("star:$uid:$id").remove("hidden:$uid:$id").apply()
+    // Keep hidden:<uid>:<id> when present. Delete-for-me uses it as a durable
+    // local tombstone until the optional backend can migrate it cross-device.
+    prefs.edit().remove("outbox:$uid:$id").remove("star:$uid:$id").apply()
     _messages.update { map -> map + (cid to map[cid].orEmpty().filterNot { it.id == id }) }
   }
 
@@ -1040,6 +1051,11 @@ class ChatRepository(
         refreshConversationSummaryDirect(cid)
       }
       removeLocalMessage(cid, id)
+      scope.launch {
+        runCatching {
+          LiquidApi.call("deleteForEveryone", mapOf("conversationId" to cid, "messageId" to id))
+        }
+      }
     } catch (t: Throwable) {
       deleteTombstones -= tombstone
       throw t
