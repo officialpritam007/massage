@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.liquidchat.vwnxkp"
     minSdk = 24
     targetSdk = 36
-    versionCode = 420
-    versionName = "4.2.0"
+    versionCode = 430
+    versionName = "4.3.0"
 
     fun config(name: String, fallback: String = "") = providers.gradleProperty(name).orElse(providers.environmentVariable(name)).getOrElse(fallback)
     buildConfigField("String", "CLOUDINARY_CLOUD_NAME", "\"${config("CLOUDINARY_CLOUD_NAME", "mthzgqhv")}\"")
@@ -103,6 +103,7 @@ dependencies {
 
   implementation(libs.firebase.firestore)
   implementation(libs.firebase.auth)
+  implementation(libs.firebase.messaging)
   implementation(libs.androidx.credentials)
   implementation(libs.androidx.credentials.play.services)
   implementation(libs.googleid)
