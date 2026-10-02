@@ -6,6 +6,7 @@ import com.example.data.model.*
 import com.example.data.network.LiquidApi
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.firestore.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -385,6 +386,78 @@ class ChatRepository(
       .onFailure { _syncWarning.value = "Session metadata: " + friendlyError(it) }
     startSync()
     _currentUser.value
+  }
+
+  private suspend fun generatedGoogleUsername(email: String, account: String): String {
+    val rawStem = email.substringBefore("@")
+      .lowercase()
+      .replace(Regex("[^a-z0-9_.]"), "")
+      .trim('.', '_')
+      .take(18)
+      .ifBlank { "user" }
+    val uidPart = account.lowercase().filter { it.isLetterOrDigit() }.ifBlank { "account" }
+
+    for (suffixLength in listOf(6, 10, 14, 20, 26)) {
+      val suffix = uidPart.take(suffixLength)
+      val availableStemLength = (32 - suffix.length - 1).coerceAtLeast(3)
+      val stem = rawStem.take(availableStemLength).trimEnd('.', '_').ifBlank { "user" }
+      val candidate = "$stem.$suffix".take(32).trimEnd('.', '_')
+      if (candidate.length < 3) continue
+
+      val reservedBy = db.document("usernames/$candidate").get().await().getString("uid")
+      if (reservedBy.isNullOrBlank() || reservedBy == account) return candidate
+    }
+
+    error("Could not create a unique username for this Google account")
+  }
+
+  suspend fun signInWithGoogleIdToken(idToken: String): Result<User> {
+    var firebaseSignedIn = false
+    return runCatching {
+      require(idToken.isNotBlank()) { "Google sign-in returned an empty ID token" }
+
+      val credential = GoogleAuthProvider.getCredential(idToken, null)
+      auth.signInWithCredential(credential).await()
+      firebaseSignedIn = true
+
+      val firebaseUser = auth.currentUser ?: error("Google sign-in did not return a Firebase user")
+      val ownRef = db.document("users/${firebaseUser.uid}")
+      val own = ownRef.get().await()
+      val currentUsername = own.getString("username").orEmpty().trim()
+
+      if (!own.exists() || currentUsername.isBlank()) {
+        val generatedUsername = generatedGoogleUsername(
+          email = firebaseUser.email.orEmpty(),
+          account = firebaseUser.uid
+        )
+        val displayName = own.getString("displayName")
+          ?.takeIf { it.isNotBlank() }
+          ?: firebaseUser.displayName
+          ?.takeIf { it.isNotBlank() }
+          ?: firebaseUser.email?.substringBefore("@")
+          ?.takeIf { it.isNotBlank() }
+          ?: "User"
+
+        updateProfileDirect(
+          displayName = displayName,
+          username = generatedUsername,
+          bio = own.getString("bio").orEmpty(),
+          phoneNumber = own.getString("phoneNumber").orEmpty()
+        )
+      }
+
+      runCatching { enforceInstallationPrivacy() }
+        .onFailure { _syncWarning.value = "Session metadata: " + friendlyError(it) }
+
+      startSync()
+      _currentUser.value
+    }.onFailure {
+      if (firebaseSignedIn) {
+        stopSync()
+        auth.signOut()
+        _loading.value = false
+      }
+    }
   }
 
   fun resetPassword(email: String) = runAction {
