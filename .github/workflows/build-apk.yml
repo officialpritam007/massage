@@ -75,7 +75,7 @@ jobs:
 
       - name: Validate Firebase + Cloudinary backend source
         run: |
-          npm ci --prefix firebase-functions/liquid-api
+          npm install --prefix firebase-functions/liquid-api --ignore-scripts
           node --check firebase-functions/liquid-api/index.js
           node --check firebase-functions/liquid-api/src/main.js
 
