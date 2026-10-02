@@ -675,7 +675,12 @@ fun ConversationScreenV2(
             }
         ) { padding ->
             Box(Modifier.fillMaxSize().padding(padding)) {
-                LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    state = listState,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.Bottom)
+                ) {
                     item(key = "load-earlier") {
                         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { TextButton(onClick = { repo.loadOlder(conversationId) }) { Text("Load earlier messages") } }
                     }
