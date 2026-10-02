@@ -10,6 +10,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import android.widget.Toast
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -79,7 +80,29 @@ fun LiquidChatApp(
     }
 
     val error by chatViewModel.error.collectAsState()
-    error?.let { message ->
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val blockingPrivacyError = error?.let { message ->
+      message.startsWith("Secure logout", ignoreCase = true) ||
+        message.startsWith("Secure reinstall", ignoreCase = true)
+    } == true
+    val optionalBackendQuotaError = error?.contains(
+      "Resource limit for the current billing cycle",
+      ignoreCase = true
+    ) == true
+
+    LaunchedEffect(error, optionalBackendQuotaError, blockingPrivacyError) {
+      val message = error ?: return@LaunchedEffect
+      if (optionalBackendQuotaError && !blockingPrivacyError) {
+        Toast.makeText(
+          context,
+          "Media service is temporarily unavailable. Text chat remains active.",
+          Toast.LENGTH_LONG
+        ).show()
+        chatViewModel.repository.clearError()
+      }
+    }
+
+    error?.takeIf { !optionalBackendQuotaError || blockingPrivacyError }?.let { message ->
       GlassDialog("Liquid Chat", { chatViewModel.repository.clearError() }) {
         Text(message)
         if (chatViewModel.repository.hasUploadRetry()) {
