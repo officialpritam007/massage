@@ -157,6 +157,7 @@ fun ConversationScreenV2(
     val me by viewModel.currentUser.collectAsState()
     val upload by viewModel.upload.collectAsState()
     val blocked by viewModel.blockedUserIds.collectAsState()
+    val messageJump by viewModel.messageJump.collectAsState()
     val config = LocalLiquidGlass.current
     val repo = viewModel.repository
 
@@ -203,6 +204,7 @@ fun ConversationScreenV2(
     var initialOpen by remember(conversationId) { mutableStateOf(true) }
     var unreadAnchorId by rememberSaveable(conversationId) { mutableStateOf<String?>(null) }
     var stickToBottom by remember(conversationId) { mutableStateOf(true) }
+    var searchHighlightId by remember(conversationId) { mutableStateOf<String?>(null) }
 
     val nearBottom by remember { derivedStateOf { !listState.canScrollForward } }
 
@@ -432,6 +434,22 @@ fun ConversationScreenV2(
     val rows = filtered.filterNot { it.id == morphId }
     val latestRemoteId = rows.lastOrNull { it.senderId != me.uid && !it.isDeleted }?.id
 
+    LaunchedEffect(messageJump, rows.size, conversationId) {
+        val jump = messageJump
+        if (jump?.first != conversationId) return@LaunchedEffect
+        val messageId = jump.second
+        val target = rows.indexOfFirst { it.id == messageId }
+        if (target >= 0) {
+            delay(90)
+            if (config.isReducedMotion) listState.scrollToItem(target + 1)
+            else listState.animateScrollToItem(target + 1)
+            searchHighlightId = messageId
+            delay(if (config.isReducedMotion) 250 else 900)
+            if (searchHighlightId == messageId) searchHighlightId = null
+            viewModel.clearMessageJump(conversationId, messageId)
+        }
+    }
+
     LaunchedEffect(conversationId, latestRemoteId, conversation?.unreadCount) {
         if ((conversation?.unreadCount ?: 0) <= 0 || latestRemoteId == null) return@LaunchedEffect
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.any { item -> item.key == latestRemoteId } }
@@ -620,6 +638,7 @@ fun ConversationScreenV2(
                                 message = message,
                                 isMe = message.senderId == me.uid,
                                 reduced = config.isReducedMotion,
+                                highlighted = message.id == searchHighlightId,
                                 voiceAvatarUrl = if (message.senderId == me.uid) me.photoUrl else other.photoUrl,
                                 voiceAvatarName = if (message.senderId == me.uid) me.displayName else other.displayName,
                                 onLongClick = { actionMessage = message; haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
