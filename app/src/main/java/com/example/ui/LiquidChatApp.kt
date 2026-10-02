@@ -80,6 +80,7 @@ fun LiquidChatApp(
     }
 
     val error by chatViewModel.error.collectAsState()
+    val syncWarning by chatViewModel.repository.syncWarning.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
     val blockingPrivacyError = error?.let { message ->
       message.startsWith("Secure logout", ignoreCase = true) ||
@@ -248,6 +249,29 @@ fun LiquidChatApp(
           .statusBarsPadding()
           .padding(top = 8.dp)
       )
+
+      AnimatedVisibility(
+        visible = !syncWarning.isNullOrBlank(),
+        modifier = Modifier
+          .align(Alignment.TopCenter)
+          .statusBarsPadding()
+          .padding(top = 52.dp, start = 16.dp, end = 16.dp),
+        enter = fadeIn(tween(if (appearance.isReducedMotion) 0 else 150)),
+        exit = fadeOut(tween(if (appearance.isReducedMotion) 0 else 120))
+      ) {
+        GlassCard(
+          shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
+          backgroundColor = MaterialTheme.colorScheme.error.copy(alpha = .08f),
+          elevation = 1.dp
+        ) {
+          Text(
+            text = syncWarning ?: "",
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+          )
+        }
+      }
     }
   }
 }
