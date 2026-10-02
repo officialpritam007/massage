@@ -36,33 +36,92 @@ object LiquidApi {
     }
     val user = FirebaseAuth.getInstance().currentUser ?: error("Please sign in again")
     var token = user.getIdToken(false).await().token ?: error("Please sign in again")
+    val payloadJson = JSONObject(data).put("action", action).toString()
 
-    fun requestWith(idToken: String): Response {
-      val payload = JSONObject(data).put("action", action).toString()
-        .toRequestBody("application/json".toMediaType())
+    fun directRequest(idToken: String): Response {
       return http.newCall(
         Request.Builder()
           .url(BuildConfig.LIQUID_API_URL)
           .header("Authorization", "Bearer $idToken")
-          .post(payload)
+          .post(payloadJson.toRequestBody("application/json".toMediaType()))
           .build()
       ).execute()
     }
 
-    var response = requestWith(token)
+    fun parseDirect(response: Response): JSONObject {
+      response.use { responseValue ->
+        val raw = responseValue.body?.string().orEmpty()
+        val json = runCatching { JSONObject(raw.ifBlank { "{}" }) }.getOrElse {
+          JSONObject().put("error", "Invalid backend response (${responseValue.code})")
+        }
+        check(responseValue.isSuccessful) {
+          json.optString("error", "Request failed (${responseValue.code})")
+        }
+        return json
+      }
+    }
+
+    fun executeThroughAppwrite(idToken: String): JSONObject {
+      val executionRequest = JSONObject()
+        .put("body", payloadJson)
+        .put("async", false)
+        .put("path", "/")
+        .put("method", "POST")
+        .put(
+          "headers",
+          JSONObject()
+            .put("Authorization", "Bearer $idToken")
+            .put("content-type", "application/json")
+        )
+
+      val endpoint = BuildConfig.APPWRITE_ENDPOINT.trimEnd('/') +
+        "/functions/firebase-appwrite-bridge/executions"
+      http.newCall(
+        Request.Builder()
+          .url(endpoint)
+          .header("X-Appwrite-Project", BuildConfig.APPWRITE_PROJECT_ID)
+          .header("Content-Type", "application/json")
+          .post(executionRequest.toString().toRequestBody("application/json".toMediaType()))
+          .build()
+      ).execute().use { responseValue ->
+        val raw = responseValue.body?.string().orEmpty()
+        val envelope = runCatching { JSONObject(raw.ifBlank { "{}" }) }.getOrElse {
+          JSONObject().put("message", "Invalid Appwrite response (${responseValue.code})")
+        }
+        check(responseValue.isSuccessful) {
+          envelope.optString("message", "Backend fallback failed (${responseValue.code})")
+        }
+
+        val backendStatus = envelope.optInt("responseStatusCode", 0)
+        val backendRaw = envelope.optString("responseBody", "")
+        val backendJson = runCatching {
+          JSONObject(backendRaw.ifBlank { "{}" })
+        }.getOrElse {
+          JSONObject().put("error", "Invalid backend response ($backendStatus)")
+        }
+        check(backendStatus in 200..299) {
+          backendJson.optString(
+            "error",
+            if (backendStatus > 0) "Request failed ($backendStatus)" else "Backend execution failed"
+          )
+        }
+        return backendJson
+      }
+    }
+
+    var response = directRequest(token)
     if (response.code == 401) {
       response.close()
       token = user.getIdToken(true).await().token ?: error("Please sign in again")
-      response = requestWith(token)
+      response = directRequest(token)
     }
-    response.use { r ->
-      val raw = r.body?.string().orEmpty()
-      val json = runCatching { JSONObject(raw.ifBlank { "{}" }) }.getOrElse {
-        JSONObject().put("error", "Invalid backend response (${r.code})")
-      }
-      check(r.isSuccessful) { json.optString("error", "Request failed (${r.code})") }
-      json
+
+    if (response.code == 402) {
+      response.close()
+      return@withContext executeThroughAppwrite(token)
     }
+
+    parseDirect(response)
   }
 
   private suspend fun session(): String {
