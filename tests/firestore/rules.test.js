@@ -7,6 +7,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -47,6 +48,20 @@ const e2ee = {
   e2eeRecipientKeyId: 'bob-key',
   e2eeSenderPublicKey: 'alice-public',
   e2eeSignature: 'signature'
+};
+
+const mediaE2ee = {
+  e2eeVersion: 1,
+  e2eeEphemeralKey: 'media-ephemeral',
+  e2eeSenderWrappedKey: 'sender-media-key',
+  e2eeSenderWrapIv: 'sender-media-iv',
+  e2eeRecipientWrappedKey: 'recipient-media-key',
+  e2eeRecipientWrapIv: 'recipient-media-iv',
+  e2eeSenderKeyId: 'alice-key',
+  e2eeRecipientKeyId: 'bob-key',
+  e2eeFileIv: 'file-iv',
+  e2eeSenderPublicKey: 'alice-public',
+  e2eeSignature: 'media-signature'
 };
 
 before(async()=>{
@@ -199,6 +214,53 @@ test('participants can create a direct conversation and a valid E2EE text messag
       lastMessageTime:Date.now(),
       lastMessageSenderId:'alice'
     }
+  ));
+});
+
+test('media messages require Cloudinary references and permanent delete is backend-only',async()=>{
+  const alice=env.authenticatedContext('alice').firestore();
+
+  const validMedia={
+    senderId:'alice',
+    senderName:'Alice',
+    text:'',
+    type:'IMAGE',
+    mediaUrl:'cloudinary:0123456789abcdef0123456789abcdef',
+    voiceDurationSeconds:0,
+    waveform:[],
+    createdAt:Date.now(),
+    status:'SENT',
+    isDeleted:false,
+    deletedForEveryone:false,
+    hiddenFor:[],
+    isEdited:false,
+    isPinned:false,
+    reactions:[],
+    notificationPending:true,
+    mediaE2ee
+  };
+
+  await assertSucceeds(setDoc(
+    doc(alice,'conversations/pair/messages/media-valid'),
+    validMedia
+  ));
+
+  await assertFails(setDoc(
+    doc(alice,'conversations/pair/messages/media-external'),
+    {...validMedia,mediaUrl:'https://tracker.example/file.jpg'}
+  ));
+
+  await assertFails(deleteDoc(
+    doc(alice,'conversations/pair/messages/media-valid')
+  ));
+});
+
+test('profile photo reference is backend-owned',async()=>{
+  const alice=env.authenticatedContext('alice').firestore();
+  await assertFails(setDoc(
+    doc(alice,'directory/alice'),
+    {photoUrl:'https://tracker.example/avatar.jpg'},
+    {merge:true}
   ));
 });
 
