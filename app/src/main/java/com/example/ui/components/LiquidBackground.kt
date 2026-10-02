@@ -48,7 +48,7 @@ fun LiquidBackground(
     label = "glass_drift_y"
   )
 
-  val base = if (dark) Color(0xFF070B11) else Color(0xFFF3F7FC)
+  val base = if (dark) Color(0xFF070B11) else Color(0xFFEDF4FB)
   CompositionLocalProvider(LocalGlassBackdrop provides if (config.isGlassEnabled) state else null) {
     Box(modifier.fillMaxSize().background(base)) {
       Canvas(
@@ -63,8 +63,8 @@ fun LiquidBackground(
         drawCircle(
           brush = Brush.radialGradient(
             listOf(
-              Color(0xFF6AA8FF).copy(alpha = if (dark) .18f else .22f),
-              Color(0xFFB9D9FF).copy(alpha = if (dark) .05f else .09f),
+              Color(0xFF6AA8FF).copy(alpha = if (dark) .18f else .26f),
+              Color(0xFFB9D9FF).copy(alpha = if (dark) .05f else .12f),
               Color.Transparent
             ),
             center = blue,
@@ -78,8 +78,8 @@ fun LiquidBackground(
         drawCircle(
           brush = Brush.radialGradient(
             listOf(
-              Color(0xFF8E7CFF).copy(alpha = if (dark) .12f else .13f),
-              Color(0xFFC3B9FF).copy(alpha = if (dark) .025f else .045f),
+              Color(0xFF8E7CFF).copy(alpha = if (dark) .12f else .16f),
+              Color(0xFFC3B9FF).copy(alpha = if (dark) .025f else .06f),
               Color.Transparent
             ),
             center = violet,
@@ -93,7 +93,7 @@ fun LiquidBackground(
         drawCircle(
           brush = Brush.radialGradient(
             listOf(
-              Color(0xFF61DED1).copy(alpha = if (dark) .065f else .075f),
+              Color(0xFF61DED1).copy(alpha = if (dark) .065f else .095f),
               Color.Transparent
             ),
             center = aqua,
@@ -118,7 +118,7 @@ fun LiquidBackground(
               path,
               Brush.linearGradient(
                 listOf(
-                  tint.copy(alpha = if (dark) .055f else .085f),
+                  tint.copy(alpha = if (dark) .055f else .11f),
                   Color.Transparent,
                   Color.White.copy(alpha = if (dark) .016f else .045f)
                 ),
@@ -132,9 +132,9 @@ fun LiquidBackground(
         drawRect(
           Brush.verticalGradient(
             listOf(
-              if (dark) Color.Black.copy(alpha = .10f) else Color.White.copy(alpha = .08f),
+              if (dark) Color.Black.copy(alpha = .10f) else Color.White.copy(alpha = .04f),
               Color.Transparent,
-              if (dark) Color.Black.copy(alpha = .20f) else Color(0xFFBFD4EA).copy(alpha = .06f)
+              if (dark) Color.Black.copy(alpha = .20f) else Color(0xFF93B5D9).copy(alpha = .10f)
             )
           )
         )
