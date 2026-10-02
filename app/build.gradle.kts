@@ -107,6 +107,7 @@ dependencies {
   debugImplementation("com.google.firebase:firebase-appcheck-debug")
 
   implementation("dev.chrisbanes.haze:haze:1.5.4")
+  implementation("com.airbnb.android:lottie-compose:6.6.2")
 
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
