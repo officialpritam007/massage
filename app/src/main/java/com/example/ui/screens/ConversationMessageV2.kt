@@ -95,15 +95,15 @@ fun DustDeleteContainerV2(
     val dustColor = MaterialTheme.colorScheme.onSurface
     val progress by animateFloatAsState(
         targetValue = if (active) 1f else 0f,
-        animationSpec = tween(if (reduced) 90 else 520),
+        animationSpec = tween(if (reduced) 70 else 300),
         label = "dust-delete"
     )
     Box(
         modifier
             .clipToBounds()
             .graphicsLayer {
-                val disappear = if (reduced) progress else (progress * 1.08f).coerceIn(0f, 1f)
-                alpha = (1f - disappear * .96f).coerceIn(0f, 1f)
+                val disappear = if (reduced) progress else (progress * 1.5f).coerceIn(0f, 1f)
+                alpha = (1f - disappear).coerceIn(0f, 1f)
                 scaleX = 1f - progress * .035f
                 scaleY = 1f - progress * .025f
                 translationX = progress * 6.dp.toPx()
