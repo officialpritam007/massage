@@ -9,8 +9,9 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.example.data.network.LiquidApi
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.tasks.await
 import java.util.concurrent.TimeUnit
 
 /**
@@ -24,7 +25,8 @@ class DeliveryReceiptWorker(
 ) : CoroutineWorker(appContext, params) {
 
   override suspend fun doWork(): Result {
-    if (FirebaseAuth.getInstance().currentUser == null) return Result.success()
+    val user = FirebaseAuth.getInstance().currentUser ?: return Result.success()
+    val db = FirebaseFirestore.getInstance()
 
     val prefs = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     val keys = prefs.all.keys.filter { it.startsWith(PREFIX) }
@@ -41,14 +43,14 @@ class DeliveryReceiptWorker(
       val conversationId = payload[0]
       val messageId = payload[1]
       runCatching {
-        LiquidApi.call(
-          "receipt",
-          mapOf(
-            "conversationId" to conversationId,
-            "messageId" to messageId,
-            "status" to "DELIVERED"
-          )
-        )
+        val ref = db.document("conversations/$conversationId/messages/$messageId")
+        db.runTransaction { tx ->
+          val snapshot = tx.get(ref)
+          if (!snapshot.exists()) return@runTransaction
+          if (snapshot.getString("senderId") == user.uid) return@runTransaction
+          val current = snapshot.getString("status") ?: "SENT"
+          if (current == "SENT") tx.update(ref, "status", "DELIVERED")
+        }.await()
       }.onSuccess {
         prefs.edit().remove(key).apply()
       }.onFailure {

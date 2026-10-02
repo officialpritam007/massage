@@ -16,14 +16,15 @@ android {
     applicationId = "com.aistudio.liquidchat.vwnxkp"
     minSdk = 24
     targetSdk = 36
-    versionCode = 410
-    versionName = "4.1.0"
+    versionCode = 411
+    versionName = "4.1.1"
 
     fun config(name: String, fallback: String = "") = providers.gradleProperty(name).orElse(providers.environmentVariable(name)).getOrElse(fallback)
     buildConfigField("String", "APPWRITE_ENDPOINT", "\"${config("APPWRITE_ENDPOINT", "https://sgp.cloud.appwrite.io/v1")}\"")
     buildConfigField("String", "APPWRITE_PROJECT_ID", "\"${config("APPWRITE_PROJECT_ID", "6abae44b0030a4b3c0b4")}\"")
     buildConfigField("String", "APPWRITE_BUCKET_ID", "\"${config("APPWRITE_BUCKET_ID", "6abae4e300352b37c209")}\"")
     buildConfigField("String", "LIQUID_API_URL", "\"${config("LIQUID_API_URL")}\"")
+    buildConfigField("String", "APP_CHECK_PROVIDER", "\"${config("APP_CHECK_PROVIDER", "none")}\"")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

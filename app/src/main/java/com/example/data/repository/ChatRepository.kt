@@ -50,6 +50,8 @@ class ChatRepository(
   private var heartbeat: Job? = null
   private var outboxJob: Job? = null
   private var appearanceJob: Job? = null
+  private var syncRecoveryJob: Job? = null
+  private val syncRecoveryAttempts = mutableMapOf<String, Int>()
   private data class QueuedMediaUpload(
     val id: String = UUID.randomUUID().toString(),
     val conversationId: String,
@@ -85,6 +87,8 @@ class ChatRepository(
   val searchHistory = _searchHistory.asStateFlow()
   private val _error = MutableStateFlow<String?>(null)
   val error = _error.asStateFlow()
+  private val _syncWarning = MutableStateFlow<String?>(null)
+  val syncWarning = _syncWarning.asStateFlow()
   private val _loading = MutableStateFlow(true)
   val loading = _loading.asStateFlow()
   private val _upload = MutableStateFlow<Float?>(null)
@@ -105,8 +109,6 @@ class ChatRepository(
           false
         }
         if (ready) {
-          runCatching { ensureE2eeIdentityPublished() }
-            .onFailure { _error.value = friendlyError(it, "E2EE identity setup failed") }
           startSync()
         } else {
           auth.signOut()
@@ -125,7 +127,7 @@ class ChatRepository(
     val message = t.message.orEmpty()
     return when {
       message.contains("PERMISSION_DENIED", true) || message.contains("insufficient permissions", true) ->
-        "Sync permission denied. Publish the latest Firestore rules, then reopen Liquid Chat."
+        "Firebase access was denied. Liquid Chat will retry automatically."
       message.contains("UNAVAILABLE", true) || message.contains("network", true) || t is java.io.IOException ->
         "Connection unavailable. Your pending messages will retry when the network returns."
       message.contains("token", true) && message.contains("expired", true) ->
@@ -138,22 +140,37 @@ class ChatRepository(
   }
 
   private fun reportSnapshotFailure(area: String, t: Throwable) {
-    _error.value = "$area: ${friendlyError(t, "could not be loaded")}"
+    _syncWarning.value = "$area: ${friendlyError(t, "could not be loaded")}"
   }
 
-  private fun clearRecoveredSyncError() {
-    val current = _error.value.orEmpty()
-    if (
-      current.contains("permission denied", ignoreCase = true) ||
-      current.contains("insufficient permissions", ignoreCase = true)
-    ) {
-      _error.value = null
+  private fun markSyncHealthy(area: String) {
+    syncRecoveryAttempts.remove(area)
+    if (_syncWarning.value?.startsWith("$area:") == true) {
+      _syncWarning.value = null
+    }
+  }
+
+  private fun scheduleSyncRecovery(area: String, t: Throwable) {
+    reportSnapshotFailure(area, t)
+    val permissionLike = t is FirebaseFirestoreException &&
+      (t.code == FirebaseFirestoreException.Code.PERMISSION_DENIED ||
+        t.code == FirebaseFirestoreException.Code.UNAUTHENTICATED)
+    val attempts = syncRecoveryAttempts[area] ?: 0
+    if (!permissionLike || attempts >= 2 || syncRecoveryJob?.isActive == true) return
+
+    val account = uid
+    val nextAttempt = attempts + 1
+    syncRecoveryAttempts[area] = nextAttempt
+    syncRecoveryJob = scope.launch {
+      runCatching { auth.currentUser?.getIdToken(true)?.await() }
+      delay(750L * nextAttempt)
+      if (uid == account && account.isNotBlank()) startSync()
     }
   }
 
   private inline fun guardSnapshot(area: String, block: () -> Unit) {
     runCatching(block)
-      .onSuccess { clearRecoveredSyncError() }
+      .onSuccess { markSyncHealthy(area) }
       .onFailure { reportSnapshotFailure(area, it) }
   }
 
@@ -283,6 +300,8 @@ class ChatRepository(
     _notifications.value = NotificationSettings()
     _searchHistory.value = emptyList()
     _error.value = null
+    _syncWarning.value = null
+    syncRecoveryAttempts.clear()
     _loading.value = false
   }
 
@@ -379,7 +398,6 @@ class ChatRepository(
     db.document("users/$uid")
       .update("installationId", installationId())
       .await()
-    ensureE2eeIdentityPublished()
     auth.currentUser?.sendEmailVerification()?.await()
     startSync()
     _currentUser.value
@@ -389,7 +407,6 @@ class ChatRepository(
     auth.signInWithEmailAndPassword(email.trim(), pass).await()
     try {
       enforceInstallationPrivacy()
-      ensureE2eeIdentityPublished()
     } catch (t: Throwable) {
       auth.signOut()
       throw t
@@ -459,6 +476,8 @@ class ChatRepository(
     _historyLoading.value = emptyMap()
     heartbeat?.cancel()
     outboxJob?.cancel()
+    syncRecoveryJob?.cancel()
+    syncRecoveryJob = null
   }
 
   private fun startSync() {
@@ -470,6 +489,12 @@ class ChatRepository(
     }
     _loading.value = true
     _currentUser.value = User(uid = account, email = auth.currentUser?.email.orEmpty())
+
+    scope.launch {
+      runCatching { ensureE2eeIdentityPublished() }
+        .onFailure { scheduleSyncRecovery("Encryption identity", it) }
+    }
+
     val device = prefs.getString("deviceId", null)
       ?: UUID.randomUUID().toString().replace("-", "").also {
         prefs.edit().putString("deviceId", it).apply()
@@ -480,14 +505,14 @@ class ChatRepository(
         db.document("users/$account")
           .set(mapOf("tokens" to mapOf(device to token)), SetOptions.merge())
           .addOnFailureListener { error ->
-            _error.value = friendlyError(error, "Notifications could not be registered")
+            _syncWarning.value = "Notifications: " + friendlyError(error, "token registration failed")
           }
       }
     }
 
     listeners += db.document("users/$account").addSnapshotListener { snapshot, error ->
       if (error != null) {
-        _error.value = friendlyError(error)
+        scheduleSyncRecovery("Profile", error)
         return@addSnapshotListener
       }
       if (snapshot == null || !snapshot.exists()) return@addSnapshotListener
@@ -530,7 +555,7 @@ class ChatRepository(
 
     listeners += db.collection("directory").limit(200).addSnapshotListener { snapshot, error ->
       if (error != null) {
-        _error.value = friendlyError(error)
+        scheduleSyncRecovery("Contacts", error)
         return@addSnapshotListener
       }
       if (snapshot != null) guardSnapshot("Contacts") {
@@ -545,7 +570,7 @@ class ChatRepository(
       .addSnapshotListener { snapshot, error ->
         _loading.value = false
         if (error != null) {
-          _error.value = friendlyError(error)
+          scheduleSyncRecovery("Chats", error)
           return@addSnapshotListener
         }
         if (snapshot != null) guardSnapshot("Chats") {
@@ -690,14 +715,10 @@ class ChatRepository(
       .addSnapshotListener { snapshot, error ->
         if (error != null) {
           _historyLoading.update { it + (cid to false) }
-          _error.value = friendlyError(error)
+          scheduleSyncRecovery("Messages", error)
           return@addSnapshotListener
         }
         if (snapshot != null) guardSnapshot("Messages") {
-          if (_error.value?.contains("permission denied", ignoreCase = true) == true) {
-            _error.value = null
-          }
-
           val pageDocuments = snapshot.documents.take(recentLimit.toInt())
           val extraDocument = snapshot.documents.getOrNull(recentLimit.toInt())
           if (cid !in historyPagingStarted) {
@@ -797,7 +818,7 @@ class ChatRepository(
           .forEach { receipt(cid, it.id, "DELIVERED") }
       } catch (t: Throwable) {
         if (t !is CancellationException) {
-          _error.value = friendlyError(t)
+          reportSnapshotFailure("History", t)
         }
       } finally {
         _historyLoading.update { it + (cid to false) }
@@ -1305,7 +1326,7 @@ class ChatRepository(
           } catch (timeout: TimeoutCancellationException) {
             failed += id
             updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.FAILED) }
-            _error.value = "Message send timed out. Tap the failed message to retry."
+            _syncWarning.value = "Message send timed out. Tap the failed message to retry."
             continue
           }
           val committedMediaUrl = (data["mediaUrl"] as? String).orEmpty()
@@ -1333,7 +1354,7 @@ class ChatRepository(
           if (e !is java.io.IOException) {
             failed += id
             updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.FAILED) }
-            _error.value = friendlyError(e)
+            _syncWarning.value = "Message: " + friendlyError(e)
           }
         }
       }
@@ -1715,7 +1736,7 @@ class ChatRepository(
         "lastSeen" to if (_privacy.value.lastSeenVisibility != "Nobody") now else 0L
       ),
       SetOptions.merge()
-    ).addOnFailureListener { _error.value = it.message }
+    ).addOnFailureListener { _syncWarning.value = "Presence: " + friendlyError(it) }
   }
 
   fun draft(cid: String) = prefs.getString("draft:$uid:$cid", "").orEmpty()
@@ -1774,7 +1795,7 @@ class ChatRepository(
   private fun save(field: String, value: Any) {
     if (uid.isNotBlank()) {
       db.document("users/$uid").set(mapOf(field to value), SetOptions.merge())
-        .addOnFailureListener { _error.value = it.message }
+        .addOnFailureListener { _syncWarning.value = "Settings: " + friendlyError(it) }
     }
   }
 
@@ -1795,7 +1816,8 @@ class ChatRepository(
 
   suspend fun deleteAccount(): Result<Unit> = runCatching {
     LiquidApi.call("deleteAccount")
-    logout()
+    LiquidApi.clearMediaCachesOnly()
+    finishLocalLogout()
   }
 
   fun addSearchHistory(query: String) {

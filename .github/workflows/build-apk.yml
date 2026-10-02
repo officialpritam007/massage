@@ -1,5 +1,9 @@
 name: Build Android APK
 
+concurrency:
+  group: build-android-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   workflow_dispatch:
   push:
@@ -19,6 +23,7 @@ jobs:
       APPWRITE_ENDPOINT: ${{ vars.APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1' }}
       APPWRITE_PROJECT_ID: ${{ vars.APPWRITE_PROJECT_ID || '6abae44b0030a4b3c0b4' }}
       APPWRITE_BUCKET_ID: ${{ vars.APPWRITE_BUCKET_ID || '6abae4e300352b37c209' }}
+      APP_CHECK_PROVIDER: ${{ vars.APP_CHECK_PROVIDER || 'none' }}
 
     steps:
       - name: Checkout source code
@@ -29,6 +34,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: tests/firestore/package-lock.json
 
       - name: Validate backend configuration
         shell: bash
@@ -58,6 +70,17 @@ jobs:
           unzip -q /tmp/gradle.zip -d /tmp
           echo "/tmp/gradle-9.3.1/bin" >> "$GITHUB_PATH"
           /tmp/gradle-9.3.1/bin/gradle --version
+
+      - name: Run Firestore security-rule integration tests
+        run: |
+          npm ci --prefix tests/firestore
+          npx --yes firebase-tools@14.15.1 emulators:exec --only firestore --project demo-liquid-chat "cd tests/firestore && npm test"
+
+      - name: Run Appwrite backend tests
+        run: |
+          npm ci --prefix appwrite-functions/liquid-api
+          node --check appwrite-functions/liquid-api/src/main.js
+          npm test --prefix appwrite-functions/liquid-api
 
       - name: Run unit tests
         run: |
