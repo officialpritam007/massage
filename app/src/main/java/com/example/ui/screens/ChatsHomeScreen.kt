@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -241,6 +242,7 @@ fun ChatsHomeScreen(
                 }
 
                 items(visible, key = { it.id }) { conversation ->
+                    val localDraft = viewModel.repository.draft(conversation.id).trim()
                     DustDeleteContainerV2(
                         active = deletingId == conversation.id,
                         reduced = glass.isReducedMotion,
@@ -299,21 +301,39 @@ fun ChatsHomeScreen(
                                     Spacer(Modifier.height(5.dp))
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
-                                            conversation.lastMessageText.ifBlank { "Start a conversation" },
+                                            if (localDraft.isNotBlank()) {
+                                                "Draft: " + localDraft
+                                            } else {
+                                                conversation.lastMessageText.ifBlank { "Start a conversation" }
+                                            },
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                             style = MaterialTheme.typography.bodyMedium,
-                                            color = if (conversation.unreadCount > 0) {
-                                                MaterialTheme.colorScheme.onSurface
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = when {
+                                                localDraft.isNotBlank() -> glass.accentColor
+                                                conversation.unreadCount > 0 -> MaterialTheme.colorScheme.onSurface
+                                                else -> MaterialTheme.colorScheme.onSurfaceVariant
                                             },
-                                            fontWeight = if (conversation.unreadCount > 0) FontWeight.Medium else FontWeight.Normal,
+                                            fontWeight = if (localDraft.isNotBlank() || conversation.unreadCount > 0) {
+                                                FontWeight.Medium
+                                            } else {
+                                                FontWeight.Normal
+                                            },
                                             modifier = Modifier.weight(1f)
                                         )
 
+                                        if (conversation.isMuted) {
+                                            Spacer(Modifier.width(7.dp))
+                                            Icon(
+                                                Icons.Default.NotificationsOff,
+                                                contentDescription = "Muted",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+
                                         if (conversation.unreadCount > 0) {
-                                            Spacer(Modifier.width(9.dp))
+                                            Spacer(Modifier.width(8.dp))
                                             GlassBadge(
                                                 conversation.unreadCount,
                                                 color = glass.accentColor
