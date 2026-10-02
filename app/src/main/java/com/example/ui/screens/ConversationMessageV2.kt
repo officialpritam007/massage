@@ -372,7 +372,7 @@ fun MessageBubbleV2(
             }
         }
     }
-
+}
 
 @Composable
 private fun MessageMetaV2(
@@ -437,5 +437,4 @@ private fun MessageMetaV2(
             }
         }
     }
-}
 }
