@@ -74,6 +74,8 @@ class LiquidFirebaseMessagingService : FirebaseMessagingService() {
     data: Map<String, String>
   ): String? {
     val fields = e2eeFields(data) ?: return null
+    val knownKeyId = getSharedPreferences("liquid-private", MODE_PRIVATE)
+      .getString("peerE2eeKey:$senderId", null)
     val raw = E2eeCrypto.decryptText(
       context = applicationContext,
       uid = uid,
@@ -81,7 +83,7 @@ class LiquidFirebaseMessagingService : FirebaseMessagingService() {
       conversationId = conversationId,
       messageId = messageId,
       fields = fields,
-      expectedSenderKeyId = fields["e2eeSenderKeyId"] as? String
+      expectedSenderKeyId = knownKeyId
     ) ?: return null
     return runCatching { JSONObject(raw).optString("text").takeIf { it.isNotBlank() } }.getOrNull()
   }
