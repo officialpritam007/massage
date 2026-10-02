@@ -272,7 +272,8 @@ object E2eeCrypto {
     senderId: String,
     conversationId: String,
     messageId: String,
-    fields: Map<String, Any?>
+    fields: Map<String, Any?>,
+    expectedSenderKeyId: String? = null
   ): MediaSecret? {
     if ((fields["e2eeVersion"] as? Number)?.toInt() != VERSION) return null
     return runCatching {
@@ -281,7 +282,8 @@ object E2eeCrypto {
         conversationId = conversationId,
         messageId = messageId,
         fields = fields,
-        fileIv = fields["e2eeFileIv"] as String
+        fileIv = fields["e2eeFileIv"] as String,
+        expectedSenderKeyId = expectedSenderKeyId
       )
       val ephemeral = decodePublicKey(fields["e2eeEphemeralKey"] as String)
       val senderCopy = senderId == uid
@@ -322,7 +324,8 @@ object E2eeCrypto {
     senderId: String,
     conversationId: String,
     messageId: String,
-    fields: Map<String, Any?>
+    fields: Map<String, Any?>,
+    expectedSenderKeyId: String? = null
   ): String? {
     if ((fields["e2eeVersion"] as? Number)?.toInt() != VERSION) return null
     return runCatching {
@@ -331,7 +334,8 @@ object E2eeCrypto {
         conversationId = conversationId,
         messageId = messageId,
         fields = fields,
-        fileIv = ""
+        fileIv = "",
+        expectedSenderKeyId = expectedSenderKeyId
       )
       val ephemeral = decodePublicKey(fields["e2eeEphemeralKey"] as String)
       val senderCopy = senderId == uid
@@ -499,11 +503,15 @@ object E2eeCrypto {
     conversationId: String,
     messageId: String,
     fields: Map<String, Any?>,
-    fileIv: String
+    fileIv: String,
+    expectedSenderKeyId: String?
   ) {
     val senderPublic = decodePublicKey(fields["e2eeSenderPublicKey"] as String)
     val senderKeyId = fields["e2eeSenderKeyId"] as String
     require(keyId(senderPublic.encoded) == senderKeyId) { "Sender key fingerprint mismatch" }
+    if (!expectedSenderKeyId.isNullOrBlank()) {
+      require(senderKeyId == expectedSenderKeyId) { "Contact encryption key changed" }
+    }
     val bytes = signatureBytes(
       conversationId = conversationId,
       messageId = messageId,
