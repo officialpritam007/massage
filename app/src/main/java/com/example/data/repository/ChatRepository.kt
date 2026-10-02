@@ -6,6 +6,7 @@ import com.example.data.model.*
 import com.example.data.network.LiquidApi
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.firestore.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -381,6 +382,46 @@ class ChatRepository(
 
   suspend fun signInWithEmail(email: String, pass: String): Result<User> = runCatching {
     auth.signInWithEmailAndPassword(email.trim(), pass).await()
+    runCatching { enforceInstallationPrivacy() }
+      .onFailure { _syncWarning.value = "Session metadata: " + friendlyError(it) }
+    startSync()
+    _currentUser.value
+  }
+
+  suspend fun signInWithGoogleIdToken(idToken: String): Result<User> = runCatching {
+    require(idToken.isNotBlank()) { "Google sign-in did not return an ID token" }
+
+    val authResult = auth.signInWithCredential(
+      GoogleAuthProvider.getCredential(idToken, null)
+    ).await()
+    val firebaseUser = authResult.user ?: error("Google sign-in could not load the Firebase user")
+
+    val userRef = db.document("users/${firebaseUser.uid}")
+    val existingProfile = userRef.get().await()
+    if (!existingProfile.exists()) {
+      val emailPrefix = firebaseUser.email
+        .orEmpty()
+        .substringBefore('@')
+        .lowercase()
+        .replace(Regex("[^a-z0-9_.]"), "")
+        .trim('.', '_')
+      val safeBase = emailPrefix.ifBlank { "user" }.take(22)
+      val generatedUsername = "${safeBase}_${firebaseUser.uid.take(6).lowercase()}".take(32)
+
+      try {
+        updateProfileDirect(
+          displayName = firebaseUser.displayName.orEmpty().ifBlank { "User" },
+          username = generatedUsername,
+          phoneNumber = ""
+        )
+      } catch (t: Throwable) {
+        // A Google account has already been authenticated. Avoid leaving a half-initialized
+        // session if profile bootstrap fails.
+        auth.signOut()
+        throw t
+      }
+    }
+
     runCatching { enforceInstallationPrivacy() }
       .onFailure { _syncWarning.value = "Session metadata: " + friendlyError(it) }
     startSync()

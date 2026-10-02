@@ -49,7 +49,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.credentials.CredentialManager
+import androidx.credentials.CustomCredential
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -68,6 +73,8 @@ import com.example.ui.components.GlassTextField
 import com.example.ui.components.LiquidBackground
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import kotlinx.coroutines.launch
 
 private val AuthEmailRegex =
@@ -102,8 +109,7 @@ private fun validateUsername(value: String): String? = when {
 fun AuthScreen(
   onAuthenticated: () -> Unit,
   modifier: Modifier = Modifier,
-  viewModel: LiquidChatViewModel,
-  onGoogleSignIn: (() -> Unit)? = null
+  viewModel: LiquidChatViewModel
 ) {
   var register by remember { mutableStateOf(false) }
   var email by remember { mutableStateOf("") }
@@ -121,6 +127,8 @@ fun AuthScreen(
   var submitAttempted by remember { mutableStateOf(false) }
 
   val scope = rememberCoroutineScope()
+  val context = LocalContext.current
+  val credentialManager = remember(context) { CredentialManager.create(context) }
   val focusManager = LocalFocusManager.current
   val glass = LocalLiquidGlass.current
 
@@ -416,10 +424,44 @@ fun AuthScreen(
               OutlinedButton(
                 onClick = {
                   backendError = null
-                  if (onGoogleSignIn != null) {
-                    onGoogleSignIn()
-                  } else {
-                    backendError = "Google sign-in is not configured in this build yet."
+                  focusManager.clearFocus()
+                  busy = true
+                  scope.launch {
+                    try {
+                      val googleIdOption = GetGoogleIdOption.Builder()
+                        .setFilterByAuthorizedAccounts(false)
+                        .setServerClientId(context.getString(R.string.default_web_client_id))
+                        .setAutoSelectEnabled(false)
+                        .build()
+                      val request = GetCredentialRequest.Builder()
+                        .addCredentialOption(googleIdOption)
+                        .build()
+                      val credential = credentialManager
+                        .getCredential(context = context, request = request)
+                        .credential
+
+                      if (
+                        credential !is CustomCredential ||
+                        credential.type != GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
+                      ) {
+                        error("Google did not return a supported credential")
+                      }
+
+                      val googleCredential = GoogleIdTokenCredential.createFrom(credential.data)
+                      val result = viewModel.signInWithGoogleIdToken(googleCredential.idToken)
+                      result.fold(
+                        onSuccess = { onAuthenticated() },
+                        onFailure = {
+                          backendError = it.message ?: "Google sign-in failed. Please try again."
+                        }
+                      )
+                    } catch (_: GetCredentialCancellationException) {
+                      // Account picker was dismissed intentionally.
+                    } catch (t: Throwable) {
+                      backendError = t.message ?: "Google sign-in failed. Please try again."
+                    } finally {
+                      busy = false
+                    }
                   }
                 },
                 enabled = !busy,
@@ -446,7 +488,7 @@ fun AuthScreen(
                 }
                 Spacer(Modifier.size(10.dp))
                 Text(
-                  text = "Continue with Google",
+                  text = if (busy) "Connecting to Google…" else "Continue with Google",
                   style = MaterialTheme.typography.labelLarge,
                   fontWeight = FontWeight.SemiBold
                 )
