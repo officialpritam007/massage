@@ -204,9 +204,11 @@ fun MessageBubbleV2(
                 .widthIn(max = 330.dp)
                 .offset { IntOffset(offset.roundToInt(), 0) }
                 .graphicsLayer {
-                    val pulse = 1f + highlightAmount * .015f
+                    val pulse = 1f + highlightAmount * .022f
                     scaleX = pulse
                     scaleY = pulse
+                    translationY = -3.dp.toPx() * highlightAmount
+                    shadowElevation = 8.dp.toPx() * highlightAmount
                 }
                 .pointerInput(message.id, isMe) {
                     detectHorizontalDragGestures(
