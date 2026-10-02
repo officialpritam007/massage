@@ -32,6 +32,24 @@ service cloud.firestore {
       ]);
     }
 
+    function validOwnProfileCreate(uid) {
+      return owner(uid)
+        && request.resource.data.keys().hasOnly([
+          'uid', 'displayName', 'username', 'bio', 'email', 'phoneNumber',
+          'createdAt', 'appearance', 'privacy', 'notifications',
+          'blockedUserIds', 'tokens'
+        ])
+        && request.resource.data.uid == uid;
+    }
+
+    function validOwnProfileUpdate(uid) {
+      return owner(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName', 'username', 'bio', 'email', 'phoneNumber',
+          'appearance', 'privacy', 'notifications', 'blockedUserIds', 'tokens'
+        ]);
+    }
+
     function validPresence() {
       return request.resource.data.isOnline is bool
         && request.resource.data.onlineVisible is bool
@@ -46,10 +64,9 @@ service cloud.firestore {
       // A private user document is readable only by its owner. Public contact data lives in /directory.
       allow read: if owner(uid);
 
-      // Fresh/legacy accounts may race the authenticated profile bootstrap. Permit the owner to
-      // create only client-owned private settings; identity fields remain server-authoritative.
-      allow create: if owner(uid) && validPrivateSettingsCreate();
-      allow update: if owner(uid) && validPrivateSettingsUpdate();
+      // Owner-controlled profile + private settings. Public identity is mirrored to /directory.
+      allow create: if validOwnProfileCreate(uid) || (owner(uid) && validPrivateSettingsCreate());
+      allow update: if validOwnProfileUpdate(uid) || (owner(uid) && validPrivateSettingsUpdate());
       allow delete: if false;
     }
 
@@ -57,21 +74,41 @@ service cloud.firestore {
       // Directory contains public identity plus privacy-filtered presence only.
       allow read: if signedIn();
 
-      // Presence can race server-side profile repair. On create the Android client may create only
-      // the five presence fields. Identity/profile fields are written by the authenticated API.
       allow create: if owner(uid)
         && request.resource.data.keys().hasOnly([
+          'uid', 'displayName', 'username', 'bio', 'photoUrl', 'createdAt',
           'isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'
         ])
-        && validPresence();
+        && (!request.resource.data.keys().hasAny(['uid']) || request.resource.data.uid == uid)
+        && (
+          !request.resource.data.keys().hasAll([
+            'isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'
+          ])
+          || validPresence()
+        );
 
       allow update: if owner(uid)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName', 'username', 'bio', 'photoUrl',
           'isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'
         ])
-        && validPresence();
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'
+          ])
+          || validPresence()
+        );
 
       allow delete: if false;
+    }
+
+    match /usernames/{username} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['uid'])
+        && request.resource.data.uid == request.auth.uid;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+      allow update: if false;
     }
 
     match /conversations/{cid} {
