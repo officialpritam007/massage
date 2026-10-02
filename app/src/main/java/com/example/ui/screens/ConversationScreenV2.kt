@@ -180,6 +180,9 @@ fun ConversationScreenV2(
     var editText by remember { mutableStateOf("") }
     var viewer by remember { mutableStateOf<Message?>(null) }
     var attachmentSheet by remember { mutableStateOf(false) }
+    var pendingAttachment by remember { mutableStateOf<PendingAttachmentV3?>(null) }
+    var attachmentCaption by rememberSaveable(conversationId) { mutableStateOf("") }
+    var attachmentDeleting by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf(false) }
     var query by rememberSaveable(conversationId) { mutableStateOf("") }
@@ -315,23 +318,39 @@ fun ConversationScreenV2(
     }
     val requestCurrent by rememberUpdatedState<() -> Unit> { requestRecording() }
 
-    fun uploadAttachment(uri: Uri, type: MessageType) {
+    fun uploadAttachment(uri: Uri, type: MessageType, caption: String = "") {
         repo.uploadChatMedia(conversationId, uri, type) { result ->
             result.onSuccess { url ->
-                val label = when (type) {
+                val fallback = when (type) {
                     MessageType.IMAGE -> "Photo"
                     MessageType.VIDEO -> "Video"
                     MessageType.FILE -> "Document"
                     else -> ""
                 }
-                viewModel.sendMessage(conversationId, label, type, url)
+                val textToSend = caption.trim().ifBlank { fallback }
+                viewModel.sendMessage(conversationId, textToSend, type, url)
             }
         }
     }
 
-    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let { uploadAttachment(it, MessageType.IMAGE) } }
-    val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let { uploadAttachment(it, MessageType.VIDEO) } }
-    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let { uploadAttachment(it, MessageType.FILE) } }
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            attachmentCaption = ""
+            pendingAttachment = PendingAttachmentV3(uri, MessageType.IMAGE)
+        }
+    }
+    val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            attachmentCaption = ""
+            pendingAttachment = PendingAttachmentV3(uri, MessageType.VIDEO)
+        }
+    }
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            attachmentCaption = ""
+            pendingAttachment = PendingAttachmentV3(uri, MessageType.FILE)
+        }
+    }
 
     LaunchedEffect(conversationId) { viewModel.observeConversation(conversationId) }
     LaunchedEffect(recording, paused) {
@@ -553,6 +572,35 @@ fun ConversationScreenV2(
                             onDiscard = { finishRecording(false, false) },
                             onStopPreview = { finishRecording(true, false) },
                             onSend = { finishRecording(true, true) }
+                        )
+                    }
+
+                    pendingAttachment?.let { attachment ->
+                        AttachmentPreviewV3(
+                            attachment = attachment,
+                            caption = attachmentCaption,
+                            deleting = attachmentDeleting,
+                            onCaptionChange = { attachmentCaption = it },
+                            onDiscard = {
+                                if (!attachmentDeleting) {
+                                    attachmentDeleting = true
+                                    scope.launch {
+                                        delay(if (config.isReducedMotion) 90 else 520)
+                                        pendingAttachment = null
+                                        attachmentCaption = ""
+                                        attachmentDeleting = false
+                                    }
+                                }
+                            },
+                            onSend = {
+                                if (!attachmentDeleting) {
+                                    val selected = attachment
+                                    val caption = attachmentCaption
+                                    pendingAttachment = null
+                                    attachmentCaption = ""
+                                    uploadAttachment(selected.uri, selected.type, caption)
+                                }
+                            }
                         )
                     }
 
