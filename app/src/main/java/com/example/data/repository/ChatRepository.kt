@@ -12,6 +12,7 @@ import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.firestore.*
+import com.google.firebase.database.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.tasks.await
@@ -31,6 +32,7 @@ class ChatRepository(
 ) {
   private val auth = FirebaseAuth.getInstance()
   private val db = FirebaseFirestore.getInstance()
+  private val realtimeDb by lazy { FirebaseDatabase.getInstance() }
   private val prefs get() = LiquidApi.context.getSharedPreferences("liquid-private", 0)
   private val installPrefs get() = LiquidApi.context.getSharedPreferences("liquid-install", 0)
   private val uid get() = auth.currentUser?.uid.orEmpty()
@@ -39,6 +41,9 @@ class ChatRepository(
   private val listeners = mutableListOf<ListenerRegistration>()
   private val messageListeners = mutableMapOf<String, ListenerRegistration>()
   private val presenceListeners = mutableMapOf<String, ListenerRegistration>()
+  private val realtimePresenceListeners = mutableMapOf<String, Pair<DatabaseReference, ValueEventListener>>()
+  private var realtimeConnectionRef: DatabaseReference? = null
+  private var realtimeConnectionListener: ValueEventListener? = null
   private val historyCursors = mutableMapOf<String, DocumentSnapshot>()
   private val historyPagingStarted = mutableSetOf<String>()
   private val deletedBefore = mutableMapOf<String, Long>()
@@ -470,6 +475,13 @@ class ChatRepository(
     messageListeners.clear()
     presenceListeners.values.forEach { it.remove() }
     presenceListeners.clear()
+    realtimePresenceListeners.values.forEach { (ref, listener) -> ref.removeEventListener(listener) }
+    realtimePresenceListeners.clear()
+    realtimeConnectionListener?.let { listener ->
+      realtimeConnectionRef?.removeEventListener(listener)
+    }
+    realtimeConnectionListener = null
+    realtimeConnectionRef = null
     historyCursors.clear()
     historyPagingStarted.clear()
     _historyHasOlder.value = emptyMap()
@@ -588,6 +600,7 @@ class ChatRepository(
     }
     _loading.value = true
     _currentUser.value = User(uid = account, email = auth.currentUser?.email.orEmpty())
+    startRealtimePresence(account)
 
     scope.launch(Dispatchers.IO) {
       runCatching {
@@ -685,6 +698,7 @@ class ChatRepository(
           messageListeners.keys.filter { it !in active }.toList().forEach {
             messageListeners.remove(it)?.remove()
             presenceListeners.remove(it)?.remove()
+            removeRealtimePresence(it)
           }
           _messages.update { map -> map.filterKeys { it in active } }
           // Message + typing listeners are attached only when a conversation is opened.
@@ -702,7 +716,10 @@ class ChatRepository(
     heartbeat = scope.launch {
       var ticks = 0
       while (isActive && uid == account) {
-        if (resumed && ticks++ % 15 == 0) writePresence(true)
+        if (resumed && ticks++ % 15 == 0) {
+          writePresence(true)
+          writeRealtimePresence(true)
+        }
         refreshUsers()
         refreshTyping()
         expireMessages()
@@ -860,6 +877,57 @@ class ChatRepository(
         }
       }
     }
+
+    val otherUid = _conversations.value.find { it.id == cid }?.otherUser?.uid.orEmpty()
+    if (otherUid.isNotBlank() && realtimePresenceListeners[cid] == null) {
+      val ref = realtimeDb.getReference("presence").child(otherUid)
+      val listener = object : ValueEventListener {
+        override fun onDataChange(snapshot: DataSnapshot) {
+          val now = System.currentTimeMillis()
+          val heartbeatAt = snapshot.child("heartbeatAt").getValue(Long::class.java) ?: 0L
+          val lastSeen = snapshot.child("lastSeen").getValue(Long::class.java) ?: 0L
+          val onlineVisible = snapshot.child("onlineVisible").getValue(Boolean::class.java) ?: true
+          val lastSeenVisible = snapshot.child("lastSeenVisible").getValue(Boolean::class.java) ?: true
+          val online = onlineVisible &&
+            snapshot.child("isOnline").getValue(Boolean::class.java) == true &&
+            now - heartbeatAt < 30_000L
+
+          _users.update { users ->
+            users.map { user ->
+              if (user.uid == otherUid) {
+                user.copy(
+                  isOnline = online,
+                  lastSeen = if (lastSeenVisible) lastSeen else user.lastSeen,
+                  lastActiveAt = heartbeatAt,
+                  onlineVisible = onlineVisible,
+                  lastSeenVisible = lastSeenVisible
+                )
+              } else user
+            }
+          }
+          _conversations.update { conversations ->
+            conversations.map { conversation ->
+              if (conversation.id == cid) {
+                conversation.copy(
+                  isOnline = online,
+                  otherUser = conversation.otherUser.copy(
+                    isOnline = online,
+                    lastSeen = if (lastSeenVisible) lastSeen else conversation.otherUser.lastSeen,
+                    lastActiveAt = heartbeatAt,
+                    onlineVisible = onlineVisible,
+                    lastSeenVisible = lastSeenVisible
+                  )
+                )
+              } else conversation
+            }
+          }
+        }
+
+        override fun onCancelled(error: DatabaseError) = Unit
+      }
+      ref.addValueEventListener(listener)
+      realtimePresenceListeners[cid] = ref to listener
+    }
   }
 
   private fun refreshTyping() {
@@ -892,6 +960,7 @@ class ChatRepository(
     }
     presenceListeners.keys.filter { it != cid }.toList().forEach { key ->
       presenceListeners.remove(key)?.remove()
+      removeRealtimePresence(key)
     }
     observePresence(cid)
     if (messageListeners.containsKey(cid)) return
@@ -1882,9 +1951,56 @@ class ChatRepository(
   fun setPresence(value: Boolean) {
     resumed = value
     if (uid.isBlank()) return
+    writeRealtimePresence(value)
     val now = System.currentTimeMillis()
     if (value && now - lastPresenceWriteAt < 15_000L) return
     writePresence(value)
+  }
+
+  private fun startRealtimePresence(account: String) {
+    realtimeConnectionListener?.let { listener ->
+      realtimeConnectionRef?.removeEventListener(listener)
+    }
+    val connectionRef = realtimeDb.getReference(".info/connected")
+    val presenceRef = realtimeDb.getReference("presence").child(account)
+    val listener = object : ValueEventListener {
+      override fun onDataChange(snapshot: DataSnapshot) {
+        if (uid != account || snapshot.getValue(Boolean::class.java) != true) return
+        presenceRef.onDisconnect().setValue(realtimePresencePayload(account, false))
+        if (resumed) writeRealtimePresence(true)
+      }
+
+      override fun onCancelled(error: DatabaseError) = Unit
+    }
+    realtimeConnectionRef = connectionRef
+    realtimeConnectionListener = listener
+    connectionRef.addValueEventListener(listener)
+  }
+
+  private fun removeRealtimePresence(cid: String) {
+    realtimePresenceListeners.remove(cid)?.let { (ref, listener) ->
+      ref.removeEventListener(listener)
+    }
+  }
+
+  private fun realtimePresencePayload(account: String, online: Boolean): Map<String, Any> {
+    val onlineVisible = _privacy.value.onlineVisibility != "Nobody"
+    val lastSeenVisible = _privacy.value.lastSeenVisibility != "Nobody"
+    return mapOf(
+      "uid" to account,
+      "isOnline" to (online && onlineVisible),
+      "onlineVisible" to onlineVisible,
+      "lastSeenVisible" to lastSeenVisible,
+      "heartbeatAt" to ServerValue.TIMESTAMP,
+      "lastSeen" to if (lastSeenVisible) ServerValue.TIMESTAMP else 0L
+    )
+  }
+
+  private fun writeRealtimePresence(value: Boolean) {
+    val account = uid
+    if (account.isBlank()) return
+    realtimeDb.getReference("presence").child(account)
+      .setValue(realtimePresencePayload(account, value))
   }
 
   private fun writePresence(value: Boolean) {
