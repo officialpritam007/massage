@@ -1432,12 +1432,28 @@ class ChatRepository(
   }
 
   fun forwardMedia(message: Message, target: String) = runAction {
-    LiquidApi.call("forward", mapOf(
-      "conversationId" to message.conversationId,
-      "messageId" to message.id,
-      "targetId" to target,
-      "id" to UUID.randomUUID().toString()
-    ))
+    require(message.mediaUrl.startsWith("appwrite:")) { "Media unavailable" }
+    require(LiquidApi.mediaSecret(message.mediaUrl) != null) {
+      "Legacy media cannot be forwarded securely. Download and attach it again."
+    }
+
+    LiquidApi.call(
+      "authorizeForwardMedia",
+      mapOf(
+        "conversationId" to message.conversationId,
+        "messageId" to message.id,
+        "targetId" to target
+      )
+    )
+
+    sendMessage(
+      conversationId = target,
+      text = message.text,
+      type = message.type,
+      mediaUrl = message.mediaUrl,
+      voiceDurationSeconds = message.voiceDurationSeconds,
+      waveform = message.waveform
+    )
   }
 
   private fun action(name: String, cid: String, id: String, extra: Map<String, Any?> = emptyMap()) = runAction {
