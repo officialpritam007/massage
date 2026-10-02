@@ -211,6 +211,104 @@ async function notifyDeletion(db, cid, id, actorUid) {
   }
 }
 
+async function deleteQueryDocs(query) {
+  while (true) {
+    const snap = await query.limit(200).get();
+    if (snap.empty) break;
+    const batch = snap.docs[0].ref.firestore.batch();
+    for (const doc of snap.docs) batch.delete(doc.ref);
+    await batch.commit();
+    if (snap.size < 200) break;
+  }
+}
+
+async function purgeUserData(db, uid, claims, nextInstallationId, now) {
+  const own = db.doc('users/' + uid);
+  const old = (await own.get()).data() || {};
+
+  const conversations = await db.collection('conversations')
+    .where('participantIds', 'array-contains', uid)
+    .get();
+
+  for (const conversation of conversations.docs) {
+    const cid = conversation.id;
+
+    const conversationMedia = await db.collection('media')
+      .where('conversationId', '==', cid)
+      .get();
+    for (const media of conversationMedia.docs) {
+      await aw(`/storage/buckets/${env.APPWRITE_BUCKET_ID}/files/${media.id}`, 'DELETE').catch(() => {});
+      await media.ref.delete().catch(() => {});
+    }
+
+    await deleteQueryDocs(
+      db.collection('messageTombstones').where('conversationId', '==', cid)
+    ).catch(() => {});
+    await deleteQueryDocs(
+      db.collection('messageHiddenTombstones').where('conversationId', '==', cid)
+    ).catch(() => {});
+
+    await db.recursiveDelete(conversation.ref);
+  }
+
+  const ownedMedia = await db.collection('media').where('owner', '==', uid).get();
+  for (const media of ownedMedia.docs) {
+    await aw(`/storage/buckets/${env.APPWRITE_BUCKET_ID}/files/${media.id}`, 'DELETE').catch(() => {});
+    await media.ref.delete().catch(() => {});
+  }
+
+  await deleteQueryDocs(db.collection('reports').where('reporterId', '==', uid)).catch(() => {});
+
+  await Promise.all([
+    db.doc('_sessions/' + uid).delete().catch(() => {}),
+    db.doc('_rate/' + uid).delete().catch(() => {}),
+    db.doc('_reportRate/' + uid).delete().catch(() => {})
+  ]);
+
+  await aw('/users/' + appUser(uid), 'DELETE').catch(() => {});
+
+  const username = String(old.username || '').trim().toLowerCase();
+  const cleanInstallationId = String(nextInstallationId || '').trim().slice(0, 80);
+  if (!cleanInstallationId) throw new Error('Missing installation identity');
+
+  const cleanName = String(old.displayName || claims.name || 'User').trim().slice(0, 60) || 'User';
+  const cleanEmail = String(claims.email || old.email || '').slice(0, 160);
+  const cleanPhone = String(old.phoneNumber || '').slice(0, 30);
+  const createdAt = Number(old.createdAt) || now;
+
+  await own.set({
+    uid,
+    displayName: cleanName,
+    username,
+    bio: '',
+    email: cleanEmail,
+    phoneNumber: cleanPhone,
+    createdAt,
+    installationId: cleanInstallationId,
+    dataEpoch: now,
+    tokens: {},
+    blockedUserIds: [],
+    appearance: {},
+    privacy: {},
+    notifications: {}
+  });
+
+  const directory = {
+    uid,
+    displayName: cleanName,
+    username,
+    bio: '',
+    createdAt
+  };
+  await db.doc('directory/' + uid).set(directory);
+
+  if (username) {
+    await db.doc('usernames/' + username).set({uid});
+  }
+
+  return {ok: true, dataEpoch: now};
+}
+
 export default async ({req, res, error}) => {
   try {
     const db = init();
@@ -416,6 +514,17 @@ export default async ({req, res, error}) => {
         state: 'open'
       });
       return res.json({ok: true});
+    }
+
+    if (p.action === 'purgeUserData') {
+      const result = await purgeUserData(
+        db,
+        uid,
+        claims,
+        p.installationId,
+        now
+      );
+      return res.json(result);
     }
 
     if (p.action === 'deleteAccount') {
