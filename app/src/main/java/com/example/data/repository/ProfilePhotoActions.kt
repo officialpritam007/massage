@@ -1,14 +1,24 @@
 package com.example.data.repository
 
 import com.example.data.network.LiquidApi
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.tasks.await
 
 /**
- * Removes the current profile photo through the authenticated backend.
- * The server owns identity fields and Cloudinary media deletion, so Android never bypasses
- * Firestore security rules or receives storage admin credentials.
+ * Removes the profile-photo reference from Firestore.
+ *
+ * Free direct-upload mode never ships the Cloudinary API secret in Android, so the
+ * previously uploaded Cloudinary object may remain orphaned after its Firestore reference is removed.
  */
 suspend fun ChatRepository.removeProfilePhoto(): Result<Unit> = runCatching {
+    val account = FirebaseAuth.getInstance().currentUser?.uid ?: error("Please sign in again")
     val previous = currentUser.value.photoUrl
-    LiquidApi.call("profilePhotoDelete")
+    val db = FirebaseFirestore.getInstance()
+
+    db.document("users/$account").update("photoUrl", FieldValue.delete()).await()
+    db.document("directory/$account").update("photoUrl", FieldValue.delete()).await()
+
     if (previous.isNotBlank()) LiquidApi.invalidateMedia(previous)
 }
