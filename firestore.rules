@@ -82,6 +82,25 @@ service cloud.firestore {
         && data.e2eeRecipientKeyId is string;
     }
 
+    function validMediaE2eePayload(data) {
+      return data is map
+        && data.keys().hasOnly([
+          'e2eeVersion', 'e2eeEphemeralKey',
+          'e2eeSenderWrappedKey', 'e2eeSenderWrapIv',
+          'e2eeRecipientWrappedKey', 'e2eeRecipientWrapIv',
+          'e2eeSenderKeyId', 'e2eeRecipientKeyId', 'e2eeFileIv'
+        ])
+        && data.e2eeVersion == 1
+        && data.e2eeEphemeralKey is string
+        && data.e2eeSenderWrappedKey is string
+        && data.e2eeSenderWrapIv is string
+        && data.e2eeRecipientWrappedKey is string
+        && data.e2eeRecipientWrapIv is string
+        && data.e2eeSenderKeyId is string
+        && data.e2eeRecipientKeyId is string
+        && data.e2eeFileIv is string;
+    }
+
     match /users/{uid} {
       // A private user document is readable only by its owner. Public contact data lives in /directory.
       allow read: if owner(uid);
@@ -178,6 +197,20 @@ service cloud.firestore {
               request.resource.data.text == ''
               && request.resource.data.keys().hasAny(['e2ee'])
               && validE2eePayload(request.resource.data.e2ee)
+            )
+          )
+          && (
+            !(request.resource.data.type in ['IMAGE', 'VIDEO', 'AUDIO', 'VOICE', 'FILE'])
+            || (
+              request.resource.data.mediaUrl is string
+              && request.resource.data.mediaUrl.size() > 0
+              && request.resource.data.text == ''
+              && request.resource.data.keys().hasAny(['mediaE2ee'])
+              && validMediaE2eePayload(request.resource.data.mediaE2ee)
+              && (
+                !request.resource.data.keys().hasAny(['e2ee'])
+                || validE2eePayload(request.resource.data.e2ee)
+              )
             )
           )
           && request.resource.data.status == 'SENT'
