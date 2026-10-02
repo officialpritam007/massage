@@ -17,6 +17,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
@@ -239,6 +240,30 @@ fun ConversationScreenV2(
     var historyAnchorOffset by remember(conversationId) { mutableIntStateOf(0) }
 
     val nearBottom by remember { derivedStateOf { !listState.canScrollForward } }
+
+    val headerCollapsed by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex > 1 || listState.firstVisibleItemScrollOffset > 72
+        }
+    }
+    val headerButtonSize by animateDpAsState(
+        targetValue = if (headerCollapsed) 34.dp else 38.dp,
+        animationSpec = if (config.isReducedMotion) tween(0)
+        else spring(dampingRatio = .78f, stiffness = 430f),
+        label = "header_button_size"
+    )
+    val headerAvatarSize by animateDpAsState(
+        targetValue = if (headerCollapsed) 27.dp else 30.dp,
+        animationSpec = if (config.isReducedMotion) tween(0)
+        else spring(dampingRatio = .78f, stiffness = 430f),
+        label = "header_avatar_size"
+    )
+    val headerVerticalPadding by animateDpAsState(
+        targetValue = if (headerCollapsed) 3.dp else 5.dp,
+        animationSpec = if (config.isReducedMotion) tween(0)
+        else spring(dampingRatio = .78f, stiffness = 430f),
+        label = "header_padding"
+    )
 
     fun sendVoiceDraft(draft: VoiceDraftV2) {
         if (draft.uploading || voiceDraftDeleting || !draft.file.exists() || draft.file.length() <= 0L) return
@@ -545,7 +570,11 @@ fun ConversationScreenV2(
         Scaffold(
             containerColor = Color.Transparent,
             topBar = {
-                Column(Modifier.statusBarsPadding().padding(horizontal = 9.dp, vertical = 5.dp)) {
+                Column(
+                    Modifier
+                        .statusBarsPadding()
+                        .padding(horizontal = 9.dp, vertical = headerVerticalPadding)
+                ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -554,7 +583,7 @@ fun ConversationScreenV2(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             "Back",
                             onBackClick,
-                            size = 38.dp
+                            size = headerButtonSize
                         )
                         GlassCard(
                             modifier = Modifier.weight(1f),
@@ -574,7 +603,7 @@ fun ConversationScreenV2(
                                 GlassAvatar(
                                     other.photoUrl,
                                     other.displayName.ifBlank { "Contact" },
-                                    30.dp,
+                                    headerAvatarSize,
                                     conversation?.isOnline == true && other.onlineVisible
                                 )
                                 Spacer(Modifier.width(8.dp))
@@ -608,7 +637,7 @@ fun ConversationScreenV2(
                             Icons.Default.MoreHoriz,
                             "Chat menu",
                             { menu = true },
-                            size = 38.dp
+                            size = headerButtonSize
                         )
                     }
                     AnimatedVisibility(search) {
