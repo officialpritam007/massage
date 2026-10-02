@@ -270,7 +270,11 @@ class ChatRepository(
     }
     _loading.value = true
     _currentUser.value = User(uid = account, email = auth.currentUser?.email.orEmpty())
-    runAction { LiquidApi.call("profile") }
+    scope.launch {
+      // Profile bootstrap is optional for existing Firebase users. Appwrite media/backend
+      // quota must never block core chat startup.
+      runCatching { LiquidApi.call("profile") }
+    }
 
     val device = prefs.getString("deviceId", null)
       ?: UUID.randomUUID().toString().replace("-", "").also {
@@ -594,15 +598,160 @@ class ChatRepository(
     _messages.update { map -> map.mapValues { (_, messages) -> messages.filter { it.expiresAt == null || it.expiresAt > now } } }
   }
 
+  private suspend fun ensureConversationDirect(cid: String, otherUid: String) {
+    val ids = listOf(uid, otherUid).sorted()
+    require(ids.size == 2 && uid.isNotBlank() && otherUid.isNotBlank() && uid != otherUid) {
+      "Invalid contact"
+    }
+    val ref = db.document("conversations/$cid")
+    val snap = ref.get().await()
+    if (!snap.exists()) {
+      ref.set(
+        mapOf(
+          "participantIds" to ids,
+          "lastMessageId" to "",
+          "lastMessageTime" to 0L,
+          "lastMessageText" to "",
+          "lastMessageSenderId" to "",
+          "unreadCounts" to emptyMap<String, Int>(),
+          "deletedFor" to emptyList<String>(),
+          "deletedBefore" to emptyMap<String, Long>(),
+          "hiddenLastFor" to emptyMap<String, String>(),
+          "archivedFor" to emptyList<String>(),
+          "mutedFor" to emptyList<String>(),
+          "favoriteFor" to emptyList<String>(),
+          "disappearingSeconds" to 0L
+        )
+      ).await()
+    }
+  }
+
+  private suspend fun sendMessageDirect(data: Map<String, Any?>): Boolean {
+    val cid = data["conversationId"] as? String ?: error("Missing conversation")
+    val id = data["id"] as? String ?: error("Missing message id")
+    val otherUid = (data["otherUid"] as? String)
+      ?: pendingPeers[cid]?.uid
+      ?: _conversations.value.find { it.id == cid }?.otherUser?.uid
+      ?: error("Contact unavailable")
+
+    val tombstone = cid + ":" + id
+    if (tombstone in deleteTombstones) return false
+
+    ensureConversationDirect(cid, otherUid)
+
+    val cref = db.document("conversations/$cid")
+    val mref = db.document("conversations/$cid/messages/$id")
+    val now = System.currentTimeMillis()
+    val type = (data["type"] as? String) ?: "TEXT"
+    val text = (data["text"] as? String).orEmpty().take(8000)
+    val mediaUrl = (data["mediaUrl"] as? String).orEmpty()
+    val voiceSeconds = (data["voiceDurationSeconds"] as? Number)?.toInt()?.coerceIn(0, 600) ?: 0
+    val waveform = (data["waveform"] as? List<*>)?.mapNotNull { (it as? Number)?.toFloat() }
+      ?.map { it.coerceIn(.05f, 1f) }?.take(80).orEmpty()
+
+    val message = mutableMapOf<String, Any>(
+      "senderId" to uid,
+      "senderName" to _currentUser.value.displayName.ifBlank { "User" },
+      "text" to text,
+      "type" to type,
+      "mediaUrl" to mediaUrl,
+      "voiceDurationSeconds" to voiceSeconds,
+      "waveform" to waveform,
+      "createdAt" to now,
+      "status" to "SENT",
+      "isDeleted" to false,
+      "deletedForEveryone" to false,
+      "hiddenFor" to emptyList<String>(),
+      "isEdited" to false,
+      "isPinned" to false,
+      "reactions" to emptyList<Map<String, Any>>()
+    )
+
+    (data["replyToId"] as? String)?.takeIf { it.isNotBlank() }?.let {
+      message["replyToId"] = it
+      message["replyToText"] = (data["replyToText"] as? String).orEmpty().take(500)
+      message["replyToSender"] = (data["replyToSender"] as? String).orEmpty().take(60)
+    }
+
+    val conversationSnap = cref.get().await()
+    val disappearingSeconds = conversationSnap.getLong("disappearingSeconds") ?: 0L
+    if (disappearingSeconds > 0L) message["expiresAt"] = now + disappearingSeconds * 1000L
+
+    val created = db.runTransaction { tx ->
+      val existing = tx.get(mref)
+      if (existing.exists()) return@runTransaction false
+
+      tx.set(mref, message)
+      tx.update(
+        cref,
+        mapOf(
+          "lastMessageId" to id,
+          "lastMessageText" to when (type) {
+            "TEXT" -> text.take(500)
+            "IMAGE" -> "Photo"
+            "VIDEO" -> "Video"
+            "VOICE", "AUDIO" -> "Voice message"
+            else -> "Document"
+          },
+          "lastMessageTime" to now,
+          "lastMessageSenderId" to uid,
+          "unreadCounts.$otherUid" to FieldValue.increment(1),
+          "deletedFor" to FieldValue.arrayRemove(uid, otherUid),
+          "hiddenLastFor.$uid" to FieldValue.delete(),
+          "hiddenLastFor.$otherUid" to FieldValue.delete()
+        )
+      )
+      true
+    }.await()
+    return created
+  }
+
+  private suspend fun refreshConversationSummaryDirect(cid: String) {
+    val cref = db.document("conversations/$cid")
+    val latest = db.collection("conversations/$cid/messages")
+      .orderBy("createdAt", Query.Direction.DESCENDING)
+      .limit(1)
+      .get()
+      .await()
+      .documents
+      .firstOrNull()
+
+    if (latest == null) {
+      cref.update(
+        mapOf(
+          "lastMessageId" to "",
+          "lastMessageText" to "",
+          "lastMessageTime" to 0L,
+          "lastMessageSenderId" to ""
+        )
+      ).await()
+      return
+    }
+
+    val type = latest.safeString("type", "TEXT")
+    val preview = when (type) {
+      "TEXT" -> latest.safeString("text").take(500)
+      "IMAGE" -> "Photo"
+      "VIDEO" -> "Video"
+      "VOICE", "AUDIO" -> "Voice message"
+      else -> "Document"
+    }
+    cref.update(
+      mapOf(
+        "lastMessageId" to latest.id,
+        "lastMessageText" to preview,
+        "lastMessageTime" to latest.safeLong("createdAt"),
+        "lastMessageSenderId" to latest.safeString("senderId")
+      )
+    ).await()
+  }
+
   fun getOrCreateConversationId(otherUid: String): String {
     val cid = listOf(uid, otherUid).sorted().joinToString("_")
     pendingPeers[cid] = _users.value.find { user -> user.uid == otherUid }
       ?: User(uid = otherUid, displayName = "Contact")
-    // Do not optimistically insert a conversation into _conversations. If this chat
-    // was deleted for the current account, opening the contact must not resurrect
-    // the row/history. The authenticated send action will start a fresh chat.
     runAction {
-      LiquidApi.call("conversation", mapOf("otherUid" to otherUid))
+      ensureConversationDirect(cid, otherUid)
       observeConversation(cid)
       observePresence(cid)
     }
@@ -723,9 +872,14 @@ class ChatRepository(
         val data = j.keys().asSequence().associateWith { j.opt(it).takeUnless { value -> value == JSONObject.NULL } }.toMutableMap()
         if (data["otherUid"] == null && otherUid != null) data["otherUid"] = otherUid
         try {
-          val response = LiquidApi.call("send", data)
+          if ((cid + ":" + id) in deleteTombstones) {
+            prefs.edit().remove(key).apply()
+            removeLocalMessage(cid, id)
+            continue
+          }
+          val created = sendMessageDirect(data)
           prefs.edit().remove(key).apply()
-          if (response.optBoolean("tombstoned")) removeLocalMessage(cid, id)
+          if (!created) removeLocalMessage(cid, id)
           else updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.SENT) }
         } catch (e: Exception) {
           if (e is CancellationException) throw e
@@ -857,28 +1011,34 @@ class ChatRepository(
   fun addReaction(cid: String, id: String, emoji: String) = action("react", cid, id, mapOf("emoji" to emoji))
 
   fun deleteMessageForMe(cid: String, id: String) = runAction {
-    val tombstone = cid + ":" + id
-    val mediaUrl = _messages.value[cid].orEmpty().firstOrNull { it.id == id }?.mediaUrl.orEmpty()
-    prefs.edit().remove("outbox:$uid:$id").apply()
-    deleteTombstones += tombstone
-    try {
-      LiquidApi.call("deleteForMe", mapOf("conversationId" to cid, "messageId" to id))
-      if (mediaUrl.isNotBlank()) LiquidApi.invalidateMedia(mediaUrl)
-      removeLocalMessage(cid, id)
-    } catch (t: Throwable) {
-      deleteTombstones -= tombstone
-      throw t
+    prefs.edit()
+      .remove("outbox:$uid:$id")
+      .putBoolean("hidden:$uid:$id", true)
+      .apply()
+    deleteTombstones += (cid + ":" + id)
+    removeLocalMessage(cid, id)
+    // Best-effort cross-device migration when the optional backend is available again.
+    scope.launch {
+      runCatching {
+        LiquidApi.call("deleteForMe", mapOf("conversationId" to cid, "messageId" to id))
+      }.onSuccess {
+        prefs.edit().remove("hidden:$uid:$id").apply()
+      }
     }
   }
 
   fun deleteMessageForEveryone(cid: String, id: String) = runAction {
     val tombstone = cid + ":" + id
-    val mediaUrl = _messages.value[cid].orEmpty().firstOrNull { it.id == id }?.mediaUrl.orEmpty()
     prefs.edit().remove("outbox:$uid:$id").apply()
     deleteTombstones += tombstone
     try {
-      LiquidApi.call("deleteForEveryone", mapOf("conversationId" to cid, "messageId" to id))
-      if (mediaUrl.isNotBlank()) LiquidApi.invalidateMedia(mediaUrl)
+      val ref = db.document("conversations/$cid/messages/$id")
+      val snap = ref.get().await()
+      if (snap.exists()) {
+        check(snap.safeString("senderId") == uid) { "Only the sender can do this" }
+        ref.delete().await()
+        refreshConversationSummaryDirect(cid)
+      }
       removeLocalMessage(cid, id)
     } catch (t: Throwable) {
       deleteTombstones -= tombstone
@@ -888,8 +1048,25 @@ class ChatRepository(
 
   fun deleteMessage(cid: String, id: String) = deleteMessageForEveryone(cid, id)
   fun hideMessage(cid: String, id: String) = deleteMessageForMe(cid, id)
-  fun editMessage(cid: String, id: String, text: String) = action("edit", cid, id, mapOf("text" to text))
-  fun pinMessage(cid: String, id: String) = action("pin", cid, id)
+  fun editMessage(cid: String, id: String, text: String) = runAction {
+    val clean = text.trim()
+    require(clean.isNotBlank() && clean.length <= 8000) { "Invalid edit" }
+    val ref = db.document("conversations/$cid/messages/$id")
+    ref.update(mapOf("text" to clean, "isEdited" to true)).await()
+    val conversation = db.document("conversations/$cid").get().await()
+    if (conversation.safeString("lastMessageId") == id) {
+      db.document("conversations/$cid").update("lastMessageText", clean.take(500)).await()
+    }
+  }
+
+  fun pinMessage(cid: String, id: String) = runAction {
+    val ref = db.document("conversations/$cid/messages/$id")
+    db.runTransaction { tx ->
+      val snap = tx.get(ref)
+      check(snap.exists()) { "Message unavailable" }
+      tx.update(ref, "isPinned", !snap.safeBoolean("isPinned"))
+    }.await()
+  }
 
   fun starMessage(cid: String, id: String) {
     val next = !prefs.getBoolean("star:$uid:$id", false)
@@ -901,8 +1078,17 @@ class ChatRepository(
     val key = "$uid:$id:$status"
     if (!receipts.add(key)) return
     scope.launch {
-      runCatching { LiquidApi.call("receipt", mapOf("conversationId" to cid, "messageId" to id, "status" to status)) }
-        .onFailure { receipts.remove(key) }
+      runCatching {
+        val ref = db.document("conversations/$cid/messages/$id")
+        db.runTransaction { tx ->
+          val snap = tx.get(ref)
+          if (!snap.exists() || snap.safeString("senderId") == uid) return@runTransaction
+          val current = snap.safeString("status", "SENT")
+          val rank = mapOf("SENT" to 1, "DELIVERED" to 2, "READ" to 3)
+          val target = if (status == "READ" && _privacy.value.readReceipts) "READ" else "DELIVERED"
+          if ((rank[target] ?: 0) > (rank[current] ?: 1)) tx.update(ref, "status", target)
+        }.await()
+      }.onFailure { receipts.remove(key) }
     }
   }
 
@@ -914,7 +1100,18 @@ class ChatRepository(
   }
 
   private fun setting(cid: String, field: String, value: Any) = runAction {
-    LiquidApi.call("conversationSetting", mapOf("conversationId" to cid, "field" to field, "value" to value))
+    val ref = db.document("conversations/$cid")
+    when (field) {
+      "archivedFor", "mutedFor", "favoriteFor" ->
+        ref.update(field, if (value == true) FieldValue.arrayUnion(uid) else FieldValue.arrayRemove(uid)).await()
+      "disappearingSeconds" -> {
+        val seconds = (value as? Number)?.toLong() ?: 0L
+        require(seconds in setOf(0L, 86400L, 604800L, 7776000L)) { "Invalid disappearing timer" }
+        ref.update(field, seconds).await()
+      }
+      "read" -> ref.update("unreadCounts.$uid", 0).await()
+      else -> error("Invalid setting")
+    }
   }
 
   fun setConversationArchived(cid: String, value: Boolean) = setting(cid, "archivedFor", value)
@@ -925,11 +1122,18 @@ class ChatRepository(
     val currentMessages = _messages.value[cid].orEmpty()
     val messageIds = currentMessages.map { it.id }.toSet()
     val mediaUrls = currentMessages.map { it.mediaUrl }.filter { it.isNotBlank() }.distinct()
-    LiquidApi.call("deleteChat", mapOf("conversationId" to cid))
+    val now = System.currentTimeMillis()
+    db.document("conversations/$cid").update(
+      mapOf(
+        "deletedFor" to FieldValue.arrayUnion(uid),
+        "deletedBefore.$uid" to now,
+        "unreadCounts.$uid" to 0
+      )
+    ).await()
     mediaUrls.forEach { LiquidApi.invalidateMedia(it) }
     messageListeners.remove(cid)?.remove()
     presenceListeners.remove(cid)?.remove()
-    deletedBefore[cid] = System.currentTimeMillis()
+    deletedBefore[cid] = now
     _conversations.update { list -> list.filterNot { it.id == cid } }
     _messages.update { map -> map - cid }
     val edit = prefs.edit().remove("draft:$uid:$cid").remove("wallpaper:$uid:$cid")
