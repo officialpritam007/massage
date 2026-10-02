@@ -8,6 +8,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -64,6 +65,21 @@ fun SettingsScreen(
 
   val photo = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
     if (uri != null) pendingPhotoUri = uri
+  }
+
+  var cameraUri by rememberSaveable { mutableStateOf<String?>(null) }
+  val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
+    if (saved) pendingPhotoUri = cameraUri?.let(android.net.Uri::parse)
+  }
+  fun openPhotoCamera() {
+    val dir = java.io.File(context.cacheDir, "profile-camera").apply { mkdirs() }
+    val file = java.io.File.createTempFile("photo-", ".jpg", dir)
+    val uri = androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", file)
+    cameraUri = uri.toString()
+    runCatching { camera.launch(uri) }.onFailure { android.widget.Toast.makeText(context, "Camera unavailable", android.widget.Toast.LENGTH_SHORT).show() }
+  }
+  val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    if (granted) openPhotoCamera()
   }
 
   fun removePhoto() {
@@ -126,7 +142,7 @@ fun SettingsScreen(
                   Text("Edit profile")
                 }
                 Spacer(Modifier.width(12.dp))
-                TextButton(onClick = { photo.launch("image/*") }, enabled = !photoDeleting) {
+                TextButton(onClick = { dialog = "Profile photo" }, enabled = !photoDeleting) {
                   Text(if (shownPhoto.isBlank()) "Add photo" else "Change photo")
                 }
               }
@@ -211,6 +227,14 @@ fun SettingsScreen(
     if (dialog.isNotBlank()) {
       GlassDialog(dialog, onDismiss = { if (!busy) dialog = "" }) {
         when (dialog) {
+          "Profile photo" -> {
+            GlassButton("Gallery", { dialog = ""; photo.launch("image/*") }, Modifier.fillMaxWidth())
+            GlassButton("Camera", {
+              dialog = ""
+              if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED) openPhotoCamera()
+              else cameraPermission.launch(android.Manifest.permission.CAMERA)
+            }, Modifier.fillMaxWidth(), isPrimary = false)
+          }
           "Profile" -> {
             GlassTextField(name, { name = it.take(60) }, placeholder = "Name")
             GlassTextField(

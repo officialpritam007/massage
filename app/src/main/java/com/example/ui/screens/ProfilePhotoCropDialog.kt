@@ -26,6 +26,13 @@ import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.produceState
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import com.example.domain.profileCrop
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -69,6 +76,10 @@ fun ProfilePhotoCropDialog(
     var offset by remember(sourceUri) { mutableStateOf(Offset.Zero) }
     var saving by remember(sourceUri) { mutableStateOf(false) }
     var error by remember(sourceUri) { mutableStateOf<String?>(null) }
+    val bitmap by produceState<Bitmap?>(null, sourceUri) {
+        runCatching { withContext(Dispatchers.IO) { decodeProfileBitmap(context, sourceUri) } }
+            .onSuccess { value = it }.onFailure { error = it.message ?: "Unable to open photo" }
+    }
     val previewDp = 280.dp
     val previewPx = with(density) { previewDp.toPx() }
 
@@ -91,33 +102,22 @@ fun ProfilePhotoCropDialog(
                     .border(2.dp, Color.White.copy(alpha = .62f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                AsyncImage(
-                    model = sourceUri,
-                    contentDescription = "Profile photo crop preview",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(previewDp)
-                        .graphicsLayer {
-                            scaleX = zoom
-                            scaleY = zoom
-                            translationX = offset.x
-                            translationY = offset.y
-                            clip = true
-                            shape = CircleShape
+                bitmap?.let { source ->
+                    Canvas(Modifier.size(previewDp).clip(CircleShape).pointerInput(sourceUri, source) {
+                        detectTransformGestures { _, pan, gestureZoom, _ ->
+                            zoom = (zoom * gestureZoom).coerceIn(1f, 4f)
+                            val base = max(previewPx / source.width, previewPx / source.height) * zoom
+                            val limitX = ((source.width * base - previewPx) / 2).coerceAtLeast(0f)
+                            val limitY = ((source.height * base - previewPx) / 2).coerceAtLeast(0f)
+                            offset = Offset((offset.x + pan.x).coerceIn(-limitX, limitX), (offset.y + pan.y).coerceIn(-limitY, limitY))
                         }
-                        .pointerInput(sourceUri) {
-                            detectTransformGestures { _, pan, gestureZoom, _ ->
-                                val nextZoom = (zoom * gestureZoom).coerceIn(1f, 4f)
-                                val maxPan = previewPx * (.18f + (nextZoom - 1f) * .48f)
-                                zoom = nextZoom
-                                offset = Offset(
-                                    x = (offset.x + pan.x).coerceIn(-maxPan, maxPan),
-                                    y = (offset.y + pan.y).coerceIn(-maxPan, maxPan)
-                                )
-                                error = null
-                            }
-                        }
-                )
+                    }) {
+                        val crop = profileCrop(source.width, source.height, previewPx, zoom, offset.x, offset.y)
+                        drawImage(source.asImageBitmap(), srcOffset = IntOffset(crop.left, crop.top),
+                            srcSize = IntSize(crop.side, crop.side), dstSize = IntSize(size.width.toInt(), size.height.toInt()))
+                    }
+                }
+
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -176,7 +176,8 @@ fun ProfilePhotoCropDialog(
                         }
                     },
                     modifier = Modifier.weight(1f),
-                    isLoading = saving
+                    isLoading = saving,
+                    enabled = bitmap != null && !saving
                 )
             }
         }
@@ -193,24 +194,8 @@ private suspend fun cropProfilePhoto(
     val source = decodeProfileBitmap(context, uri)
     require(source.width > 0 && source.height > 0) { "Invalid photo" }
 
-    val width = source.width.toFloat()
-    val height = source.height.toFloat()
-    val coverScale = max(previewPixels / width, previewPixels / height)
-    val effectiveScale = (coverScale * zoom.coerceIn(1f, 4f)).coerceAtLeast(.0001f)
-    val sourceSide = (previewPixels / effectiveScale)
-        .coerceAtLeast(1f)
-        .coerceAtMost(minOf(width, height))
-
-    val centerX = (width / 2f - offset.x / effectiveScale)
-        .coerceIn(sourceSide / 2f, width - sourceSide / 2f)
-    val centerY = (height / 2f - offset.y / effectiveScale)
-        .coerceIn(sourceSide / 2f, height - sourceSide / 2f)
-
-    val side = sourceSide.roundToInt().coerceIn(1, minOf(source.width, source.height))
-    val left = (centerX - side / 2f).roundToInt().coerceIn(0, source.width - side)
-    val top = (centerY - side / 2f).roundToInt().coerceIn(0, source.height - side)
-
-    val cropped = Bitmap.createBitmap(source, left, top, side, side)
+    val rect = profileCrop(source.width, source.height, previewPixels, zoom, offset.x, offset.y)
+    val cropped = Bitmap.createBitmap(source, rect.left, rect.top, rect.side, rect.side)
     val output = if (cropped.width == 1024 && cropped.height == 1024) cropped
     else Bitmap.createScaledBitmap(cropped, 1024, 1024, true)
 

@@ -154,16 +154,7 @@ fun LiquidChatApp(
         CameraScreen(
           conversationId = convId,
           onPhotoCaptured = { uri, caption ->
-            chatViewModel.uploadChatMedia(convId, uri, MessageType.IMAGE) { result ->
-              result.onSuccess { url ->
-                chatViewModel.sendMessage(
-                  convId,
-                  caption.ifBlank { "Photo" },
-                  MessageType.IMAGE,
-                  url
-                )
-              }
-            }
+            chatViewModel.repository.enqueueMediaMessage(convId, uri, MessageType.IMAGE, caption)
             navController.popBackStack()
           },
           onClose = { navController.popBackStack() }

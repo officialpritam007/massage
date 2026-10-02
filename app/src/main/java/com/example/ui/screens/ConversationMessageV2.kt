@@ -137,6 +137,7 @@ fun MessageBubbleV2(
     isMe: Boolean,
     reduced: Boolean,
     highlighted: Boolean = false,
+    morphFromTyping: Boolean = false,
     voiceAvatarUrl: String = "",
     voiceAvatarName: String = "",
     onLongClick: () -> Unit,
@@ -147,6 +148,8 @@ fun MessageBubbleV2(
     onRetrySend: () -> Unit
 ) {
     val config = LocalLiquidGlass.current
+    var reveal by remember(message.id) { mutableStateOf(!morphFromTyping || reduced) }
+    LaunchedEffect(message.id) { if (!reveal) { delay(120); reveal = true } }
     var drag by remember { mutableFloatStateOf(0f) }
     var expanded by rememberSaveable(message.id) { mutableStateOf(false) }
     var overflowed by remember(message.id, message.text) { mutableStateOf(false) }
@@ -267,7 +270,8 @@ fun MessageBubbleV2(
                     }
 
                     val showText = message.type == MessageType.TEXT || (caption.isNotBlank() && message.type != MessageType.VOICE)
-                    if (showText) {
+                    if (showText && !reveal) { Text("•••", color = contentColor, fontSize = 22.sp) }
+                    if (showText && reveal) {
                         Text(
                             if (message.type == MessageType.TEXT) message.text else caption,
                             style = MaterialTheme.typography.bodyMedium,
@@ -290,6 +294,10 @@ fun MessageBubbleV2(
                         }
                     }
 
+                    message.uploadProgress?.let { progress ->
+                        androidx.compose.material3.LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                        Text("Uploading ${(progress * 100).toInt()}%", color = metaColor, style = MaterialTheme.typography.labelSmall)
+                    }
                     Row(Modifier.align(Alignment.End), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (message.isStarred) Text("★", fontSize = 10.sp, color = metaColor)
                         if (message.isEdited) Text("edited", style = MaterialTheme.typography.labelSmall, color = metaColor)

@@ -226,7 +226,7 @@ fun ContactProfileScreen(
             }
 
             Text(
-                "Shared media",
+                "Shared media (${shared.size})",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -248,7 +248,7 @@ fun ContactProfileScreen(
                 }
             } else {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(shared.take(30), key = { it.id }) { message ->
+                    items(shared, key = { it.id }) { message ->
                         SharedMediaCard(message = message, onClick = { media = message })
                     }
                 }

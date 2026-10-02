@@ -219,22 +219,14 @@ fun ConversationScreenV2(
         if (draft.uploading || voiceDraftDeleting || !draft.file.exists() || draft.file.length() <= 0L) return
         voiceDraft = draft.copy(uploading = true, failed = false)
         voiceDraftDeleteFailed = false
-        repo.uploadChatMedia(conversationId, Uri.fromFile(draft.file), MessageType.VOICE) { result ->
-            result.onSuccess { url ->
-                viewModel.sendMessage(
-                    conversationId = conversationId,
-                    text = "Voice message",
-                    type = MessageType.VOICE,
-                    mediaUrl = url,
-                    voiceDurationSeconds = draft.seconds,
-                    waveform = draft.waveform
-                )
+        stickToBottom = true
+        repo.enqueueMediaMessage(conversationId, Uri.fromFile(draft.file), MessageType.VOICE,
+            "Voice message", draft.seconds, draft.waveform) { staged ->
+            if (staged) {
                 draftStore.forget(draft.file)
                 draft.file.delete()
                 if (voiceDraft?.file == draft.file) voiceDraft = null
-            }.onFailure {
-                if (draft.file.exists()) voiceDraft = draft.copy(uploading = false, failed = true)
-            }
+            } else voiceDraft = draft.copy(uploading = false, failed = true)
         }
     }
 
@@ -332,18 +324,8 @@ fun ConversationScreenV2(
     val requestCurrent by rememberUpdatedState<() -> Unit> { requestRecording() }
 
     fun uploadAttachment(uri: Uri, type: MessageType, caption: String = "") {
-        repo.uploadChatMedia(conversationId, uri, type) { result ->
-            result.onSuccess { url ->
-                val fallback = when (type) {
-                    MessageType.IMAGE -> "Photo"
-                    MessageType.VIDEO -> "Video"
-                    MessageType.FILE -> "Document"
-                    else -> ""
-                }
-                val textToSend = caption.trim().ifBlank { fallback }
-                viewModel.sendMessage(conversationId, textToSend, type, url)
-            }
-        }
+        stickToBottom = true
+        repo.enqueueMediaMessage(conversationId, uri, type, caption)
     }
 
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -473,7 +455,7 @@ fun ConversationScreenV2(
 
     val filtered = messages.filter { query.isBlank() || it.text.contains(query, ignoreCase = true) }
     val morphMessage = filtered.firstOrNull { it.id == morphId }
-    val rows = filtered.filterNot { it.id == morphId }
+    val rows = filtered
     val latestRemoteId = rows.lastOrNull { it.senderId != me.uid && !it.isDeleted }?.id
 
     LaunchedEffect(messageJump, rows.size, conversationId) {
@@ -632,7 +614,7 @@ fun ConversationScreenV2(
                     }
 
                     upload?.let { progress ->
-                        if (voiceDraft?.uploading != true) {
+                        if (voiceDraft?.uploading == true) {
                             GlassCard(shape = RoundedCornerShape(18.dp), backgroundColor = config.accentColor.copy(alpha = .07f), elevation = 0.dp) {
                                 Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 7.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -718,6 +700,7 @@ fun ConversationScreenV2(
                                 isMe = message.senderId == me.uid,
                                 reduced = config.isReducedMotion,
                                 highlighted = message.id == searchHighlightId,
+                                morphFromTyping = message.id == morphId,
                                 voiceAvatarUrl = if (message.senderId == me.uid) me.photoUrl else other.photoUrl,
                                 voiceAvatarName = if (message.senderId == me.uid) me.displayName else other.displayName,
                                 onLongClick = { actionMessage = message; haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
@@ -744,8 +727,8 @@ fun ConversationScreenV2(
                         }
                     }
                     item(key = "typing-morph") {
-                        AnimatedVisibility(visible = morphMessage != null || conversation?.isTyping == true, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
-                            TypingMorphBubbleV2(morphMessage, config.isReducedMotion)
+                        AnimatedVisibility(visible = morphMessage == null && conversation?.isTyping == true, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+                            TypingMorphBubbleV2(null, config.isReducedMotion)
                         }
                     }
                 }

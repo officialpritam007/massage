@@ -212,6 +212,7 @@ class ChatRepository(
     appearanceJob?.cancel()
     uploadJob?.cancel()
     uploadQueue.clear()
+    mediaInFlight.clear()
     activeUpload = null
     failedUpload = null
     retryUpload = null
@@ -348,13 +349,14 @@ class ChatRepository(
             messageListeners.remove(it)?.remove()
             presenceListeners.remove(it)?.remove()
           }
-          _messages.update { map -> map.filterKeys { it in active } }
+          _messages.update { map -> map.filter { (cid, rows) -> cid in active || rows.any { it.status == MessageDeliveryStatus.SENDING || it.status == MessageDeliveryStatus.FAILED } } }
           // Message + typing listeners are attached only when a conversation is opened.
           // The chat list needs only the lightweight conversation-summary listener.
         }
       }
 
     restoreOutbox()
+    restoreMediaOutbox()
     outboxJob = scope.launch {
       while (isActive && uid == account) {
         flushOutbox()
@@ -709,6 +711,13 @@ class ChatRepository(
   }
 
   fun retryMessage(cid: String, id: String) {
+    if (prefs.contains("mediaOutbox:$uid:$id")) { resumeMediaUpload(id); return }
+    val unstaged = _messages.value[cid].orEmpty().firstOrNull { it.id == id && it.mediaUrl.startsWith("content:") }
+    if (unstaged != null && !prefs.contains("outbox:$uid:$id")) {
+      removeLocalMessage(cid, id)
+      enqueueMediaMessage(cid, Uri.parse(unstaged.mediaUrl), unstaged.type, unstaged.text)
+      return
+    }
     failed -= id
     updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.SENDING) }
     scope.launch { flushOutbox() }
@@ -723,6 +732,92 @@ class ChatRepository(
     receipts.removeAll { it.contains(":$id:") }
     prefs.edit().remove("outbox:$uid:$id").remove("star:$uid:$id").remove("hidden:$uid:$id").apply()
     _messages.update { map -> map + (cid to map[cid].orEmpty().filterNot { it.id == id }) }
+  }
+
+  /** Stage attachments privately before upload so retries survive navigation and process death. */
+  fun enqueueMediaMessage(cid: String, uri: Uri, type: MessageType, caption: String = "",
+                          seconds: Int = 0, waveform: List<Float> = emptyList(), onStaged: (Boolean) -> Unit = {}) {
+    val account = uid
+    val id = UUID.randomUUID().toString()
+    val message = Message(id = id, conversationId = cid, senderId = account,
+      senderName = _currentUser.value.displayName, text = caption.ifBlank { if (type == MessageType.VOICE) "Voice message" else type.name.lowercase().replaceFirstChar { it.uppercase() } },
+      type = type, mediaUrl = uri.toString(), voiceDurationSeconds = seconds, waveform = waveform,
+      status = MessageDeliveryStatus.SENDING, uploadProgress = 0f)
+    _messages.update { it + (cid to (it[cid].orEmpty() + message)) }
+    scope.launch {
+      runCatching {
+        val file = withContext(Dispatchers.IO) {
+          val dir = java.io.File(LiquidApi.context.filesDir, "media-outbox").apply { mkdirs() }
+          val mime = LiquidApi.context.contentResolver.getType(uri)
+          val suffix = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)
+            ?: uri.lastPathSegment.orEmpty().substringAfterLast('.', "bin").takeIf { it.matches(Regex("[A-Za-z0-9]{1,6}")) } ?: "bin"
+          val staged = java.io.File(dir, "$id.$suffix")
+          try {
+            LiquidApi.context.contentResolver.openInputStream(uri).use { input ->
+              requireNotNull(input) { "Cannot open attachment" }
+              staged.outputStream().use { output ->
+                val buffer = ByteArray(65536); var total = 0L
+                while (true) {
+                  val count = input.read(buffer); if (count < 0) break
+                  total += count; require(total <= 25L * 1024 * 1024) { "Maximum attachment size is 25 MB" }
+                  output.write(buffer, 0, count)
+                }
+              }
+            }
+            staged
+          } catch (t: Throwable) { staged.delete(); throw t }
+        }
+        if (uid != account) { file.delete(); return@launch }
+        val staged = message.copy(mediaUrl = Uri.fromFile(file).toString())
+        prefs.edit().putString("mediaOutbox:$account:$id", json(staged).toString()).apply()
+        updateLocal(cid, id) { staged }
+        onStaged(true)
+        resumeMediaUpload(id)
+      }.onFailure {
+        updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.FAILED, uploadProgress = null) }
+        _error.value = friendlyError(it)
+        onStaged(false)
+      }
+    }
+  }
+
+  private val mediaInFlight = mutableSetOf<String>()
+
+  private fun restoreMediaOutbox() {
+    prefs.all.keys.filter { it.startsWith("mediaOutbox:$uid:") }.forEach { resumeMediaUpload(it.substringAfterLast(':')) }
+  }
+
+  private fun resumeMediaUpload(id: String) {
+    if (!mediaInFlight.add(id)) return
+    val account = uid
+    val key = "mediaOutbox:$account:$id"
+    val raw = prefs.getString(key, null) ?: run { mediaInFlight.remove(id); return }
+    val j = runCatching { JSONObject(raw) }.getOrNull() ?: run { mediaInFlight.remove(id); return }
+    val cid = j.getString("conversationId")
+    val local = j.getString("mediaUrl")
+    j.optString("otherUid").takeIf { it.isNotBlank() }?.let { other ->
+      if (pendingPeers[cid] == null) pendingPeers[cid] = User(uid = other, displayName = "Contact")
+    }
+    val message = Message(id = id, conversationId = cid, senderId = account, senderName = _currentUser.value.displayName,
+      text = j.optString("text"), type = MessageType.valueOf(j.getString("type")), mediaUrl = local,
+      createdAt = j.optLong("createdAt"), voiceDurationSeconds = j.optInt("voiceDurationSeconds"),
+      waveform = jsonWaveform(j.optJSONArray("waveform")), status = MessageDeliveryStatus.SENDING, uploadProgress = 0f)
+    _messages.update { it + (cid to (it[cid].orEmpty().filterNot { old -> old.id == id } + message).sortedBy { it.createdAt }) }
+    uploadQueue.addLast(QueuedMediaUpload(id = id, conversationId = cid, uri = Uri.parse(local), type = message.type) { result ->
+      mediaInFlight.remove(id)
+      if (uid != account) return@QueuedMediaUpload
+      result.onSuccess { url ->
+        val uploaded = message.copy(mediaUrl = url, uploadProgress = null)
+        persist(uploaded)
+        prefs.edit().remove(key).apply()
+        updateLocal(cid, id) { uploaded }
+        Uri.parse(local).path?.let { java.io.File(it).delete() }
+        scope.launch { flushOutbox() }
+      }.onFailure {
+        updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.FAILED, uploadProgress = null) }
+      }
+    })
+    pumpMediaUploads()
   }
 
   fun uploadChatMedia(
@@ -761,7 +856,10 @@ class ChatRepository(
         }
         LiquidApi.upload(queued.uri, cid) { progress ->
           scope.launch {
-            if (activeUpload?.id == queued.id) _upload.value = progress
+            if (activeUpload?.id == queued.id) {
+              _upload.value = progress
+              updateLocal(queued.conversationId, queued.id) { it.copy(uploadProgress = progress) }
+            }
           }
         }
       }

@@ -40,6 +40,7 @@ data class Message(
   val text: String = "",
   val type: MessageType = MessageType.TEXT,
   val mediaUrl: String = "",
+  val uploadProgress: Float? = null,
   val voiceDurationSeconds: Int = 0,
   val waveform: List<Float> = emptyList(),
   val createdAt: Long = System.currentTimeMillis(),
