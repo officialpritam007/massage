@@ -44,6 +44,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -91,6 +93,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
@@ -169,7 +172,9 @@ fun ConversationScreenV2(
     val haptic = LocalHapticFeedback.current
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
+    val density = LocalDensity.current
     val clipboard = LocalClipboardManager.current
+    val imeBottom = WindowInsets.ime.getBottom(density)
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
@@ -452,6 +457,17 @@ fun ConversationScreenV2(
     val morphMessage = filtered.firstOrNull { it.id == morphId }
     val rows = filtered.filterNot { it.id == morphId }
     val latestRemoteId = rows.lastOrNull { it.senderId != me.uid && !it.isDeleted }?.id
+
+    LaunchedEffect(imeBottom, stickToBottom, rows.size) {
+        if (!stickToBottom || rows.isEmpty()) return@LaunchedEffect
+        delay(40)
+        val target = (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
+        if (config.isReducedMotion) {
+            listState.scrollToItem(target)
+        } else {
+            listState.animateScrollToItem(target)
+        }
+    }
 
     LaunchedEffect(messageJump, rows.size, conversationId) {
         val jump = messageJump
