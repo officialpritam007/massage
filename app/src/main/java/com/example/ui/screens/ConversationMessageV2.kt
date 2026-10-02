@@ -48,6 +48,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -98,13 +99,15 @@ fun DustDeleteContainerV2(
         label = "dust-delete"
     )
     Box(
-        modifier.graphicsLayer {
-            val disappear = if (reduced) progress else (progress * 1.10f).coerceIn(0f, 1f)
-            alpha = (1f - disappear * .94f).coerceIn(0f, 1f)
-            scaleX = 1f - progress * .045f
-            scaleY = 1f - progress * .035f
-            translationX = progress * 18f
-        }
+        modifier
+            .clipToBounds()
+            .graphicsLayer {
+                val disappear = if (reduced) progress else (progress * 1.08f).coerceIn(0f, 1f)
+                alpha = (1f - disappear * .96f).coerceIn(0f, 1f)
+                scaleX = 1f - progress * .035f
+                scaleY = 1f - progress * .025f
+                translationX = progress * 6.dp.toPx()
+            }
     ) {
         content()
         if (active && !reduced) {
@@ -116,8 +119,8 @@ fun DustDeleteContainerV2(
                     val local = ((progress - start) / (1f - start)).coerceIn(0f, 1f)
                     if (local <= 0f) return@repeat
                     val direction = if (i % 2 == 0) 1f else .72f
-                    val driftX = (20.dp.toPx() + (i % 7) * 4.dp.toPx()) * local * direction
-                    val driftY = (((i % 9) - 4) * 2.8.dp.toPx()) * local - 7.dp.toPx() * local * local
+                    val driftX = (5.dp.toPx() + (i % 5) * 1.6.dp.toPx()) * local * direction
+                    val driftY = (((i % 9) - 4) * 1.25.dp.toPx()) * local - 3.dp.toPx() * local * local
                     val baseRadius = (1.25f + (i % 4) * .55f).dp.toPx()
                     val particleAlpha = ((1f - local) * (.72f - (i % 5) * .055f)).coerceIn(0f, .78f)
                     drawCircle(
@@ -136,6 +139,7 @@ fun MessageBubbleV2(
     message: Message,
     isMe: Boolean,
     reduced: Boolean,
+    deleting: Boolean = false,
     highlighted: Boolean = false,
     voiceAvatarUrl: String = "",
     voiceAvatarName: String = "",
@@ -189,7 +193,8 @@ fun MessageBubbleV2(
     }
 
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start) {
-        Column(
+        DustDeleteContainerV2(active = deleting, reduced = reduced) {
+            Column(
             Modifier
                 .widthIn(max = 330.dp)
                 .offset { IntOffset(offset.roundToInt(), 0) }
@@ -337,6 +342,7 @@ fun MessageBubbleV2(
                         }
                     }
                 }
+            }
             }
         }
     }
