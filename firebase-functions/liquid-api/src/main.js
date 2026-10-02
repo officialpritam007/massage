@@ -448,7 +448,7 @@ export default async ({req, res, error}) => {
         resource_type: meta.resourceType,
         type: meta.deliveryType || 'authenticated'
       });
-      const maxStoredSize = 25 * 1024 * 1024 + (meta.encrypted ? 2048 : 0);
+      const maxStoredSize = 9 * 1024 * 1024 + (meta.encrypted ? 2048 : 0);
       if (!asset?.bytes || asset.bytes > maxStoredSize) throw new Error('Incomplete or oversized file');
       if (!meta.conversationId && !String(meta.originalMime || '').startsWith('image/')) {
         throw new Error('Profile photo must be an image');
