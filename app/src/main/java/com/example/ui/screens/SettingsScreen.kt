@@ -103,7 +103,12 @@ fun SettingsScreen(
       ) {
         GlassHeader("Settings", subtitle = "Liquid Chat", onBackClick = onBackClick)
 
-        GlassCard(Modifier.fillMaxWidth()) {
+        GlassCard(
+          Modifier.fillMaxWidth(),
+          shape = androidx.compose.foundation.shape.RoundedCornerShape(30.dp),
+          backgroundColor = if (glass.isDark) Color(0xFF0B1724).copy(alpha = .72f) else Color.White.copy(alpha = .58f),
+          elevation = 3.dp
+        ) {
           Row(
             Modifier.padding(18.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -122,6 +127,11 @@ fun SettingsScreen(
               Text(
                 me.username.takeIf { it.isNotBlank() }?.let { "@$it" } ?: "Set your username",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+              Text(
+                "Private account • Encrypted messaging",
+                style = MaterialTheme.typography.labelSmall,
+                color = glass.accentColor
               )
               Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = { dialog = "Profile" }, contentPadding = PaddingValues(0.dp)) {
@@ -153,7 +163,7 @@ fun SettingsScreen(
         }
 
         SettingsSection("Data & tools") {
-          SettingRow("Data & Storage", "Encrypted media, cache and reinstall wipe") {
+          SettingRow("Data & Storage", "Encrypted Cloudinary media • 9 MB per attachment") {
             scope.launch {
               cacheSize = withContext(Dispatchers.IO) {
                 context.cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
@@ -170,7 +180,13 @@ fun SettingsScreen(
           SettingRow("About & Support", "Version, developer and contact") { dialog = "About & Support" }
         }
 
-        GlassCard(Modifier.fillMaxWidth()) {
+        GlassCard(
+          Modifier.fillMaxWidth(),
+          shape = androidx.compose.foundation.shape.RoundedCornerShape(26.dp),
+          backgroundColor = MaterialTheme.colorScheme.error.copy(alpha = .055f),
+          elevation = 1.dp,
+          enableBlur = false
+        ) {
           Column(Modifier.padding(8.dp)) {
             TextButton(onClick = { dialog = "Log out" }, modifier = Modifier.fillMaxWidth()) {
               Text("Log out & erase all data", color = MaterialTheme.colorScheme.error)
@@ -303,7 +319,7 @@ fun SettingsScreen(
 
           "Data & Storage" -> {
             Text("Temporary cache: ${cacheSize / 1024 / 1024} MB")
-            Text("Chat attachments are encrypted on-device before Cloudinary storage. Maximum attachment size: 25 MB.")
+            Text("Chat attachments are encrypted on-device before Cloudinary storage. Maximum encrypted attachment size: 9 MB.")
             Text("Liquid Chat does not back up app data or E2EE private keys.")
             Text("After an uninstall, the next sign-in detects the new installation and permanently clears the previous Liquid Chat data before syncing.")
             Text("Clearing temporary cache does not delete server data; logout does.")
@@ -409,7 +425,11 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
       color = MaterialTheme.colorScheme.onSurfaceVariant,
       modifier = Modifier.padding(horizontal = 8.dp)
     )
-    GlassCard(Modifier.fillMaxWidth()) {
+    GlassCard(
+      Modifier.fillMaxWidth(),
+      elevation = 1.dp,
+      enableBlur = false
+    ) {
       Column(Modifier.padding(vertical = 5.dp), content = content)
     }
   }
@@ -417,17 +437,30 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
 
 @Composable
 private fun SettingRow(title: String, subtitle: String? = null, onClick: () -> Unit) {
-  Column(
+  Row(
     modifier = Modifier
       .fillMaxWidth()
       .clickable(onClick = onClick)
-      .padding(horizontal = 16.dp, vertical = 13.dp)
+      .padding(horizontal = 16.dp, vertical = 13.dp),
+    verticalAlignment = Alignment.CenterVertically
   ) {
-    Text(title, style = MaterialTheme.typography.bodyLarge)
-    if (!subtitle.isNullOrBlank()) {
-      Spacer(Modifier.height(2.dp))
-      Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Column(Modifier.weight(1f)) {
+      Text(title, style = MaterialTheme.typography.bodyLarge)
+      if (!subtitle.isNullOrBlank()) {
+        Spacer(Modifier.height(2.dp))
+        Text(
+          subtitle,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+      }
     }
+    Spacer(Modifier.width(10.dp))
+    Text(
+      "›",
+      style = MaterialTheme.typography.titleLarge,
+      color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .72f)
+    )
   }
 }
 
