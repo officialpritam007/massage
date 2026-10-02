@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -80,6 +81,7 @@ fun GlassCard(
   backgroundColor: Color? = null,
   borderColor: Color? = null,
   elevation: Dp = 3.dp,
+  enableBlur: Boolean = true,
   onClick: (() -> Unit)? = null,
   content: @Composable () -> Unit
 ) {
@@ -109,9 +111,9 @@ fun GlassCard(
       .shadow(elevation, resolvedShape, ambientColor = shadow, spotColor = shadow)
       .clip(resolvedShape)
       .then(
-        if (backdrop != null && config.isGlassEnabled) {
+        if (backdrop != null && config.isGlassEnabled && enableBlur) {
           Modifier.hazeEffect(backdrop) {
-            blurRadius = (12f + config.blurAlpha * 20f).dp
+            blurRadius = (10f + config.blurAlpha * 16f).dp
             noiseFactor = 0.025f
             this.backgroundColor = glassBackground
           }
@@ -170,7 +172,11 @@ fun GlassButton(
 
   Box(
     modifier = modifier
-      .graphicsLayer { scaleX = buttonScale; scaleY = buttonScale }
+      .graphicsLayer {
+        scaleX = buttonScale
+        scaleY = buttonScale
+        alpha = if (enabled) 1f else 0.46f
+      }
       .defaultMinSize(minHeight = 50.dp)
       .clip(resolvedShape)
       .background(accent.copy(alpha = if (isPrimary) 0.78f else 1f))
@@ -247,12 +253,25 @@ fun GlassTextField(
   val primaryText = if (config.isDark) TextPrimary else TextPrimaryLight
   val secondaryText = if (config.isDark) Color(0xFFB7CBE2) else TextSecondaryLight
   val resolvedShape = shape ?: RoundedCornerShape(config.cornerRadiusDp.coerceIn(0f, 64f).dp)
+  val interactions = remember { MutableInteractionSource() }
+  val focused by interactions.collectIsFocusedAsState()
+  val fieldBorder by animateColorAsState(
+    targetValue = if (focused) {
+      config.accentColor.copy(alpha = if (config.isDark) .78f else .62f)
+    } else if (config.isDark) {
+      GlassBorderStrokeDark
+    } else {
+      GlassBorderStrokeLight
+    },
+    animationSpec = tween(160),
+    label = "text_field_border"
+  )
   Box(
     modifier = modifier
       .defaultMinSize(minHeight = minHeight)
       .clip(resolvedShape)
       .background(if (config.isDark) Color.White.copy(alpha = 0.055f) else Color.White.copy(alpha = 0.48f))
-      .border(1.dp, if (config.isDark) GlassBorderStrokeDark else GlassBorderStrokeLight, resolvedShape)
+      .border(if (focused) 1.25.dp else 1.dp, fieldBorder, resolvedShape)
       .padding(horizontal = horizontalPadding, vertical = verticalPadding)
       .testTag(testTag),
     contentAlignment = Alignment.CenterStart
@@ -273,6 +292,7 @@ fun GlassTextField(
           visualTransformation = visualTransformation,
           keyboardOptions = keyboardOptions,
           keyboardActions = keyboardActions,
+          interactionSource = interactions,
           singleLine = singleLine,
           maxLines = maxLines,
           cursorBrush = SolidColor(config.accentColor)
