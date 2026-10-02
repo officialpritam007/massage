@@ -369,6 +369,7 @@ object E2eeCrypto {
       )
         .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
         .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+        .setRandomizedEncryptionRequired(false)
         .build()
     )
     return generator.generateKey()
