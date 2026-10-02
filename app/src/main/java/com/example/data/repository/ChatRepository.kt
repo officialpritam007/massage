@@ -191,7 +191,11 @@ class ChatRepository(
 
   suspend fun signInWithEmail(email: String, pass: String): Result<User> = runCatching {
     auth.signInWithEmailAndPassword(email.trim(), pass).await()
-    LiquidApi.call("profile")
+
+    // Firebase authentication is the source of truth for login. Backend profile
+    // bootstrap is retried by startSync(), so a transient Appwrite edge/domain
+    // failure must not trap an already-authenticated user on the sign-in screen.
+    runCatching { LiquidApi.call("profile") }
     startSync()
     _currentUser.value
   }
