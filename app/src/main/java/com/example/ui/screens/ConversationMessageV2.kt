@@ -153,13 +153,13 @@ fun MessageBubbleV2(
     val config = LocalLiquidGlass.current
     var drag by remember { mutableFloatStateOf(0f) }
     var expanded by rememberSaveable(message.id) { mutableStateOf(false) }
-    var overflowed by remember(message.id, message.text) { mutableStateOf(false) }
+    var collapsedOverflow by remember(message.id, message.text) { mutableStateOf(false) }
     val globalHighlightId by ReplyHighlightBusV2.targetId
     val effectiveHighlighted = highlighted || globalHighlightId == message.id
 
     LaunchedEffect(message.text) {
         expanded = false
-        overflowed = false
+        collapsedOverflow = false
     }
     LaunchedEffect(globalHighlightId, message.id) {
         if (globalHighlightId == message.id) {
@@ -281,18 +281,19 @@ fun MessageBubbleV2(
                             color = contentColor,
                             maxLines = if (expanded) Int.MAX_VALUE else 6,
                             overflow = if (expanded) TextOverflow.Clip else TextOverflow.Ellipsis,
-                            onTextLayout = { layout -> if (!expanded) overflowed = layout.hasVisualOverflow }
+                            onTextLayout = { layout ->
+                                if (!expanded) collapsedOverflow = layout.hasVisualOverflow
+                            }
                         )
-                        if (overflowed || expanded) {
+                        if (collapsedOverflow || expanded) {
                             Text(
                                 if (expanded) "Read less" else "Read more",
                                 color = if (isMe) Color.White.copy(alpha = .92f) else config.accentColor,
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.clickable {
-                                    expanded = if (expanded) false else overflowed
-                                    if (!expanded) overflowed = true
-                                }.padding(horizontal = 2.dp, vertical = 6.dp)
+                                modifier = Modifier
+                                    .clickable { expanded = !expanded }
+                                    .padding(horizontal = 2.dp, vertical = 6.dp)
                             )
                         }
                     }
