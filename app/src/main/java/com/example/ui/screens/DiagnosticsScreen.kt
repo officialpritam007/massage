@@ -19,7 +19,6 @@ import com.example.ui.components.*
 import com.example.ui.viewmodel.LiquidChatViewModel
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.tasks.await
 
 private data class DiagnosticItem(
@@ -42,17 +41,17 @@ fun DiagnosticsScreen(
   LaunchedEffect(runKey) {
     running = true
     val result = mutableListOf<DiagnosticItem>()
-    val auth = FirebaseAuth.getInstance()
-    val user = auth.currentUser
+    val user = FirebaseAuth.getInstance().currentUser
+
     result += DiagnosticItem(
       "Firebase Auth",
       user != null,
-      user?.uid?.let { "Signed in • ${it.take(8)}…" } ?: "No signed-in Firebase user"
+      user?.uid?.let { "Signed in • " + it.take(8) + "…" } ?: "No signed-in Firebase user"
     )
 
     if (user != null) {
       val firestore = runCatching {
-        FirebaseFirestore.getInstance().document("users/${user.uid}").get().await()
+        FirebaseFirestore.getInstance().document("users/" + user.uid).get().await()
       }
       result += DiagnosticItem(
         "Cloud Firestore",
@@ -60,44 +59,28 @@ fun DiagnosticsScreen(
         firestore.exceptionOrNull()?.message
           ?: if (firestore.getOrNull()?.exists() == true) "Profile document readable" else "Profile document missing"
       )
-
-      val token = runCatching { FirebaseMessaging.getInstance().token.await() }
-      result += DiagnosticItem(
-        "Firebase Messaging",
-        token.isSuccess && !token.getOrNull().isNullOrBlank(),
-        token.exceptionOrNull()?.message ?: if (token.isSuccess) "FCM token available" else "Token unavailable"
-      )
-
-      result += DiagnosticItem(
-        "Optional media backend",
-        BuildConfig.LIQUID_API_URL.startsWith("https://"),
-        if (BuildConfig.LIQUID_API_URL.startsWith("https://")) {
-          "Configured • health call skipped so media quota cannot block chat diagnostics"
-        } else {
-          "Backend URL not configured"
-        }
-      )
     }
 
+    val cloudName = BuildConfig.CLOUDINARY_CLOUD_NAME.trim()
+    val preset = BuildConfig.CLOUDINARY_UPLOAD_PRESET.trim()
     result += DiagnosticItem(
-      "Cloudinary media",
-      BuildConfig.LIQUID_API_URL.startsWith("https://"),
-      if (BuildConfig.LIQUID_API_URL.startsWith("https://")) {
-        "Signed Cloudinary access is provided by the Firebase backend"
+      "Cloudinary direct upload",
+      cloudName.isNotBlank() && preset.isNotBlank(),
+      if (cloudName.isNotBlank() && preset.isNotBlank()) {
+        "Cloud " + cloudName + " • unsigned preset " + preset
       } else {
-        "Firebase backend URL missing"
+        "Cloudinary cloud name or unsigned upload preset is missing"
       }
     )
+
     result += DiagnosticItem(
-      "Backend configuration",
-      BuildConfig.LIQUID_API_URL.startsWith("https://"),
-      BuildConfig.LIQUID_API_URL.ifBlank { "LIQUID_API_URL missing" }
+      "Paid backend",
+      true,
+      "Not used • Firebase Functions and Appwrite are not required"
     )
+
     val visibleAppError = appError?.takeUnless { message ->
-      message.contains(
-        "Resource limit for the current billing cycle",
-        ignoreCase = true
-      )
+      message.contains("Resource limit for the current billing cycle", ignoreCase = true)
     }
     result += DiagnosticItem(
       "Last app error",
@@ -119,7 +102,7 @@ fun DiagnosticsScreen(
         .padding(20.dp),
       verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-      GlassHeader("Diagnostics", subtitle = "Firebase • Cloudinary • FCM", onBackClick = onBackClick)
+      GlassHeader("Diagnostics", subtitle = "Firebase • Firestore • Cloudinary", onBackClick = onBackClick)
 
       if (running) {
         GlassCard(Modifier.fillMaxWidth()) {
@@ -133,10 +116,7 @@ fun DiagnosticsScreen(
 
       items.forEach { item ->
         GlassCard(Modifier.fillMaxWidth()) {
-          Row(
-            Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
+          Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(
               if (item.ok) Icons.Default.CheckCircle else Icons.Default.Error,
               null,
@@ -166,8 +146,10 @@ fun DiagnosticsScreen(
         text = "Copy diagnostics",
         onClick = {
           val report = buildString {
-            appendLine("Liquid Chat ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
-            items.forEach { appendLine("${if (it.ok) "PASS" else "FAIL"} | ${it.name} | ${it.detail}") }
+            appendLine("Liquid Chat " + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")")
+            items.forEach {
+              appendLine((if (it.ok) "PASS" else "FAIL") + " | " + it.name + " | " + it.detail)
+            }
           }
           clipboard.setText(AnnotatedString(report))
         },
@@ -177,7 +159,7 @@ fun DiagnosticsScreen(
       )
 
       Text(
-        "Diagnostics never displays Firebase private keys or Cloudinary API secrets.",
+        "Diagnostics never displays Firebase credentials or Cloudinary API secrets.",
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
       )
