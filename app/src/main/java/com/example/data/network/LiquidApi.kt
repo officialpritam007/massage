@@ -39,7 +39,21 @@ object LiquidApi {
 
   fun mediaSecret(url: String): E2eeCrypto.MediaSecret? {
     if (!url.startsWith("appwrite:")) return null
-    return mediaSecrets[url.removePrefix("appwrite:")]
+    val fileId = url.removePrefix("appwrite:")
+    mediaSecrets[fileId]?.let { return it }
+    if (!::context.isInitialized) return null
+    val uid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
+    val restored = E2eeCrypto.loadPendingMediaSecret(context, uid, fileId) ?: return null
+    mediaSecrets[fileId] = restored
+    return restored
+  }
+
+  fun forgetPendingMediaSecret(url: String) {
+    if (!url.startsWith("appwrite:") || !::context.isInitialized) return
+    val fileId = url.removePrefix("appwrite:")
+    val uid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
+    E2eeCrypto.deletePendingMediaSecret(context, uid, fileId)
+    mediaSecrets.remove(fileId)
   }
 
 
@@ -166,7 +180,11 @@ object LiquidApi {
       val fileId = url.removePrefix("appwrite:")
       resolvedMedia.remove(fileId)
       mediaSecrets.remove(fileId)
-      if (::context.isInitialized) File(File(context.cacheDir, "private-media"), "$fileId.bin").delete()
+      if (::context.isInitialized) {
+        val uid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
+        E2eeCrypto.deletePendingMediaSecret(context, uid, fileId)
+        File(File(context.cacheDir, "private-media"), "$fileId.bin").delete()
+      }
     }
     if (purgeCaches && ::context.isInitialized) {
       // A deleted message must never be resurrected from an already-resolved URL.
@@ -333,6 +351,9 @@ object LiquidApi {
       if (encryptedFile != null) {
         val secret = E2eeCrypto.encryptMediaFile(file, encryptedFile, id)
         mediaSecrets[id] = secret
+        val uid = FirebaseAuth.getInstance().currentUser?.uid
+          ?: error("Please sign in again")
+        E2eeCrypto.storePendingMediaSecret(context, uid, id, secret)
         uploadFile = encryptedFile
         uploadMime = "application/octet-stream"
         suffix = "bin"
