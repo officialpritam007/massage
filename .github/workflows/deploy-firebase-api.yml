@@ -1,0 +1,92 @@
+name: Deploy Firebase API
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'firebase-functions/liquid-api/**'
+      - 'firebase.json'
+      - '.firebaserc'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy liquidApi
+    runs-on: ubuntu-latest
+    env:
+      FIREBASE_PROJECT_ID: liquid-chat-v2
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Check deployment secrets
+        id: deployment_secrets
+        shell: bash
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        run: |
+          missing=0
+          for name in FIREBASE_SERVICE_ACCOUNT_JSON CLOUDINARY_CLOUD_NAME CLOUDINARY_API_KEY CLOUDINARY_API_SECRET; do
+            if [[ -z "${!name}" ]]; then
+              echo "::warning::Missing GitHub secret: $name"
+              missing=1
+            fi
+          done
+          if [[ "$missing" == "1" ]]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Firebase API deployment skipped until all required secrets are configured."
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Prepare protected credentials
+        if: steps.deployment_secrets.outputs.ready == 'true'
+        shell: bash
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/firebase-service-account.json"
+          printf '%s' "$CLOUDINARY_CLOUD_NAME" > "$RUNNER_TEMP/cloudinary-cloud-name"
+          printf '%s' "$CLOUDINARY_API_KEY" > "$RUNNER_TEMP/cloudinary-api-key"
+          printf '%s' "$CLOUDINARY_API_SECRET" > "$RUNNER_TEMP/cloudinary-api-secret"
+          chmod 600 "$RUNNER_TEMP"/firebase-service-account.json "$RUNNER_TEMP"/cloudinary-*
+
+      - name: Install function dependencies
+        if: steps.deployment_secrets.outputs.ready == 'true'
+        run: npm install --prefix firebase-functions/liquid-api --ignore-scripts
+
+      - name: Publish Cloudinary secrets to Firebase
+        if: steps.deployment_secrets.outputs.ready == 'true'
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
+        run: |
+          npx --yes firebase-tools@14.15.1 functions:secrets:set CLOUDINARY_CLOUD_NAME --data-file "$RUNNER_TEMP/cloudinary-cloud-name" --project "$FIREBASE_PROJECT_ID"
+          npx --yes firebase-tools@14.15.1 functions:secrets:set CLOUDINARY_API_KEY --data-file "$RUNNER_TEMP/cloudinary-api-key" --project "$FIREBASE_PROJECT_ID"
+          npx --yes firebase-tools@14.15.1 functions:secrets:set CLOUDINARY_API_SECRET --data-file "$RUNNER_TEMP/cloudinary-api-secret" --project "$FIREBASE_PROJECT_ID"
+
+      - name: Deploy liquidApi
+        if: steps.deployment_secrets.outputs.ready == 'true'
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
+        run: |
+          npx --yes firebase-tools@14.15.1 deploy --only functions:liquidApi --project "$FIREBASE_PROJECT_ID" --non-interactive
+
+      - name: Remove temporary credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/firebase-service-account.json" "$RUNNER_TEMP/cloudinary-cloud-name" "$RUNNER_TEMP/cloudinary-api-key" "$RUNNER_TEMP/cloudinary-api-secret"
