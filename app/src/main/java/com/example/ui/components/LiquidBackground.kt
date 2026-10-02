@@ -35,18 +35,18 @@ fun LiquidBackground(
   val dark = config.isDark
   val state = remember { HazeState() }
   val motion = rememberInfiniteTransition(label = "liquid_background")
-  val driftX by motion.animateFloat(
-    initialValue = -0.045f,
-    targetValue = 0.05f,
-    animationSpec = infiniteRepeatable(tween(12_000), RepeatMode.Reverse),
+  val driftX = if (config.isReducedMotion) 0f else motion.animateFloat(
+    initialValue = -0.035f,
+    targetValue = 0.04f,
+    animationSpec = infiniteRepeatable(tween(16_000), RepeatMode.Reverse),
     label = "glass_drift_x"
-  )
-  val driftY by motion.animateFloat(
-    initialValue = 0.035f,
-    targetValue = -0.04f,
-    animationSpec = infiniteRepeatable(tween(14_000), RepeatMode.Reverse),
+  ).value
+  val driftY = if (config.isReducedMotion) 0f else motion.animateFloat(
+    initialValue = 0.025f,
+    targetValue = -0.03f,
+    animationSpec = infiniteRepeatable(tween(18_000), RepeatMode.Reverse),
     label = "glass_drift_y"
-  )
+  ).value
 
   val base = if (dark) Color(0xFF070B11) else Color(0xFFEDF4FB)
   CompositionLocalProvider(LocalGlassBackdrop provides if (config.isGlassEnabled) state else null) {
@@ -56,8 +56,8 @@ fun LiquidBackground(
           .fillMaxSize()
           .then(if (config.isGlassEnabled) Modifier.hazeSource(state) else Modifier)
       ) {
-        val dx = if (config.isReducedMotion) 0f else driftX
-        val dy = if (config.isReducedMotion) 0f else driftY
+        val dx = driftX
+        val dy = driftY
 
         val blue = Offset(size.width * (.86f + dx), size.height * (.10f + dy))
         drawCircle(
@@ -105,7 +105,7 @@ fun LiquidBackground(
 
         if (crystal) {
           val tint = if (dark) Color(0xFF7192BE) else Color(0xFFC6DDF6)
-          for (i in 0..5) {
+          for (i in 0..3) {
             val x = size.width * (i % 3) / 2f
             val y = size.height * (i + 1) / 8f
             val path = Path().apply {
