@@ -53,6 +53,8 @@ fun SettingsScreen(
   var photoDeleting by remember { mutableStateOf(false) }
   var photoDeleteFailed by remember { mutableStateOf(false) }
   var locallyRemovedPhoto by remember { mutableStateOf(false) }
+  var pendingPhotoUri by remember { mutableStateOf<android.net.Uri?>(null) }
+  var showOwnPhoto by remember { mutableStateOf(false) }
 
   LaunchedEffect(me.photoUrl) {
     if (me.photoUrl.isNotBlank() && !photoDeleting) locallyRemovedPhoto = false
@@ -61,14 +63,7 @@ fun SettingsScreen(
   val shownPhoto = if (locallyRemovedPhoto) "" else me.photoUrl
 
   val photo = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-    uri?.let {
-      viewModel.uploadProfilePhoto(it) { result ->
-        if (result.isSuccess) {
-          locallyRemovedPhoto = false
-          photoDeleteFailed = false
-        }
-      }
-    }
+    if (uri != null) pendingPhotoUri = uri
   }
 
   fun removePhoto() {
@@ -116,7 +111,7 @@ fun SettingsScreen(
                 shownPhoto,
                 me.displayName,
                 66.dp,
-                onClick = { if (!photoDeleting) photo.launch("image/*") }
+                onClick = { if (!photoDeleting) showOwnPhoto = true }
               )
             }
             Spacer(Modifier.width(15.dp))
@@ -186,6 +181,31 @@ fun SettingsScreen(
 
         Spacer(Modifier.height(8.dp))
       }
+    }
+
+    if (showOwnPhoto) {
+      ProfilePhotoViewer(
+        photoUrl = shownPhoto,
+        displayName = me.displayName.ifBlank { "Your profile" },
+        onDismiss = { showOwnPhoto = false }
+      )
+    }
+
+    pendingPhotoUri?.let { source ->
+      ProfilePhotoCropDialog(
+        sourceUri = source,
+        onDismiss = { pendingPhotoUri = null },
+        onCropped = { cropped ->
+          pendingPhotoUri = null
+          viewModel.uploadProfilePhoto(cropped) { result ->
+            cropped.path?.let { path -> runCatching { java.io.File(path).delete() } }
+            if (result.isSuccess) {
+              locallyRemovedPhoto = false
+              photoDeleteFailed = false
+            }
+          }
+        }
+      )
     }
 
     if (dialog.isNotBlank()) {
