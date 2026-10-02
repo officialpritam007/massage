@@ -32,7 +32,8 @@ class ChatRepository(
   private val listeners = mutableListOf<ListenerRegistration>()
   private val messageListeners = mutableMapOf<String, ListenerRegistration>()
   private val presenceListeners = mutableMapOf<String, ListenerRegistration>()
-  private val limits = mutableMapOf<String, Long>()
+  private val historyCursors = mutableMapOf<String, DocumentSnapshot>()
+  private val historyPagingStarted = mutableSetOf<String>()
   private val deletedBefore = mutableMapOf<String, Long>()
   private val failed = mutableSetOf<String>()
   private val receipts = mutableSetOf<String>()
@@ -329,6 +330,10 @@ class ChatRepository(
     messageListeners.clear()
     presenceListeners.values.forEach { it.remove() }
     presenceListeners.clear()
+    historyCursors.clear()
+    historyPagingStarted.clear()
+    _historyHasOlder.value = emptyMap()
+    _historyLoading.value = emptyMap()
     heartbeat?.cancel()
     outboxJob?.cancel()
   }
@@ -541,8 +546,9 @@ class ChatRepository(
   }
 
   fun observeConversation(cid: String) {
-    // Keep at most one heavy message/typing realtime stream active. Conversation summaries
-    // remain realtime through the lightweight chat-list listener.
+    // Keep a fixed recent-message realtime window. Older pages are loaded with one-shot
+    // queries and merged into the same state, so loading history never tears down/restarts
+    // the listener and the visible conversation does not flicker or reload.
     messageListeners.keys.filter { it != cid }.toList().forEach { key ->
       messageListeners.remove(key)?.remove()
     }
@@ -551,10 +557,11 @@ class ChatRepository(
     }
     observePresence(cid)
     if (messageListeners.containsKey(cid)) return
-    val limit = limits.getOrPut(cid) { 60 }
+
+    val recentLimit = 60L
     messageListeners[cid] = db.collection("conversations/$cid/messages")
       .orderBy("createdAt", Query.Direction.DESCENDING)
-      .limit(limit + 1)
+      .limit(recentLimit + 1)
       .addSnapshotListener { snapshot, error ->
         if (error != null) {
           _historyLoading.update { it + (cid to false) }
@@ -562,36 +569,59 @@ class ChatRepository(
           return@addSnapshotListener
         }
         if (snapshot != null) guardSnapshot("Messages") {
-          val pageDocuments = snapshot.documents.take(limit.toInt())
-          val extraDocument = snapshot.documents.getOrNull(limit.toInt())
+          if (_error.value?.contains("permission denied", ignoreCase = true) == true) {
+            _error.value = null
+          }
+
+          val pageDocuments = snapshot.documents.take(recentLimit.toInt())
+          val extraDocument = snapshot.documents.getOrNull(recentLimit.toInt())
+          if (cid !in historyPagingStarted) {
+            pageDocuments.lastOrNull()?.let { historyCursors[cid] = it }
+          }
+
           val cutoff = deletedBefore[cid] ?: 0L
           val extraCreatedAt = extraDocument?.safeLong("createdAt") ?: 0L
-          // A raw Firestore document older than the account's delete cutoff is not
-          // visible history. Treating it as "has more" leaves a permanent pagination
-          // affordance even though every older document is hidden for this user.
-          val hasOlder = extraDocument != null &&
-            (cutoff <= 0L || extraCreatedAt > cutoff)
-          _historyHasOlder.update { it + (cid to hasOlder) }
+          if (cid !in historyPagingStarted) {
+            _historyHasOlder.update {
+              it + (cid to (
+                extraDocument != null &&
+                  (cutoff <= 0L || extraCreatedAt > cutoff)
+              ))
+            }
+          }
           _historyLoading.update { it + (cid to false) }
-          val parsed = pageDocuments
+
+          val recent = pageDocuments
             .mapNotNull { doc -> runCatching { toMessage(cid, doc) }.getOrNull() }
+            .filterNot { message -> (cid + ":" + message.id) in deleteTombstones }
             .sortedBy { it.createdAt }
 
-          val visibleIds = parsed.asSequence().map { message -> message.id }.toSet()
-          val tombstonePrefix = cid + ":"
-          deleteTombstones.removeAll { key ->
-            key.startsWith(tombstonePrefix) &&
-              key.removePrefix(tombstonePrefix) !in visibleIds
+          val recentIds = recent.asSequence().map { it.id }.toSet()
+          val oldestRecentTime = recent.firstOrNull()?.createdAt ?: Long.MAX_VALUE
+          val existing = _messages.value[cid].orEmpty()
+
+          // Preserve already-loaded older pages when the fixed recent window shifts because
+          // a new realtime message arrived. This prevents old rows disappearing/reappearing.
+          val carriedOlder = existing.filter { message ->
+            message.status != MessageDeliveryStatus.SENDING &&
+              message.status != MessageDeliveryStatus.FAILED &&
+              message.id !in recentIds &&
+              message.createdAt <= oldestRecentTime &&
+              (cid + ":" + message.id) !in deleteTombstones
           }
 
-          val list = parsed.filterNot { message ->
-            (cid + ":" + message.id) in deleteTombstones
+          val pending = existing.filter {
+            it.status == MessageDeliveryStatus.SENDING ||
+              it.status == MessageDeliveryStatus.FAILED
           }
-          val pending = _messages.value[cid].orEmpty().filter {
-            it.status == MessageDeliveryStatus.SENDING || it.status == MessageDeliveryStatus.FAILED
-          }.filter { p -> list.none { saved -> saved.id == p.id } }
-          _messages.update { it + (cid to (list + pending).sortedBy { m -> m.createdAt }) }
-          list.filter { it.senderId != uid && it.status == MessageDeliveryStatus.SENT }
+
+          val merged = (carriedOlder + recent + pending)
+            .associateBy { it.id }
+            .values
+            .sortedBy { it.createdAt }
+
+          _messages.update { it + (cid to merged) }
+          recent.filter { it.senderId != uid && it.status == MessageDeliveryStatus.SENT }
             .forEach { receipt(cid, it.id, "DELIVERED") }
         }
       }
@@ -600,10 +630,54 @@ class ChatRepository(
   fun loadOlder(cid: String) {
     if (_historyLoading.value[cid] == true) return
     if (_historyHasOlder.value[cid] == false) return
+    val cursor = historyCursors[cid] ?: run {
+      _historyHasOlder.update { it + (cid to false) }
+      return
+    }
+
     _historyLoading.update { it + (cid to true) }
-    limits[cid] = (limits[cid] ?: 60) + 60
-    messageListeners.remove(cid)?.remove()
-    observeConversation(cid)
+    historyPagingStarted += cid
+
+    scope.launch {
+      try {
+        val pageSize = 60L
+        val snapshot = db.collection("conversations/$cid/messages")
+          .orderBy("createdAt", Query.Direction.DESCENDING)
+          .startAfter(cursor)
+          .limit(pageSize + 1)
+          .get()
+          .await()
+
+        val pageDocuments = snapshot.documents.take(pageSize.toInt())
+        val extraDocument = snapshot.documents.getOrNull(pageSize.toInt())
+        pageDocuments.lastOrNull()?.let { historyCursors[cid] = it }
+
+        val cutoff = deletedBefore[cid] ?: 0L
+        val extraCreatedAt = extraDocument?.safeLong("createdAt") ?: 0L
+        val hasOlder = extraDocument != null &&
+          (cutoff <= 0L || extraCreatedAt > cutoff)
+        _historyHasOlder.update { it + (cid to hasOlder) }
+
+        val older = pageDocuments
+          .mapNotNull { doc -> runCatching { toMessage(cid, doc) }.getOrNull() }
+          .filterNot { message -> (cid + ":" + message.id) in deleteTombstones }
+
+        val merged = (_messages.value[cid].orEmpty() + older)
+          .associateBy { it.id }
+          .values
+          .sortedBy { it.createdAt }
+
+        _messages.update { it + (cid to merged) }
+        older.filter { it.senderId != uid && it.status == MessageDeliveryStatus.SENT }
+          .forEach { receipt(cid, it.id, "DELIVERED") }
+      } catch (t: Throwable) {
+        if (t !is CancellationException) {
+          _error.value = friendlyError(t)
+        }
+      } finally {
+        _historyLoading.update { it + (cid to false) }
+      }
+    }
   }
 
   private fun toMessage(cid: String, snapshot: DocumentSnapshot): Message? {
