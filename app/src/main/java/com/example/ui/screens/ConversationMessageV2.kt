@@ -285,75 +285,65 @@ fun MessageBubbleV2(
                         else -> Unit
                     }
 
-                    val showText = message.type == MessageType.TEXT || (caption.isNotBlank() && message.type != MessageType.VOICE)
-                    if (showText) {
-                        Text(
-                            if (message.type == MessageType.TEXT) message.text else caption,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = contentColor,
-                            maxLines = if (expanded) Int.MAX_VALUE else 6,
-                            overflow = if (expanded) TextOverflow.Clip else TextOverflow.Ellipsis,
-                            onTextLayout = { layout ->
-                                if (!expanded) collapsedOverflow = layout.hasVisualOverflow
-                            }
-                        )
-                        if (collapsedOverflow || expanded) {
-                            Text(
-                                if (expanded) "Read less" else "Read more",
-                                color = if (isMe) Color.White.copy(alpha = .92f) else config.accentColor,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier
-                                    .clickable { expanded = !expanded }
-                                    .padding(horizontal = 2.dp, vertical = 6.dp)
-                            )
-                        }
-                    }
+                    val showText = message.type == MessageType.TEXT ||
+                        (caption.isNotBlank() && message.type != MessageType.VOICE)
+                    val displayText = if (message.type == MessageType.TEXT) message.text else caption
+                    val inlineMeta = message.type == MessageType.TEXT &&
+                        message.replyToText == null &&
+                        !displayText.contains("\n") &&
+                        displayText.length <= 24 &&
+                        !expanded
 
-                    Row(
-                        Modifier.align(Alignment.End),
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (message.isStarred) {
-                            Text("★", fontSize = 9.sp, color = metaColor)
-                        }
-                        if (message.isEdited) {
+                    if (showText && inlineMeta) {
+                        Row(
+                            verticalAlignment = Alignment.Bottom,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
                             Text(
-                                "edited",
-                                fontSize = 9.sp,
-                                color = metaColor.copy(alpha = .86f)
+                                displayText,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = contentColor,
+                                maxLines = 1
+                            )
+                            MessageMetaV2(
+                                message = message,
+                                isMe = isMe,
+                                metaColor = metaColor,
+                                reduced = reduced
                             )
                         }
-                        Text(
-                            SimpleDateFormat("h:mm", Locale.getDefault()).format(Date(message.createdAt)),
-                            fontSize = 9.sp,
-                            color = metaColor
-                        )
-                        if (isMe) {
-                            AnimatedContent(
-                                targetState = message.status,
-                                transitionSpec = {
-                                    if (reduced) fadeIn(tween(0)) togetherWith fadeOut(tween(0))
-                                    else (fadeIn(tween(150)) + scaleIn(initialScale = .70f, animationSpec = tween(170))) togetherWith
-                                        (fadeOut(tween(110)) + scaleOut(targetScale = 1.18f, animationSpec = tween(130)))
-                                },
-                                label = "delivery_status"
-                            ) { status ->
-                                val icon = when (status) {
-                                    MessageDeliveryStatus.SENDING -> Icons.Default.Schedule
-                                    MessageDeliveryStatus.FAILED -> Icons.Default.ErrorOutline
-                                    MessageDeliveryStatus.SENT -> Icons.Default.Done
-                                    else -> Icons.Default.DoneAll
+                    } else {
+                        if (showText) {
+                            Text(
+                                displayText,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = contentColor,
+                                maxLines = if (expanded) Int.MAX_VALUE else 6,
+                                overflow = if (expanded) TextOverflow.Clip else TextOverflow.Ellipsis,
+                                onTextLayout = { layout ->
+                                    if (!expanded) collapsedOverflow = layout.hasVisualOverflow
                                 }
-                                Icon(
-                                    icon,
-                                    status.name,
-                                    Modifier.size(12.dp),
-                                    tint = if (status == MessageDeliveryStatus.READ) Color(0xFF73E4FF) else metaColor
+                            )
+                            if (collapsedOverflow || expanded) {
+                                Text(
+                                    if (expanded) "Read less" else "Read more",
+                                    color = if (isMe) Color.White.copy(alpha = .92f) else config.accentColor,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier
+                                        .clickable { expanded = !expanded }
+                                        .padding(horizontal = 2.dp, vertical = 6.dp)
                                 )
                             }
                         }
+
+                        MessageMetaV2(
+                            message = message,
+                            isMe = isMe,
+                            metaColor = metaColor,
+                            reduced = reduced,
+                            modifier = Modifier.align(Alignment.End)
+                        )
                     }
                     if (message.status == MessageDeliveryStatus.FAILED) {
                         Text(
@@ -382,4 +372,70 @@ fun MessageBubbleV2(
             }
         }
     }
+
+
+@Composable
+private fun MessageMetaV2(
+    message: Message,
+    isMe: Boolean,
+    metaColor: Color,
+    reduced: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (message.isStarred) {
+            Text("★", fontSize = 9.sp, color = metaColor)
+        }
+        if (message.isEdited) {
+            Text(
+                "edited",
+                fontSize = 9.sp,
+                color = metaColor.copy(alpha = .86f)
+            )
+        }
+        Text(
+            SimpleDateFormat("h:mm", Locale.getDefault()).format(Date(message.createdAt)),
+            fontSize = 9.sp,
+            color = metaColor
+        )
+        if (isMe) {
+            AnimatedContent(
+                targetState = message.status,
+                transitionSpec = {
+                    if (reduced) fadeIn(tween(0)) togetherWith fadeOut(tween(0))
+                    else (fadeIn(tween(150)) + scaleIn(
+                        initialScale = .70f,
+                        animationSpec = tween(170)
+                    )) togetherWith
+                        (fadeOut(tween(110)) + scaleOut(
+                            targetScale = 1.18f,
+                            animationSpec = tween(130)
+                        ))
+                },
+                label = "delivery_status"
+            ) { status ->
+                val icon = when (status) {
+                    MessageDeliveryStatus.SENDING -> Icons.Default.Schedule
+                    MessageDeliveryStatus.FAILED -> Icons.Default.ErrorOutline
+                    MessageDeliveryStatus.SENT -> Icons.Default.Done
+                    else -> Icons.Default.DoneAll
+                }
+                Icon(
+                    icon,
+                    status.name,
+                    Modifier.size(12.dp),
+                    tint = if (status == MessageDeliveryStatus.READ) {
+                        Color(0xFF73E4FF)
+                    } else {
+                        metaColor
+                    }
+                )
+            }
+        }
+    }
+}
 }
