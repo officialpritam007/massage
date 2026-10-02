@@ -178,14 +178,16 @@ fun MessageBubbleV2(
     )
     val shape = if (isMe) RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp)
     else RoundedCornerShape(22.dp, 22.dp, 22.dp, 6.dp)
+    // One immutable frosted-glass token for outgoing messages; delivery state never changes the material.
     val bg = if (isMe) {
-        config.accentColor.copy(alpha = if (config.isDark) .44f else .66f)
+        if (config.isDark) Color.White.copy(alpha = .115f)
+        else Color.White.copy(alpha = .42f)
     } else {
         if (config.isDark) Color(0xFFB8D9FF).copy(alpha = .075f)
         else Color.White.copy(alpha = .56f)
     }
-    val contentColor = if (isMe) Color.White else MaterialTheme.colorScheme.onSurface
-    val metaColor = if (isMe) Color.White.copy(alpha = .76f) else MaterialTheme.colorScheme.onSurfaceVariant
+    val contentColor = MaterialTheme.colorScheme.onSurface
+    val metaColor = MaterialTheme.colorScheme.onSurfaceVariant
     val genericLabels = setOf("Photo", "Video", "Voice message", "Document")
     val caption = message.text.trim().takeUnless { it in genericLabels }.orEmpty()
     val borderColor = when {
@@ -199,7 +201,7 @@ fun MessageBubbleV2(
         DustDeleteContainerV2(active = deleting, reduced = reduced) {
             Column(
             Modifier
-                .widthIn(max = 330.dp)
+                .widthIn(max = 320.dp)
                 .offset { IntOffset(offset.roundToInt(), 0) }
                 .graphicsLayer {
                     val pulse = 1f + highlightAmount * .022f
