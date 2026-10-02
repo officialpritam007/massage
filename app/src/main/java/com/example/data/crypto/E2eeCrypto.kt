@@ -13,6 +13,7 @@ import java.security.MessageDigest
 import java.security.PrivateKey
 import java.security.PublicKey
 import java.security.SecureRandom
+import java.security.Signature
 import java.security.spec.ECGenParameterSpec
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
@@ -109,18 +110,48 @@ object E2eeCrypto {
       "$conversationId:$messageId:recipient"
     )
 
+    val ephemeralEncoded = b64(ephemeral.public.encoded)
+    val ciphertextEncoded = b64(ciphertext)
+    val contentIvEncoded = b64(contentIv)
+    val senderWrappedEncoded = b64(senderWrap.first)
+    val senderWrapIvEncoded = b64(senderWrap.second)
+    val recipientWrappedEncoded = b64(recipientWrap.first)
+    val recipientWrapIvEncoded = b64(recipientWrap.second)
+    val senderPublicEncoded = b64(sender.publicKey.encoded)
+    val signatureEncoded = b64(
+      sign(
+        sender.privateKey,
+        signatureBytes(
+          conversationId = conversationId,
+          messageId = messageId,
+          ephemeralKey = ephemeralEncoded,
+          ciphertext = ciphertextEncoded,
+          contentIv = contentIvEncoded,
+          senderWrappedKey = senderWrappedEncoded,
+          senderWrapIv = senderWrapIvEncoded,
+          recipientWrappedKey = recipientWrappedEncoded,
+          recipientWrapIv = recipientWrapIvEncoded,
+          senderKeyId = sender.keyId,
+          recipientKeyId = recipientKeyId,
+          fileIv = ""
+        )
+      )
+    )
+
     return EncryptedPayload(
       mapOf(
         "e2eeVersion" to VERSION,
-        "e2eeEphemeralKey" to b64(ephemeral.public.encoded),
-        "e2eeCiphertext" to b64(ciphertext),
-        "e2eeContentIv" to b64(contentIv),
-        "e2eeSenderWrappedKey" to b64(senderWrap.first),
-        "e2eeSenderWrapIv" to b64(senderWrap.second),
-        "e2eeRecipientWrappedKey" to b64(recipientWrap.first),
-        "e2eeRecipientWrapIv" to b64(recipientWrap.second),
+        "e2eeEphemeralKey" to ephemeralEncoded,
+        "e2eeCiphertext" to ciphertextEncoded,
+        "e2eeContentIv" to contentIvEncoded,
+        "e2eeSenderWrappedKey" to senderWrappedEncoded,
+        "e2eeSenderWrapIv" to senderWrapIvEncoded,
+        "e2eeRecipientWrappedKey" to recipientWrappedEncoded,
+        "e2eeRecipientWrapIv" to recipientWrapIvEncoded,
         "e2eeSenderKeyId" to sender.keyId,
-        "e2eeRecipientKeyId" to recipientKeyId
+        "e2eeRecipientKeyId" to recipientKeyId,
+        "e2eeSenderPublicKey" to senderPublicEncoded,
+        "e2eeSignature" to signatureEncoded
       )
     )
   }
@@ -193,16 +224,45 @@ object E2eeCrypto {
       "$conversationId:$messageId:media:recipient"
     )
 
+    val ephemeralEncoded = b64(ephemeral.public.encoded)
+    val senderWrappedEncoded = b64(senderWrap.first)
+    val senderWrapIvEncoded = b64(senderWrap.second)
+    val recipientWrappedEncoded = b64(recipientWrap.first)
+    val recipientWrapIvEncoded = b64(recipientWrap.second)
+    val fileIvEncoded = b64(secret.fileIv)
+    val senderPublicEncoded = b64(sender.publicKey.encoded)
+    val signatureEncoded = b64(
+      sign(
+        sender.privateKey,
+        signatureBytes(
+          conversationId = conversationId,
+          messageId = messageId,
+          ephemeralKey = ephemeralEncoded,
+          ciphertext = "",
+          contentIv = "",
+          senderWrappedKey = senderWrappedEncoded,
+          senderWrapIv = senderWrapIvEncoded,
+          recipientWrappedKey = recipientWrappedEncoded,
+          recipientWrapIv = recipientWrapIvEncoded,
+          senderKeyId = sender.keyId,
+          recipientKeyId = recipientKeyId,
+          fileIv = fileIvEncoded
+        )
+      )
+    )
+
     return mapOf(
       "e2eeVersion" to VERSION,
-      "e2eeEphemeralKey" to b64(ephemeral.public.encoded),
-      "e2eeSenderWrappedKey" to b64(senderWrap.first),
-      "e2eeSenderWrapIv" to b64(senderWrap.second),
-      "e2eeRecipientWrappedKey" to b64(recipientWrap.first),
-      "e2eeRecipientWrapIv" to b64(recipientWrap.second),
+      "e2eeEphemeralKey" to ephemeralEncoded,
+      "e2eeSenderWrappedKey" to senderWrappedEncoded,
+      "e2eeSenderWrapIv" to senderWrapIvEncoded,
+      "e2eeRecipientWrappedKey" to recipientWrappedEncoded,
+      "e2eeRecipientWrapIv" to recipientWrapIvEncoded,
       "e2eeSenderKeyId" to sender.keyId,
       "e2eeRecipientKeyId" to recipientKeyId,
-      "e2eeFileIv" to b64(secret.fileIv)
+      "e2eeFileIv" to fileIvEncoded,
+      "e2eeSenderPublicKey" to senderPublicEncoded,
+      "e2eeSignature" to signatureEncoded
     )
   }
 
@@ -217,6 +277,12 @@ object E2eeCrypto {
     if ((fields["e2eeVersion"] as? Number)?.toInt() != VERSION) return null
     return runCatching {
       val identity = loadOrCreateIdentity(context, uid)
+      verifySignedPayload(
+        conversationId = conversationId,
+        messageId = messageId,
+        fields = fields,
+        fileIv = fields["e2eeFileIv"] as String
+      )
       val ephemeral = decodePublicKey(fields["e2eeEphemeralKey"] as String)
       val senderCopy = senderId == uid
       val wrappedKey = unb64(
@@ -261,6 +327,12 @@ object E2eeCrypto {
     if ((fields["e2eeVersion"] as? Number)?.toInt() != VERSION) return null
     return runCatching {
       val identity = loadOrCreateIdentity(context, uid)
+      verifySignedPayload(
+        conversationId = conversationId,
+        messageId = messageId,
+        fields = fields,
+        fileIv = ""
+      )
       val ephemeral = decodePublicKey(fields["e2eeEphemeralKey"] as String)
       val senderCopy = senderId == uid
       val wrappedKey = unb64(
@@ -408,6 +480,77 @@ object E2eeCrypto {
       aadFromInfo(info)
     ) to iv
   }
+
+  private fun sign(privateKey: PrivateKey, bytes: ByteArray): ByteArray {
+    val signature = Signature.getInstance("SHA256withECDSA")
+    signature.initSign(privateKey, random)
+    signature.update(bytes)
+    return signature.sign()
+  }
+
+  private fun verify(publicKey: PublicKey, bytes: ByteArray, signatureBytes: ByteArray): Boolean {
+    val signature = Signature.getInstance("SHA256withECDSA")
+    signature.initVerify(publicKey)
+    signature.update(bytes)
+    return signature.verify(signatureBytes)
+  }
+
+  private fun verifySignedPayload(
+    conversationId: String,
+    messageId: String,
+    fields: Map<String, Any?>,
+    fileIv: String
+  ) {
+    val senderPublic = decodePublicKey(fields["e2eeSenderPublicKey"] as String)
+    val senderKeyId = fields["e2eeSenderKeyId"] as String
+    require(keyId(senderPublic.encoded) == senderKeyId) { "Sender key fingerprint mismatch" }
+    val bytes = signatureBytes(
+      conversationId = conversationId,
+      messageId = messageId,
+      ephemeralKey = fields["e2eeEphemeralKey"] as String,
+      ciphertext = fields["e2eeCiphertext"] as? String ?: "",
+      contentIv = fields["e2eeContentIv"] as? String ?: "",
+      senderWrappedKey = fields["e2eeSenderWrappedKey"] as String,
+      senderWrapIv = fields["e2eeSenderWrapIv"] as String,
+      recipientWrappedKey = fields["e2eeRecipientWrappedKey"] as String,
+      recipientWrapIv = fields["e2eeRecipientWrapIv"] as String,
+      senderKeyId = senderKeyId,
+      recipientKeyId = fields["e2eeRecipientKeyId"] as String,
+      fileIv = fileIv
+    )
+    require(
+      verify(senderPublic, bytes, unb64(fields["e2eeSignature"] as String))
+    ) { "Encrypted payload signature invalid" }
+  }
+
+  private fun signatureBytes(
+    conversationId: String,
+    messageId: String,
+    ephemeralKey: String,
+    ciphertext: String,
+    contentIv: String,
+    senderWrappedKey: String,
+    senderWrapIv: String,
+    recipientWrappedKey: String,
+    recipientWrapIv: String,
+    senderKeyId: String,
+    recipientKeyId: String,
+    fileIv: String
+  ): ByteArray = listOf(
+    "liquid-e2ee-v1",
+    conversationId,
+    messageId,
+    ephemeralKey,
+    ciphertext,
+    contentIv,
+    senderWrappedKey,
+    senderWrapIv,
+    recipientWrappedKey,
+    recipientWrapIv,
+    senderKeyId,
+    recipientKeyId,
+    fileIv
+  ).joinToString("|").toByteArray(Charsets.UTF_8)
 
   private fun ecdh(privateKey: PrivateKey, publicKey: PublicKey): ByteArray {
     val agreement = KeyAgreement.getInstance("ECDH")
