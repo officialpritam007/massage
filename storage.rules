@@ -9,9 +9,9 @@ service firebase.storage {
       return signedIn() && request.auth.uid == uid;
     }
 
-    // Liquid Chat media is stored in Appwrite and is exposed only through short-lived,
+    // Liquid Chat media is stored in Cloudinary and is exposed only through short-lived,
     // server-authorized URLs. Firebase Storage remains locked down to prevent legacy paths
-    // from bypassing Appwrite ownership, participant validation or deletion revocation.
+    // from bypassing Cloudinary ownership, participant validation or deletion revocation.
     match /{allPaths=**} {
       allow read, write: if false;
     }
