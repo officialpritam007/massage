@@ -123,7 +123,7 @@ service cloud.firestore {
 
       allow create: if owner(uid)
         && request.resource.data.keys().hasOnly([
-          'uid', 'displayName', 'username', 'bio', 'photoUrl', 'createdAt',
+          'uid', 'displayName', 'username', 'bio', 'createdAt',
           'e2eePublicKey', 'e2eeKeyId',
           'isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'
         ])
@@ -137,7 +137,7 @@ service cloud.firestore {
 
       allow update: if owner(uid)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'displayName', 'username', 'bio', 'photoUrl', 'e2eePublicKey', 'e2eeKeyId',
+          'displayName', 'username', 'bio', 'e2eePublicKey', 'e2eeKeyId',
           'isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'
         ])
         && (
@@ -211,7 +211,98 @@ service cloud.firestore {
             !(request.resource.data.type in ['IMAGE', 'VIDEO', 'AUDIO', 'VOICE', 'FILE'])
             || (
               request.resource.data.mediaUrl is string
-              && request.resource.data.mediaUrl.size() > 0
+              && request.resource.data.mediaUrl.matches('^cloudinary:[a-z0-9]{32}
+              && request.resource.data.text == ''
+              && request.resource.data.keys().hasAny(['mediaE2ee'])
+              && validMediaE2eePayload(request.resource.data.mediaE2ee)
+              && (
+                !request.resource.data.keys().hasAny(['e2ee'])
+                || validE2eePayload(request.resource.data.e2ee)
+              )
+            )
+          )
+          && request.resource.data.status == 'SENT'
+          && request.resource.data.createdAt is int
+          && request.resource.data.createdAt <= request.time.toMillis() + 60000
+          && request.resource.data.createdAt >= request.time.toMillis() - 300000
+          && request.resource.data.deletedForEveryone == false
+          && request.resource.data.isDeleted == false
+          && request.resource.data.isEdited == false
+          && request.resource.data.isPinned == false
+          && request.resource.data.hiddenFor is list
+          && request.resource.data.hiddenFor.size() == 0
+          && request.resource.data.reactions is list
+          && request.resource.data.reactions.size() == 0;
+
+        allow update: if participant(cid) && (
+          (
+            resource.data.senderId == request.auth.uid
+            && (
+              (
+                !resource.data.keys().hasAny(['e2ee'])
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'isEdited'])
+                && request.resource.data.text is string
+                && request.resource.data.text.size() > 0
+                && request.resource.data.text.size() <= 8000
+              )
+              ||
+              (
+                resource.data.keys().hasAny(['e2ee'])
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'e2ee', 'isEdited'])
+                && request.resource.data.text == ''
+                && validE2eePayload(request.resource.data.e2ee)
+              )
+            )
+            && request.resource.data.isEdited == true
+          )
+          ||
+          (
+            resource.data.senderId != request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+            && request.resource.data.status in ['DELIVERED', 'READ']
+          )
+          ||
+          (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned'])
+            && request.resource.data.isPinned is bool
+          )
+          ||
+          (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hiddenFor'])
+            && request.resource.data.hiddenFor is list
+            && resource.data.hiddenFor is list
+            && !(request.auth.uid in resource.data.hiddenFor)
+            && request.auth.uid in request.resource.data.hiddenFor
+            && request.resource.data.hiddenFor.hasAll(resource.data.hiddenFor)
+            && request.resource.data.hiddenFor.size() == resource.data.hiddenFor.size() + 1
+          )
+        );
+
+        // Permanent deletion is backend-authoritative so tombstones, push cleanup
+        // and Cloudinary revocation happen atomically with the logical delete.
+        allow delete: if false;
+      }
+
+      match /typing/{uid} {
+        allow read: if participant(cid);
+        allow create, update: if owner(uid)
+          && participant(cid)
+          && request.resource.data.keys().hasOnly(['until'])
+          && request.resource.data.until is int
+          && request.resource.data.until >= 0
+          && request.resource.data.until <= request.time.toMillis() + 15000;
+        allow delete: if owner(uid) && participant(cid);
+      }
+    }
+
+    // Admin-SDK / authenticated-server-only collections: media metadata, rate limits, sessions,
+    // tombstones, usernames and reports. Android clients must never read or mutate these directly.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+)
               && request.resource.data.text == ''
               && request.resource.data.keys().hasAny(['mediaE2ee'])
               && validMediaE2eePayload(request.resource.data.mediaE2ee)
