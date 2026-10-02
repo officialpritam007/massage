@@ -51,7 +51,7 @@ class ChatRepository(
   private var outboxJob: Job? = null
   private var appearanceJob: Job? = null
   private var syncRecoveryJob: Job? = null
-  private var syncRecoveryAttempts = 0
+  private val syncRecoveryAttempts = mutableMapOf<String, Int>()
   private data class QueuedMediaUpload(
     val id: String = UUID.randomUUID().toString(),
     val conversationId: String,
@@ -145,9 +145,11 @@ class ChatRepository(
     _syncWarning.value = "$area: ${friendlyError(t, "could not be loaded")}"
   }
 
-  private fun markSyncHealthy() {
-    syncRecoveryAttempts = 0
-    _syncWarning.value = null
+  private fun markSyncHealthy(area: String) {
+    syncRecoveryAttempts.remove(area)
+    if (_syncWarning.value?.startsWith("$area:") == true) {
+      _syncWarning.value = null
+    }
   }
 
   private fun scheduleSyncRecovery(area: String, t: Throwable) {
@@ -155,20 +157,22 @@ class ChatRepository(
     val permissionLike = t is FirebaseFirestoreException &&
       (t.code == FirebaseFirestoreException.Code.PERMISSION_DENIED ||
         t.code == FirebaseFirestoreException.Code.UNAUTHENTICATED)
-    if (!permissionLike || syncRecoveryAttempts >= 2 || syncRecoveryJob?.isActive == true) return
+    val attempts = syncRecoveryAttempts[area] ?: 0
+    if (!permissionLike || attempts >= 2 || syncRecoveryJob?.isActive == true) return
 
     val account = uid
-    syncRecoveryAttempts += 1
+    val nextAttempt = attempts + 1
+    syncRecoveryAttempts[area] = nextAttempt
     syncRecoveryJob = scope.launch {
       runCatching { auth.currentUser?.getIdToken(true)?.await() }
-      delay(750L * syncRecoveryAttempts)
+      delay(750L * nextAttempt)
       if (uid == account && account.isNotBlank()) startSync()
     }
   }
 
   private inline fun guardSnapshot(area: String, block: () -> Unit) {
     runCatching(block)
-      .onSuccess { markSyncHealthy() }
+      .onSuccess { markSyncHealthy(area) }
       .onFailure { reportSnapshotFailure(area, it) }
   }
 
@@ -475,6 +479,7 @@ class ChatRepository(
     heartbeat?.cancel()
     outboxJob?.cancel()
     syncRecoveryJob?.cancel()
+    syncRecoveryJob = null
   }
 
   private fun startSync() {
