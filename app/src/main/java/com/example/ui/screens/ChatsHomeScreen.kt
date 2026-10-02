@@ -173,28 +173,47 @@ fun ChatsHomeScreen(
                             Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            GlassIconButton(
-                                Icons.Default.Settings,
-                                "Settings",
-                                onNavigateToSettings,
-                                size = 48.dp
+                            GlassAvatar(
+                                current.photoUrl,
+                                current.displayName.ifBlank { "You" },
+                                size = 46.dp,
+                                onClick = {
+                                    if (current.uid.isNotBlank()) onNavigateToProfile(current.uid)
+                                }
                             )
-                            Box(
-                                Modifier.weight(1f),
-                                contentAlignment = Alignment.Center
-                            ) {
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
                                 Text(
-                                    if (tab == "All") "Messages" else tab,
+                                    if (tab == "All") "Chats" else tab,
                                     style = MaterialTheme.typography.titleLarge,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onBackground
                                 )
+                                Text(
+                                    if (tab == "All") {
+                                        current.username.takeIf { it.isNotBlank() }?.let { "@$it" } ?: "Private messaging"
+                                    } else {
+                                        "Your ${tab.lowercase()} conversations"
+                                    },
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                             GlassIconButton(
+                                Icons.Default.Add,
+                                "New message",
+                                onNavigateToSearch,
+                                size = 42.dp,
+                                tint = glass.accentColor
+                            )
+                            Spacer(Modifier.width(7.dp))
+                            GlassIconButton(
                                 Icons.Default.MoreHoriz,
-                                "Messages menu",
+                                "Chats menu",
                                 { homeMenu = true },
-                                size = 48.dp
+                                size = 42.dp
                             )
                         }
 
@@ -218,7 +237,7 @@ fun ChatsHomeScreen(
                                 )
                                 Spacer(Modifier.width(11.dp))
                                 Text(
-                                    "Search",
+                                    "Search conversations",
                                     modifier = Modifier.weight(1f),
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
