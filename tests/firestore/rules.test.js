@@ -13,6 +13,7 @@ import {
   deleteDoc,
   getDoc,
   getDocs,
+  increment,
   query,
   runTransaction,
   setDoc,
@@ -243,6 +244,30 @@ test('participants can create valid E2EE text messages', async () => {
     doc(alice, 'conversations/newpair/messages/m1'),
     baseMessage()
   ));
+});
+
+test('atomic message send batch can update encrypted preview and unread count', async () => {
+  const alice = env.authenticatedContext('alice').firestore();
+  const cid = 'atomic-send';
+  await assertSucceeds(setDoc(doc(alice, `conversations/${cid}`), conversation));
+
+  const send = writeBatch(alice);
+  send.set(doc(alice, `conversations/${cid}/messages/m1`), baseMessage());
+  send.update(doc(alice, `conversations/${cid}`), {
+    lastMessageId: 'm1',
+    lastMessageSenderId: 'alice',
+    lastMessageText: 'Encrypted message',
+    lastMessageTime: Date.now(),
+    lastMessageRevision: Date.now(),
+    lastMessageType: 'TEXT',
+    lastMessageE2ee: e2ee,
+    'unreadCounts.bob': increment(1)
+  });
+  await assertSucceeds(send.commit());
+
+  const saved = await getDoc(doc(alice, `conversations/${cid}`));
+  strictEqual(saved.data().lastMessageId, 'm1');
+  strictEqual(saved.data().unreadCounts.bob, 1);
 });
 
 test('direct Cloudinary media URL is allowed and arbitrary URL is rejected', async () => {
