@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import com.example.ui.components.liquidRoundedShape
 import android.net.Uri
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.spring
@@ -51,7 +52,7 @@ fun AttachmentPreviewV3(
     ) {
         GlassCard(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(28.dp),
+            shape = liquidRoundedShape(28f),
             backgroundColor = glass.accentColor.copy(alpha = if (glass.isDark) .09f else .06f),
             elevation = 4.dp
         ) {
@@ -118,7 +119,7 @@ fun AttachmentPreviewV3(
                         placeholder = "Add a caption…",
                         singleLine = false,
                         maxLines = 4,
-                        shape = RoundedCornerShape(22.dp)
+                        shape = liquidRoundedShape(22f)
                     )
                 }
 
