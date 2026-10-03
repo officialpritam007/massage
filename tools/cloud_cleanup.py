@@ -107,6 +107,17 @@ class CloudinaryCleaner:
         if not response.ok or response.json().get("result") not in {"ok", "not found"}:
             raise CleanupBlocked("Cloudinary media deletion failed; cleanup can be retried.")
 
+    def account_resources(self, account):
+        from cleanup_inventory import _list_resources
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", account):
+            raise CleanupBlocked("The account upload namespace is invalid.")
+        prefix = f"liquid-chat/accounts/{account}/"
+        for deleted in _list_resources(self, "resources/search", {"expression": "status=deleted"}):
+            if deleted.get("public_id", "").startswith(prefix):
+                raise CleanupBlocked("Deleted owned media has a provider record; its backups require review.")
+        for kind in ("image", "video", "raw"):
+            yield from _list_resources(self, f"resources/{kind}/upload", {"prefix": prefix})
+
 
 def cleanup_request(db, auth, request, cleaner, approvals):
     from google.cloud.firestore_v1.base_query import FieldFilter
@@ -150,11 +161,31 @@ def cleanup_request(db, auth, request, cleaner, approvals):
             ref.update({"purging": True})
 
     approval = approvals.get(account, {})
+    automatic_inventory = False
+    if not isinstance(approval, dict) or approval.get("inventoryReviewed") is not True:
+        certificate = db.document("runtime/cleanupInventory").get().to_dict() or {}
+        if certificate.get("complete") is True and certificate.get("noExportsConfirmed") is True:
+            user = auth.get_user(account)
+            if user.user_metadata.creation_timestamp >= certificate["startedAt"]:
+                approval = {"inventoryReviewed": True, "urls": []}
+                automatic_inventory = True
     if not isinstance(approval, dict) or approval.get("inventoryReviewed") is not True:
         raise CleanupBlocked("An operator must review legacy/orphaned media and backups before all-data deletion can be confirmed.")
     receipts = [doc.to_dict() for doc in profile.collection("mediaUploads").stream()]
     assets = {}
     approved = set(approval.get("urls", []))
+    if automatic_inventory:
+        # Discover scoped orphan uploads too, including a process death between
+        # the provider's upload response and saving a private receipt.
+        prefix = f"liquid-chat/accounts/{account}/"
+        for resource in cleaner.account_resources(account):
+            identity = media_identity(resource["secure_url"], cleaner.cloud)
+            if not identity[1].startswith(prefix) or not re.fullmatch(r"[0-9a-f]{32}(\.[A-Za-z0-9]{1,12})?", identity[1][len(prefix):]):
+                raise CleanupBlocked("An upload is outside the verified account namespace.")
+            verified = cleaner.resource(identity)
+            if verified is None or verified.get("asset_id") != resource["asset_id"] or verified.get("backup") or verified.get("versions"):
+                raise CleanupBlocked("The owned upload inventory or its backups could not be verified.")
+            assets[identity] = resource["secure_url"]
     for receipt in receipts:
         identity = verify_upload_receipt(receipt, cleaner.secret, cleaner.cloud)
         prefix = f"liquid-chat/accounts/{account}/"
@@ -222,6 +253,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--check-only", action="store_true")
     parser.add_argument("--audit-only", action="store_true")
+    parser.add_argument("--initialize-inventory", action="store_true")
     args = parser.parse_args()
     import firebase_admin
     from firebase_admin import auth, credentials, firestore
@@ -236,6 +268,9 @@ def main():
     db = firestore.client()
     cleaner = CloudinaryCleaner(os.environ["CLOUDINARY_CLOUD_NAME"], os.environ["CLOUDINARY_API_KEY"], os.environ["CLOUDINARY_API_SECRET"], requests.Session())
     cleaner.check_access()
+    from pathlib import Path
+    from cleanup_inventory import load_policy, initialize_inventory, verify_database_backups
+    policy = load_policy(Path(__file__).with_name("cleanup-policy.json"))
     if args.check_only or args.audit_only:
         db.document("runtime/cleanup").get()
         print("Cleanup credentials validated; no accounts were deleted.")
@@ -243,10 +278,19 @@ def main():
             from cleanup_readiness import audit_readiness
             audit_readiness(db, auth, cleaner, firebase_admin.get_app().credential,
                             os.environ["FIREBASE_PROJECT_ID"], json.loads(os.environ.get("LEGACY_MEDIA_APPROVALS_JSON") or "{}"),
-                            os.environ.get("CLEANUP_AUTOMATION_ENABLED") == "true",
-                            os.environ.get("CLOUDINARY_UPLOAD_PRESET", "liquid_chat_unsigned"))
+                            policy.get("enabled") is True and os.environ.get("CLEANUP_AUTOMATION_ENABLED") != "false",
+                            policy["ownedUploadPreset"])
         return
-    db.document("runtime/cleanup").set({"enabled": os.environ.get("CLEANUP_AUTOMATION_ENABLED") == "true", "updatedAt": int(time.time() * 1000)})
+    from google.auth.transport.requests import AuthorizedSession
+    google_session = AuthorizedSession(firebase_admin.get_app().credential.get_credential().with_scopes(["https://www.googleapis.com/auth/cloud-platform"]))
+    if args.initialize_inventory:
+        initialize_inventory(db, auth, cleaner, google_session, policy)
+    verify_database_backups(google_session, policy["projectId"])
+    certificate = db.document("runtime/cleanupInventory").get().to_dict() or {}
+    enabled = policy.get("enabled") is True and os.environ.get("CLEANUP_AUTOMATION_ENABLED", "true") != "false" and certificate.get("complete") is True
+    db.document("runtime/cleanup").set({"enabled": enabled, "updatedAt": int(time.time() * 1000)})
+    if not enabled:
+        raise CleanupBlocked("Automatic deletion is waiting for the verified inventory cutover.")
     approvals = json.loads(os.environ.get("LEGACY_MEDIA_APPROVALS_JSON") or "{}")
     completed = blocked = waiting = 0
     for request in db.collection("accountDeletionRequests").where(filter=FieldFilter("status", "in", ["pending", "working", "failed", "revoking"])).limit(20).stream():
@@ -269,4 +313,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as error:
+        # Provider/SDK exceptions may contain private resource paths. Only our
+        # fixed, generic deployment errors are safe for public workflow logs.
+        reason = str(error) if type(error).__name__ == "CleanupBlocked" else "Cleanup configuration or provider access failed; retry after reviewing the deployment."
+        print("::error::" + reason)
+        raise SystemExit(1)

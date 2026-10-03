@@ -35,6 +35,10 @@ class Ref:
     def __init__(self, db, path):
         self.db, self.path = db, path
 
+    @property
+    def id(self):
+        return self.path.rsplit("/", 1)[-1]
+
     def get(self):
         return Snapshot(self)
 
@@ -54,6 +58,15 @@ class Ref:
 class Query:
     def __init__(self, db, path, condition=None):
         self.db, self.path, self.condition = db, path, condition
+
+    @property
+    def id(self):
+        return self.path.rsplit("/", 1)[-1]
+
+    def list_documents(self):
+        prefix = self.path + "/"
+        for account in sorted({path[len(prefix):].split("/")[0] for path in self.db.data if path.startswith(prefix)}):
+            yield self.db.document(prefix + account)
 
     def where(self, *, filter):
         return Query(self.db, self.path, filter)
@@ -105,6 +118,9 @@ class DB:
 
     def collection(self, path):
         return Query(self, path)
+
+    def collections(self):
+        return [self.collection(name) for name in {path.split("/")[0] for path in self.data}]
 
     def recursive_delete(self, ref):
         self.deleted.append(ref.path)
@@ -314,6 +330,101 @@ class CleanupTests(unittest.TestCase):
         db.data["accountDeletionRequests/alice"]["proofId"] = "guessable"
         with self.assertRaises(CleanupBlocked):
             self.run_cleanup(db, auth, cleaner)
+        self.assertEqual([], cleaner.deleted)
+        self.assertEqual([], db.deleted)
+        auth.delete_user.assert_not_called()
+
+    def test_clean_cutover_allows_new_accounts_without_manual_owner_approvals(self):
+        db, auth, cleaner = self.fixture()
+        db.data["runtime/cleanupInventory"] = {"complete": True, "noExportsConfirmed": True, "startedAt": 100}
+        auth.get_user.return_value.user_metadata.creation_timestamp = 200
+        cleaner.account_resources = lambda account: []
+        self.run_cleanup(db, auth, cleaner, {})
+        auth.delete_user.assert_called_once_with("alice")
+        self.assertNotIn("users/alice", db.data)
+
+    def test_certificate_cannot_approve_a_pre_cutover_account(self):
+        db, auth, cleaner = self.fixture()
+        db.data["runtime/cleanupInventory"] = {"complete": True, "noExportsConfirmed": True, "startedAt": 200}
+        auth.get_user.return_value.user_metadata.creation_timestamp = 100
+        with self.assertRaises(CleanupBlocked):
+            self.run_cleanup(db, auth, cleaner, {})
+        self.assertEqual([], cleaner.deleted)
+        auth.delete_user.assert_not_called()
+
+    def test_scoped_orphan_is_deleted_even_if_upload_receipt_was_not_saved(self):
+        db, auth, cleaner = self.fixture()
+        db.data.pop("users/alice/mediaUploads/asset-one")
+        db.data["runtime/cleanupInventory"] = {"complete": True, "noExportsConfirmed": True, "startedAt": 100}
+        auth.get_user.return_value.user_metadata.creation_timestamp = 200
+        cleaner.account_resources = lambda account: [{"asset_id": "asset-one", "secure_url": URL}]
+        self.run_cleanup(db, auth, cleaner, {})
+        self.assertEqual([("image", PUBLIC_ID, 123)], cleaner.deleted)
+        self.assertNotIn("users/alice", db.data)
+
+    def test_automatic_inventory_cannot_delete_another_accounts_orphan(self):
+        db, auth, cleaner = self.fixture()
+        db.data["runtime/cleanupInventory"] = {"complete": True, "noExportsConfirmed": True, "startedAt": 100}
+        auth.get_user.return_value.user_metadata.creation_timestamp = 200
+        cleaner.account_resources = lambda account: [{"asset_id": "asset-one", "secure_url": URL.replace("/alice/", "/bob/")}]
+        with self.assertRaises(CleanupBlocked):
+            self.run_cleanup(db, auth, cleaner, {})
+        self.assertEqual([], cleaner.deleted)
+        auth.delete_user.assert_not_called()
+
+    def test_reset_requires_real_owner_authorization_before_any_mutation(self):
+        from cleanup_inventory import initialize_inventory
+        db, auth, cleaner = self.fixture()
+        with self.assertRaises(CleanupBlocked):
+            initialize_inventory(db, auth, cleaner, Mock(), {"ownerAuthorizedExistingUserReset": False})
+        self.assertEqual([], db.deleted)
+        self.assertEqual([], cleaner.deleted)
+        auth.delete_user.assert_not_called()
+
+    def test_completed_cutover_is_idempotent_and_never_resets_new_users(self):
+        from cleanup_inventory import initialize_inventory
+        db, auth, cleaner = self.fixture()
+        db.data["runtime/cleanupInventory"] = {"complete": True, "migrationId": "one"}
+        initialize_inventory(db, auth, cleaner, Mock(), {"projectId": "liquid-chat-v2", "cloudName": CLOUD,
+                             "migrationId": "one", "ownerAuthorizedExistingUserReset": True, "ownerConfirmedNoExports": True})
+        self.assertIn("users/alice", db.data)
+        self.assertEqual([], db.deleted)
+        auth.delete_user.assert_not_called()
+
+    def test_authorized_reset_gates_every_account_before_erasing_and_preserves_config(self):
+        from cleanup_inventory import initialize_inventory
+        db, auth, cleaner = self.fixture()
+        db.data["runtime/custom"] = {"configuration": True}
+        auth.list_users.return_value.iterate_all.return_value = [types.SimpleNamespace(uid="alice"), types.SimpleNamespace(uid="bob")]
+        policy = {"projectId": "liquid-chat-v2", "cloudName": CLOUD, "migrationId": "one",
+                  "ownerAuthorizedExistingUserReset": True, "ownerConfirmedNoExports": True,
+                  "oldUploadPreset": "old", "ownedUploadPreset": "new"}
+        original_delete = cleaner.delete
+        def gated_delete(identity):
+            self.assertIn("accountDeletionRequests/alice", db.data)
+            self.assertIn("accountDeletionRequests/bob", db.data)
+            original_delete(identity)
+        cleaner.delete = gated_delete
+        with patch("cleanup_inventory.verify_database_backups"), patch("cleanup_inventory.set_preset"), \
+             patch("cleanup_inventory.app_resources", side_effect=[[{"asset_id": "asset-one", "secure_url": URL}], []]), \
+             patch("cleanup_inventory._list_resources", return_value=iter([])):
+            initialize_inventory(db, auth, cleaner, Mock(), policy)
+        self.assertEqual("revoking", db.data["accountDeletionRequests/alice"]["status"])
+        self.assertEqual("revoking", db.data["accountDeletionRequests/bob"]["status"])
+        self.assertIn("runtime/custom", db.data)
+        self.assertTrue(db.data["runtime/cleanupInventory"]["complete"])
+        self.assertFalse(any(path.startswith(("users/", "directory/", "conversations/", "usernames/", "reports/")) for path in db.data))
+        self.assertEqual({"alice", "bob"}, {call.args[0] for call in auth.delete_user.call_args_list})
+        self.assertNotIn("alice", str(db.data["runtime/cleanupInventory"]))
+
+    def test_provider_or_database_backups_prevent_authorized_reset(self):
+        from cleanup_inventory import initialize_inventory
+        db, auth, cleaner = self.fixture()
+        policy = {"projectId": "liquid-chat-v2", "cloudName": CLOUD, "migrationId": "one",
+                  "ownerAuthorizedExistingUserReset": True, "ownerConfirmedNoExports": True}
+        with patch("cleanup_inventory.verify_database_backups", side_effect=CleanupBlocked("Backups remain")):
+            with self.assertRaises(CleanupBlocked):
+                initialize_inventory(db, auth, cleaner, Mock(), policy)
         self.assertEqual([], cleaner.deleted)
         self.assertEqual([], db.deleted)
         auth.delete_user.assert_not_called()

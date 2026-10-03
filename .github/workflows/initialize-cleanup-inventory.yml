@@ -1,0 +1,64 @@
+name: Initialize Verified Cleanup Inventory
+
+on:
+  workflow_run:
+    workflows: ['Build Android APK']
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-account-cleanup
+  cancel-in-progress: false
+
+jobs:
+  initialize:
+    if: github.ref == 'refs/heads/main' && vars.ENABLE_CLOUD_ACCOUNT_CLEANUP != 'false' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FIREBASE_PROJECT_ID: liquid-chat-v2
+      CLOUDINARY_CLOUD_NAME: mthzgqhv
+      CLOUDINARY_UPLOAD_PRESET: liquid_chat_owned_v1
+      CLEANUP_AUTOMATION_ENABLED: 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify reset and deletion safeguards
+        run: python -m unittest discover -s tools/tests -v
+      - name: Prepare administrator credentials
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        shell: bash
+        run: |
+          for credential in FIREBASE_SERVICE_ACCOUNT_JSON CLOUDINARY_API_KEY CLOUDINARY_API_SECRET; do
+            test -n "${!credential}" || { echo "::error::Missing $credential"; exit 1; }
+          done
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/cleanup-account.json"
+          chmod 600 "$RUNNER_TEMP/cleanup-account.json"
+      - name: Install trusted worker dependencies
+        run: python -m pip install 'firebase-admin==7.1.0' 'requests==2.32.5'
+      - name: Perform the owner-authorized one-time inventory cutover
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/cleanup-account.json
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        run: python tools/cloud_cleanup.py --initialize-inventory
+      - name: Verify active cleanup and provider configuration
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/cleanup-account.json
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        run: python tools/cloud_cleanup.py --audit-only
+      - name: Remove credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/cleanup-account.json"

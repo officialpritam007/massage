@@ -1,4 +1,4 @@
-# Liquid Chat 4.2.2 changes
+# Liquid Chat 4.2.3 changes
 
 The video corrections in `VIDEO_FIXES_2026-10-03.md` are included in this branch. This version adds the latest requested preview/notification and permanent-deletion behavior. The earlier report's ordinary-logout key preservation is superseded: both logout and account deletion now require verified cloud erasure and destroy local identities.
 
@@ -27,3 +27,7 @@ See [PERMANENT_DELETION_SETUP.md](PERMANENT_DELETION_SETUP.md). The worker remai
 - Android suite adds preview privacy, decrypted text/media fallback and encrypted-edit cache invalidation tests.
 - GitHub Actions runs all three suites and builds a 4.2.2 / 422 debug APK. The final CI results are recorded in the PR.
 - Physical two-device notification/Google/password/deletion testing and real provider backup/inventory verification remain required. Already lost private keys and missing legacy media cannot be reconstructed.
+
+## 4.2.3 inventory cutover
+
+The owner confirmed there are no exports and authorized removing existing user data. The one-time trusted reset gates all old UIDs before deleting live Firebase account/conversation data, owned app uploads and Auth. It disables the old unsigned preset and activates `liquid_chat_owned_v1` after verification. A UID-free inventory certificate enables automatic review for accounts created after the cutover. Scoped provider inventory includes orphan uploads, while per-account namespaces, response signatures and backup checks still prevent foreign media deletion. The cutover is idempotent; rebuilding or rerunning a completed initialization never resets later accounts. Old UID gates remain for 70 minutes and are finalized by the worker. Android uninstall still has no reliable remote deletion callback.

@@ -22,6 +22,9 @@ def audit_readiness(db, auth, cleaner, credential, project, approvals, automatio
     from google.auth.transport.requests import AuthorizedSession
 
     report = {"readOnly": True, "automationConfigured": automation_enabled}
+    certificate = db.document("runtime/cleanupInventory").get().to_dict() or {}
+    clean_inventory = certificate.get("complete") is True and certificate.get("noExportsConfirmed") is True
+    report["inventoryCutoverVerified"] = clean_inventory
     runtime = db.document("runtime/cleanup").get().to_dict() or {}
     age = int(time.time() * 1000) - runtime.get("updatedAt", 0)
     report["runtime"] = {"enabled": runtime.get("enabled") is True, "heartbeatFresh": 0 <= age <= 3_600_000}
@@ -30,7 +33,7 @@ def audit_readiness(db, auth, cleaner, credential, project, approvals, automatio
     account_count = reviewed_count = 0
     for user in auth.list_users().iterate_all():
         account_count += 1
-        reviewed_count += user.uid in approved
+        reviewed_count += user.uid in approved or (clean_inventory and user.user_metadata.creation_timestamp >= certificate["startedAt"])
     report["accounts"] = {"authTotal": account_count, "inventoryReviewed": reviewed_count,
                           "inventoryUnreviewed": account_count - reviewed_count}
     for collection, label in (("users", "profiles"), ("accountDeletionRequests", "deletionRequests")):
@@ -79,6 +82,6 @@ def audit_readiness(db, auth, cleaner, credential, project, approvals, automatio
                              "requiredPermissionsMissing": len(set(permissions) - granted) if permission_response.ok else None}
     # Hand-managed exports and untracked old provider data cannot be inferred
     # from API settings. Their review remains an explicit operator prerequisite.
-    report["independentExportsReviewed"] = False
+    report["independentExportsReviewed"] = clean_inventory
     print("Cleanup readiness audit: " + json.dumps(report, sort_keys=True))
     print("Read-only audit finished; no accounts, media, settings or heartbeat were changed.")

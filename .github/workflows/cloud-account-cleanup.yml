@@ -8,6 +8,8 @@ on:
       - '.github/workflows/cloud-account-cleanup.yml'
       - 'tools/cloud_cleanup.py'
       - 'tools/cleanup_readiness.py'
+      - 'tools/cleanup_inventory.py'
+      - 'tools/cleanup-policy.json'
   workflow_dispatch:
     inputs:
       check_only:
@@ -26,14 +28,14 @@ concurrency:
 
 jobs:
   cleanup:
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || vars.ENABLE_CLOUD_ACCOUNT_CLEANUP == 'true')
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || vars.ENABLE_CLOUD_ACCOUNT_CLEANUP != 'false')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
       FIREBASE_PROJECT_ID: liquid-chat-v2
       CLOUDINARY_CLOUD_NAME: ${{ vars.CLOUDINARY_CLOUD_NAME || 'mthzgqhv' }}
-      CLOUDINARY_UPLOAD_PRESET: ${{ vars.CLOUDINARY_UPLOAD_PRESET || 'liquid_chat_unsigned' }}
-      CLEANUP_AUTOMATION_ENABLED: ${{ vars.ENABLE_CLOUD_ACCOUNT_CLEANUP }}
+      CLOUDINARY_UPLOAD_PRESET: liquid_chat_owned_v1
+      CLEANUP_AUTOMATION_ENABLED: ${{ vars.ENABLE_CLOUD_ACCOUNT_CLEANUP || 'true' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

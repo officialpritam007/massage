@@ -1,0 +1,10 @@
+{
+  "projectId": "liquid-chat-v2",
+  "cloudName": "mthzgqhv",
+  "migrationId": "owner-approved-clean-inventory-2026-10-03",
+  "ownerAuthorizedExistingUserReset": true,
+  "ownerConfirmedNoExports": true,
+  "enabled": true,
+  "oldUploadPreset": "liquid_chat_unsigned",
+  "ownedUploadPreset": "liquid_chat_owned_v1"
+}

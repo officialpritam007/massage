@@ -1,4 +1,4 @@
-# Liquid Chat 4.2.2
+# Liquid Chat 4.2.3
 
 A Kotlin/Jetpack Compose **1-to-1 realtime messaging app** using a zero-paid-backend architecture.
 
@@ -32,7 +32,7 @@ never a Cloudinary API secret.
 Current defaults:
 
 - Cloud name: `mthzgqhv`
-- Upload preset: `liquid_chat_unsigned`
+- Upload preset: `liquid_chat_owned_v1`
 - Client attachment cap: 9 MB
 
 See [CLOUDINARY_SETUP.md](CLOUDINARY_SETUP.md).
@@ -57,8 +57,8 @@ Both actions now permanently erase the account, its one-to-one conversation tree
 
 Final verification includes a **70-minute wait after Auth deletion**, plus worker scheduling, so tokens on other devices expire before the UID gate is removed. A random status proof without a UID allows the app to resume without the deleted Auth account. Keep the app installed until the local wipe is confirmed.
 
-This repository adds an **optional, disabled-by-default GitHub Actions cleanup worker**. No administrator credentials are shipped in Android. Deploy the accompanying rules and follow [PERMANENT_DELETION_SETUP.md](PERMANENT_DELETION_SETUP.md) before enabling destructive logout. Existing unsigned uploads without ownership receipts, backups and unavailable legacy providers require an operator review.
+A trusted GitHub Actions worker checks deletion requests every 15 minutes. The owner-authorized one-time inventory reset disables the old unsigned preset, erases existing app data/uploads and Auth users, and creates a server-only inventory certificate. New accounts use the owned upload preset and automatically qualify for verified deletion. Scoped orphan uploads are discovered even if a receipt was not saved. No administrator credentials are shipped in Android. See [PERMANENT_DELETION_SETUP.md](PERMANENT_DELETION_SETUP.md).
 
 Android does not run the removed application on uninstall. Uninstall clears its local sandbox, but cannot by itself trigger remote deletion. Complete the in-app permanent deletion before uninstalling. OS backup/transfer is disabled for this application.
 
-FCM data-only reception and private token registration are implemented. Fully killed-app push still needs a trusted sender; no push server has been deployed. See the [4.2.2 change report](PRIVACY_AND_NOTIFICATION_FIXES.md) for activation and acceptance checks.
+FCM data-only reception and private token registration are implemented. Fully killed-app push still needs a trusted sender; no push server has been deployed. See the [4.2.3 change report](PRIVACY_AND_NOTIFICATION_FIXES.md) for activation and acceptance checks.

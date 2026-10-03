@@ -1,6 +1,6 @@
 # Cloudinary direct-upload setup — zero paid backend
 
-Liquid Chat 4.2.2 uses Firebase Auth + Cloud Firestore + Cloudinary direct unsigned uploads.
+Liquid Chat 4.2.3 uses Firebase Auth + Cloud Firestore + Cloudinary direct unsigned uploads.
 
 ## Create the unsigned upload preset
 
@@ -9,7 +9,7 @@ In Cloudinary Console:
 1. Open **Settings → Upload → Upload presets**.
 2. Create a new preset.
 3. Set **Signing mode = Unsigned**.
-4. Set preset name to **`liquid_chat_unsigned`**.
+4. Set preset name to **`liquid_chat_owned_v1`**.
 5. In dynamic folder mode, the asset folder may be **`liquid-chat`**. Allow explicit public IDs and preserve Android's `liquid-chat/accounts/<uid>/<random-id>` path. Disable filename-based IDs and automatic public-ID prefixes/fixed folders that rewrite it.
 6. Restrict allowed formats. Recommended:
    - images: jpg, jpeg, png, webp
@@ -23,7 +23,7 @@ Connected cloud name: **`mthzgqhv`**.
 Optional repository variables:
 
 - `CLOUDINARY_CLOUD_NAME=mthzgqhv`
-- `CLOUDINARY_UPLOAD_PRESET=liquid_chat_unsigned`
+- `CLOUDINARY_UPLOAD_PRESET=liquid_chat_owned_v1`
 
 These are public identifiers, not secrets.
 
@@ -43,3 +43,5 @@ Do not put the Cloudinary API secret, Firebase service-account JSON, or private 
 ## Privacy limitation
 
 Firestore controls who may read a message document, but the Cloudinary delivery URL itself is public-by-URL. Direct unsigned mode also cannot securely issue Cloudinary Admin deletion calls from the APK.
+
+The trusted inventory cutover configures this preset and disables `liquid_chat_unsigned`. Update to 4.2.3 before uploading media. Existing accounts/data are reset once under the owner-approved policy; later builds never repeat that reset.
