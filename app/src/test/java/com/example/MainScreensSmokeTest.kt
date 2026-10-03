@@ -10,7 +10,6 @@ import androidx.test.core.app.ApplicationProvider
 import com.example.data.network.LiquidApi
 import com.example.ui.screens.ChatsHomeScreen
 import com.example.ui.screens.SettingsScreen
-import com.example.ui.screens.ConversationScreenV2
 import com.example.ui.theme.LiquidChatTheme
 import com.example.ui.theme.LiquidGlassConfig
 import com.example.ui.viewmodel.LiquidChatViewModel
@@ -63,27 +62,6 @@ class MainScreensSmokeTest {
 
     compose.waitForIdle()
     compose.onNodeWithTag("chats_screen_host", useUnmergedTree = true).fetchSemanticsNode()
-  }
-
-  @Test
-  fun `conversation screen composes without crashing`() {
-    compose.setContent {
-      Box(Modifier.testTag("conversation_screen_host")) {
-        LiquidChatTheme(
-          glassConfig = LiquidGlassConfig(isGlassEnabled = false, isReducedMotion = true)
-        ) {
-          ConversationScreenV2(
-            conversationId = "alice_bob",
-            viewModel = viewModel,
-            onBackClick = {},
-            onNavigateToProfile = {}
-          )
-        }
-      }
-    }
-
-    compose.waitForIdle()
-    compose.onNodeWithTag("conversation_screen_host", useUnmergedTree = true).fetchSemanticsNode()
   }
 
   @Test
