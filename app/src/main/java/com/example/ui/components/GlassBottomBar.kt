@@ -59,12 +59,12 @@ fun GlassBottomBar(
   val clicks = listOf(onNavigateToChats, onNavigateToContacts, onNavigateToSettings)
   val selectedIndex = items.indexOfFirst { it.first == selectedRoute }
   val config = LocalLiquidGlass.current
-  val tabShape = RoundedCornerShape(27.dp)
+  val tabShape = liquidRoundedShape(27f)
 
   Box(modifier.navigationBarsPadding().padding(horizontal = 14.dp, vertical = 7.dp)) {
     GlassCard(
       Modifier.fillMaxWidth(),
-      shape = RoundedCornerShape(32.dp),
+      shape = liquidRoundedShape(32f),
       backgroundColor = if (config.isDark) Color(0xFF12262D).copy(alpha = .86f)
       else Color.White.copy(alpha = .66f),
       borderColor = Color.White.copy(alpha = if (config.isDark) .17f else .56f),
