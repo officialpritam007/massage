@@ -1,6 +1,5 @@
 package com.example
 
-import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -44,7 +43,7 @@ class ConversationMessageV2Test {
       }
     }
 
-    compose.onNodeWithText("hello from lightweight bubble").assertExists()
+    compose.onNodeWithText("hello from lightweight bubble").fetchSemanticsNode()
     compose.onNodeWithText("Failed • tap to retry").performClick()
     compose.runOnIdle { assertEquals(1, retries) }
   }
