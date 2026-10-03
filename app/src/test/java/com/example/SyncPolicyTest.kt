@@ -3,6 +3,7 @@ package com.example
 import com.example.data.model.AppearanceSettings
 import com.example.data.repository.PendingSetting
 import com.example.data.repository.PresenceWriteGate
+import com.example.data.repository.shouldAutoRetryOutbox
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -40,4 +41,14 @@ class SyncPolicyTest {
     assertTrue(gate.shouldWrite(true, 600_001))
     assertTrue(gate.shouldWrite(true, 600_002, force = true)) // explicit privacy change
   }
+  @Test fun `transient message transport failures remain auto retryable`() {
+    assertTrue(shouldAutoRetryOutbox("UNAVAILABLE"))
+    assertTrue(shouldAutoRetryOutbox("DEADLINE_EXCEEDED"))
+    assertTrue(shouldAutoRetryOutbox("ABORTED"))
+    assertTrue(shouldAutoRetryOutbox(null, isIoFailure = true))
+    assertTrue(shouldAutoRetryOutbox(null, timedOut = true))
+    assertFalse(shouldAutoRetryOutbox("PERMISSION_DENIED"))
+    assertFalse(shouldAutoRetryOutbox("FAILED_PRECONDITION"))
+  }
+
 }
