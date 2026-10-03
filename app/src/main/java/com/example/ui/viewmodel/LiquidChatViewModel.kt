@@ -41,6 +41,10 @@ class LiquidChatViewModel(
   val error = repository.error
   val loading = repository.loading
   val upload = repository.upload
+  val deletionStatus = repository.deletionStatus
+  val deletionPending = repository.deletionPending
+  val deletionComplete = repository.deletionComplete
+  val deletionRunning = repository.deletionRunning
   override fun onCleared() { repository.close() }
 
   private val _searchQuery = MutableStateFlow("")
@@ -145,16 +149,18 @@ class LiquidChatViewModel(
     phoneNumber: String
   ): Result<User> = repository.registerWithEmail(email, pass, fullName, username, phoneNumber)
 
-  fun logout(onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
-    repository.logout { result ->
+  fun logout(password: String = "", googleIdToken: String? = null, onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
+    repository.logout(password, googleIdToken) { result ->
       onResult(result.isSuccess, result.exceptionOrNull()?.message)
     }
   }
   fun updateNotifications(settings: NotificationSettings) = repository.updateNotifications(settings)
 
-  fun deleteAccount(onResult: (Boolean, String?) -> Unit) {
+  fun hasGoogleProvider() = repository.hasGoogleProvider()
+
+  fun deleteAccount(password: String = "", googleIdToken: String? = null, onResult: (Boolean, String?) -> Unit) {
     viewModelScope.launch {
-      val result = repository.deleteAccount()
+      val result = repository.deleteAccount(password, googleIdToken)
       onResult(result.isSuccess, result.exceptionOrNull()?.message)
     }
   }

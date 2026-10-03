@@ -1,0 +1,64 @@
+name: Cloud Account Cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      check_only:
+        description: Validate credentials without processing deletion requests
+        type: boolean
+        default: true
+  schedule:
+    - cron: '*/15 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-account-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.ENABLE_CLOUD_ACCOUNT_CLEANUP == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FIREBASE_PROJECT_ID: liquid-chat-v2
+      CLOUDINARY_CLOUD_NAME: ${{ vars.CLOUDINARY_CLOUD_NAME || 'mthzgqhv' }}
+      CLEANUP_AUTOMATION_ENABLED: ${{ vars.ENABLE_CLOUD_ACCOUNT_CLEANUP }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify cleanup credentials
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        shell: bash
+        run: |
+          test -n "$FIREBASE_SERVICE_ACCOUNT_JSON" || { echo '::error::Missing FIREBASE_SERVICE_ACCOUNT_JSON'; exit 1; }
+          test -n "$CLOUDINARY_API_KEY" || { echo '::error::Missing CLOUDINARY_API_KEY'; exit 1; }
+          test -n "$CLOUDINARY_API_SECRET" || { echo '::error::Missing CLOUDINARY_API_SECRET'; exit 1; }
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/cleanup-account.json"
+          chmod 600 "$RUNNER_TEMP/cleanup-account.json"
+      - name: Install trusted worker dependencies
+        run: python -m pip install 'firebase-admin==7.1.0' 'requests==2.32.5'
+      - name: Process owner-requested account deletions
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/cleanup-account.json
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          LEGACY_MEDIA_APPROVALS_JSON: ${{ secrets.LEGACY_MEDIA_APPROVALS_JSON }}
+          CHECK_ONLY: ${{ inputs.check_only }}
+        shell: bash
+        run: |
+          if [[ "$CHECK_ONLY" == 'true' ]]; then
+            python tools/cloud_cleanup.py --check-only
+          else
+            python tools/cloud_cleanup.py
+          fi
+      - name: Remove credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/cleanup-account.json"

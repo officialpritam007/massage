@@ -1,4 +1,4 @@
-# Liquid Chat 4.2.0
+# Liquid Chat 4.2.2
 
 A Kotlin/Jetpack Compose **1-to-1 realtime messaging app** using a zero-paid-backend architecture.
 
@@ -20,6 +20,7 @@ A Kotlin/Jetpack Compose **1-to-1 realtime messaging app** using a zero-paid-bac
 - Reply, edit, pin, star, reactions, delete-for-me and sender-only delete-for-everyone.
 - Favorites, archive, mute, disappearing timer and chat wallpaper.
 - Text payloads retain the app's device-bound E2EE layer.
+- Chat-list previews and notifications decode locally using the same authenticated E2EE decoder as chat history. Only encrypted envelopes are stored in server summaries; notification push payloads contain message IDs.
 - Media uploads are **not E2EE** in direct unsigned mode; Cloudinary returns public delivery URLs.
 
 ## Cloudinary
@@ -46,6 +47,16 @@ See [CLOUDINARY_SETUP.md](CLOUDINARY_SETUP.md).
 
 ## CI
 
-GitHub Actions validates free-tier configuration, runs Firestore security-rule emulator tests, runs Android unit tests, builds the debug APK and uploads the artifact.
+GitHub Actions validates free-tier configuration, runs Firestore security-rule emulator tests, Android unit tests and trusted cleanup-worker tests, builds the debug APK and uploads the artifact.
 
 Firestore rules deploy independently; Firebase Functions are not part of this architecture.
+
+## Permanent logout / account deletion
+
+Both actions now permanently erase the account, its one-to-one conversation trees and owned uploads, then erase this device's databases, keys, preferences, work and notifications. They require recent authentication and a configured trusted cleanup worker; an unavailable worker or unverified media fails visibly instead of reporting successful deletion. Pending deletion survives process death and blocks old chat restoration.
+
+This repository adds an **optional, disabled-by-default GitHub Actions cleanup worker**. No administrator credentials are shipped in Android. Deploy the accompanying rules and follow [PERMANENT_DELETION_SETUP.md](PERMANENT_DELETION_SETUP.md) before enabling destructive logout. Existing unsigned uploads without ownership receipts, backups and unavailable legacy providers require an operator review.
+
+Android does not run the removed application on uninstall. Uninstall clears its local sandbox, but cannot by itself trigger remote deletion. Complete the in-app permanent deletion before uninstalling. OS backup/transfer is disabled for this application.
+
+FCM data-only reception and private token registration are implemented. Fully killed-app push still needs a trusted sender; no push server has been deployed. See the [4.2.2 change report](PRIVACY_AND_NOTIFICATION_FIXES.md) for activation and acceptance checks.

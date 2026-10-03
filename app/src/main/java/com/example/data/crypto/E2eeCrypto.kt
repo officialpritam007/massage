@@ -94,6 +94,8 @@ object E2eeCrypto {
     val keyId: String
   )
 
+  private val identities = mutableMapOf<String, Identity>()
+
   fun ensureIdentity(context: Context, uid: String): PublicIdentity {
     val identity = loadOrCreateIdentity(context, uid)
     return PublicIdentity(
@@ -102,7 +104,9 @@ object E2eeCrypto {
     )
   }
 
+  @Synchronized
   fun deleteIdentity(context: Context, uid: String) {
+    identities.remove(uid)
     val prefs = context.getSharedPreferences(STORE, 0)
     val editor = prefs.edit()
       .remove("private:$uid")
@@ -116,6 +120,14 @@ object E2eeCrypto {
     val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
     val alias = wrappingAlias(uid)
     if (ks.containsAlias(alias)) ks.deleteEntry(alias)
+  }
+
+  @Synchronized
+  fun clearDeviceIdentities(context: Context) {
+    identities.clear()
+    val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+    java.util.Collections.list(ks.aliases()).filter { it.startsWith("liquid_e2ee_wrap_") }.forEach(ks::deleteEntry)
+    check(context.getSharedPreferences(STORE, 0).edit().clear().commit()) { "Unable to erase encryption identities" }
   }
 
   fun encryptText(
@@ -434,15 +446,24 @@ object E2eeCrypto {
       .put("replyToSender", replyToSender ?: JSONObject.NULL)
       .toString()
 
+  @Synchronized
   private fun loadOrCreateIdentity(context: Context, uid: String): Identity {
     require(uid.isNotBlank()) { "Missing E2EE account identity" }
+    identities[uid]?.let { return it }
     val prefs = context.getSharedPreferences(STORE, 0)
     val privateCipher = prefs.getString("private:$uid", null)
     val privateIv = prefs.getString("privateIv:$uid", null)
     val publicEncoded = prefs.getString("public:$uid", null)
 
+    if (listOf(privateCipher, privateIv, publicEncoded).any { !it.isNullOrBlank() }) {
+      require(!privateCipher.isNullOrBlank() && !privateIv.isNullOrBlank() && !publicEncoded.isNullOrBlank()) {
+        "The saved encryption identity is incomplete. It was preserved; a replacement key was not generated."
+      }
+    }
+
     if (!privateCipher.isNullOrBlank() && !privateIv.isNullOrBlank() && !publicEncoded.isNullOrBlank()) {
-      runCatching {
+      // Never silently rotate an existing identity when the Keystore is temporarily unavailable.
+      run {
         val rawPrivate = unwrapPrivateKey(
           uid,
           unb64(privateCipher),
@@ -451,7 +472,7 @@ object E2eeCrypto {
         val privateKey = KeyFactory.getInstance("EC")
           .generatePrivate(PKCS8EncodedKeySpec(rawPrivate))
         val publicKey = decodePublicKey(publicEncoded)
-        return Identity(privateKey, publicKey, keyId(publicKey.encoded))
+        return Identity(privateKey, publicKey, keyId(publicKey.encoded)).also { identities[uid] = it }
       }
     }
 
@@ -459,7 +480,7 @@ object E2eeCrypto {
       initialize(ECGenParameterSpec("secp256r1"))
     }.generateKeyPair()
     persistIdentity(context, uid, pair)
-    return Identity(pair.private, pair.public, keyId(pair.public.encoded))
+    return Identity(pair.private, pair.public, keyId(pair.public.encoded)).also { identities[uid] = it }
   }
 
   private fun persistIdentity(context: Context, uid: String, pair: KeyPair) {

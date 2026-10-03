@@ -75,6 +75,9 @@ jobs:
           npm ci --prefix tests/firestore
           npx --yes firebase-tools@14.15.1 emulators:exec --only firestore --project demo-liquid-chat "cd tests/firestore && npm test"
 
+      - name: Test trusted cleanup ownership and failure handling
+        run: python3 -m unittest discover -s tools/tests -v
+
       - name: Run unit tests
         run: |
           /tmp/gradle-9.3.1/bin/gradle testDebugUnitTest --no-daemon --stacktrace

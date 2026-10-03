@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 
 /** Shared design tokens for the app-wide Liquid Glass material. */
 data class LiquidGlassConfig(
@@ -65,7 +66,11 @@ fun LiquidChatTheme(
   glassConfig: LiquidGlassConfig = LiquidGlassConfig(isDark = darkTheme),
   content: @Composable () -> Unit
 ) {
-  val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+  val base = if (darkTheme) DarkColorScheme else LightColorScheme
+  val colorScheme = base.copy(
+    primary = glassConfig.accentColor,
+    onPrimary = if (glassConfig.accentColor.luminance() > .179f) Color.Black else Color.White
+  )
   val resolvedConfig = glassConfig.copy(isDark = darkTheme, isGlassEnabled = true)
 
   CompositionLocalProvider(LocalLiquidGlass provides resolvedConfig) {

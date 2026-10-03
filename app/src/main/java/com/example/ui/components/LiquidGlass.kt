@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
@@ -165,7 +166,9 @@ fun GlassButton(
     label = "glass_button_color"
   )
   val buttonScale by animateFloatAsState(if (pressed && !config.isReducedMotion) 0.95f else 1f, spring(dampingRatio = .65f, stiffness = 450f), label = "button_spring")
-  val contentColor = if (isPrimary) Color.White else if (config.isDark) TextPrimary else TextPrimaryLight
+  val contentColor = if (isPrimary) {
+    if (config.accentColor.luminance() > .179f) Color.Black else Color.White
+  } else if (config.isDark) TextPrimary else TextPrimaryLight
   val resolvedShape = shape ?: RoundedCornerShape(config.cornerRadiusDp.coerceIn(0f, 64f).dp)
 
   Box(
@@ -173,7 +176,7 @@ fun GlassButton(
       .graphicsLayer { scaleX = buttonScale; scaleY = buttonScale }
       .defaultMinSize(minHeight = 50.dp)
       .clip(resolvedShape)
-      .background(accent.copy(alpha = if (isPrimary) 0.78f else 1f))
+      .background(accent)
       .border(1.dp, if (config.isDark) GlassHighlight.copy(alpha = 0.32f) else GlassBorderStrokeLight, resolvedShape)
       .clickable(enabled = enabled && !isLoading, interactionSource = pressedSource, indication = null, onClick = onClick)
       .padding(horizontal = 22.dp, vertical = 14.dp)
@@ -186,7 +189,8 @@ fun GlassButton(
       }
       Text(
         text = if (isLoading) "Processing..." else text,
-        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold, color = contentColor, fontSize = 15.sp)
+        color = contentColor,
+        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold, fontSize = 15.sp)
       )
     }
   }
@@ -301,7 +305,7 @@ fun GlassAvatar(
       contentAlignment = Alignment.Center
     ) {
       if (!photoUrl.isNullOrBlank()) {
-        PrivateImage(model = photoUrl, contentDescription = name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        PrivateImage(model = photoUrl, contentDescription = name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize(), fallbackText = name.take(1).uppercase().ifBlank { "LC" })
       } else {
         val initials = name.split(" ").take(2).mapNotNull { it.firstOrNull()?.uppercaseChar() }.joinToString("").ifEmpty { "LC" }
         Text(initials, style = MaterialTheme.typography.titleMedium.copy(color = config.accentColor, fontWeight = FontWeight.Bold, fontSize = (size.value * 0.38f).sp))

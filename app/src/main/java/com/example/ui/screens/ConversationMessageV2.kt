@@ -67,6 +67,7 @@ import com.example.ui.components.PrivateImage
 import com.example.ui.components.PrivateVideoThumbnail
 import com.example.ui.components.VoiceWaveformPlayer
 import com.example.ui.theme.LocalLiquidGlass
+import com.example.data.network.LiquidApi
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -213,7 +214,7 @@ fun MessageBubbleV2(
                 .pointerInput(message.id, isMe) {
                     detectHorizontalDragGestures(
                         onDragEnd = {
-                            if ((isMe && drag < -58f) || (!isMe && drag > 58f)) onReply()
+                            if (!message.encryptionUnavailable && ((isMe && drag < -58f) || (!isMe && drag > 58f))) onReply()
                             drag = 0f
                         },
                         onDragCancel = { drag = 0f },
@@ -223,7 +224,7 @@ fun MessageBubbleV2(
                         }
                     )
                 }
-                .combinedClickable(onClick = { if (message.mediaUrl.isNotBlank()) onMedia() }, onLongClick = onLongClick)
+                .combinedClickable(onClick = { if (LiquidApi.isSupportedMedia(message.mediaUrl)) onMedia() }, onLongClick = onLongClick)
         ) {
             GlassCard(
                 shape = shape,
@@ -257,10 +258,14 @@ fun MessageBubbleV2(
                         }
                     }
 
-                    when (message.type) {
-                        MessageType.IMAGE -> PrivateImage(message.mediaUrl, "Photo", Modifier.widthIn(min = 210.dp, max = 310.dp).aspectRatio(4f / 3f))
+                    if (message.type in setOf(MessageType.IMAGE, MessageType.VIDEO, MessageType.VOICE, MessageType.AUDIO, MessageType.FILE)
+                        && !LiquidApi.isSupportedMedia(message.mediaUrl)) {
+                        Text("Media unavailable", color = contentColor, style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(8.dp))
+                    } else when (message.type) {
+                        MessageType.IMAGE -> PrivateImage(message.mediaUrl, "Photo", Modifier.widthIn(min = 210.dp, max = 310.dp), preview = true)
                         MessageType.VIDEO -> PrivateVideoThumbnail(message.mediaUrl, Modifier.widthIn(min = 210.dp, max = 310.dp).aspectRatio(16f / 10f))
-                        MessageType.VOICE -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        MessageType.VOICE, MessageType.AUDIO -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Box(Modifier.size(44.dp)) {
                                 GlassAvatar(photoUrl = voiceAvatarUrl, name = voiceAvatarName.ifBlank { message.senderName.ifBlank { "Voice" } }, size = 42.dp)
                                 Box(

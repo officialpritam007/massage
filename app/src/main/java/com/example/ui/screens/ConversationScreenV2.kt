@@ -489,20 +489,31 @@ fun ConversationScreenV2(
     }
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val atBottomCurrent by rememberUpdatedState(nearBottom)
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) repo.setConversationVisible(conversationId, atBottomCurrent)
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE) repo.setConversationVisible(conversationId, false)
             if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
                 if (recordingCurrent) finishCurrent(false, false)
                 repo.setTyping(conversationId, false)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
+        repo.setConversationVisible(conversationId, atBottomCurrent && lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED))
         onDispose {
+            repo.setConversationVisible(conversationId, false)
             lifecycleOwner.lifecycle.removeObserver(observer)
             runCatching { recorder?.release() }
             recordingFile?.delete()
             voiceDraft?.takeUnless { it.uploading }?.file?.delete()
             repo.setTyping(conversationId, false)
+        }
+    }
+    LaunchedEffect(conversationId, lifecycleOwner, listState) {
+        snapshotFlow { nearBottom }.distinctUntilChanged().collect { atBottom ->
+            repo.setConversationVisible(conversationId, atBottom &&
+                lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED))
         }
     }
 
@@ -619,7 +630,7 @@ fun ConversationScreenV2(
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.any { item -> item.key == latestRemoteId } }
             .distinctUntilChanged()
             .collect { latestIncomingVisible ->
-                if (latestIncomingVisible) {
+                if (latestIncomingVisible && lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
                     viewModel.clearUnread(conversationId)
                     unreadAnchorId = null
                 }

@@ -292,11 +292,11 @@ fun ChatsHomeScreen(
                     GlassCard(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(28.dp),
-                        backgroundColor = darkRow,
+                        backgroundColor = if (glass.isDark) darkRow else lightRow,
                         borderColor = Color.White.copy(alpha = .14f),
                         elevation = 3.dp,
                         onClick = {
-                            tab = "Archived"
+                            tab = if (tab == "Archived") "All" else "Archived"
                             onHomeTabSelected(tab)
                         }
                     ) {
@@ -308,7 +308,7 @@ fun ChatsHomeScreen(
                                 Icons.Default.Inventory2,
                                 "Archived",
                                 {
-                                    tab = "Archived"
+                                    tab = if (tab == "Archived") "All" else "Archived"
                                     onHomeTabSelected(tab)
                                 },
                                 size = 48.dp,
@@ -316,7 +316,7 @@ fun ChatsHomeScreen(
                             )
                             Spacer(Modifier.width(13.dp))
                             Text(
-                                "Archived",
+                                if (tab == "Archived") "Back to chats" else "Archived (${conversations.count { it.isArchived }})",
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.weight(1f)
