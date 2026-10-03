@@ -1,6 +1,9 @@
 name: Initialize Verified Cleanup Inventory
 
 on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/initialize-cleanup-inventory.yml']
   workflow_run:
     workflows: ['Build Android APK']
     types: [completed]
@@ -16,7 +19,7 @@ concurrency:
 
 jobs:
   initialize:
-    if: github.ref == 'refs/heads/main' && vars.ENABLE_CLOUD_ACCOUNT_CLEANUP != 'false' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository))
+    if: github.ref == 'refs/heads/main' && vars.ENABLE_CLOUD_ACCOUNT_CLEANUP != 'false' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -28,6 +31,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+      - name: Reuse the verified APK only when Android source is identical
+        if: github.event_name == 'push'
+        run: git diff --exit-code --quiet 08f38b36fa12e3ca9384a9cfcb9c5d378d93643c HEAD -- app build.gradle.kts settings.gradle.kts gradle debug.keystore .env.example .github/workflows/build-apk.yml
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
