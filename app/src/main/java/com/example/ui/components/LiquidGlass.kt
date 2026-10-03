@@ -289,7 +289,7 @@ fun GlassTextField(
   val config = LocalLiquidGlass.current
   val primaryText = if (config.isDark) TextPrimary else TextPrimaryLight
   val secondaryText = if (config.isDark) Color(0xFFB7CBE2) else TextSecondaryLight
-  val resolvedShape = shape ?: RoundedCornerShape(config.cornerRadiusDp.coerceIn(0f, 200f).dp)
+  val resolvedShape = shape ?: liquidRoundedShape(22f)
   Box(
     modifier = modifier
       .defaultMinSize(minHeight = minHeight)
