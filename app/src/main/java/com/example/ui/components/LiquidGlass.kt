@@ -348,15 +348,16 @@ fun GlassAvatar(
 }
 
 @Composable
-fun GlassBadge(count: Int, modifier: Modifier = Modifier, color: Color = CyanAccent) {
+fun GlassBadge(count: Int, modifier: Modifier = Modifier, color: Color? = null) {
   if (count <= 0) return
   val config = LocalLiquidGlass.current
+  val badgeColor = color ?: config.accentColor
   Box(
     modifier = modifier
       .defaultMinSize(minWidth = 20.dp, minHeight = 20.dp)
-      .shadow(elevation = 3.dp, shape = RoundedCornerShape(10.dp), ambientColor = color.copy(alpha = 0.45f), spotColor = color)
+      .shadow(elevation = 3.dp, shape = RoundedCornerShape(10.dp), ambientColor = badgeColor.copy(alpha = 0.45f), spotColor = color)
       .clip(RoundedCornerShape(10.dp))
-      .background(color.copy(alpha = 0.90f))
+      .background(badgeColor.copy(alpha = 0.90f))
       .border(
         BorderStroke(
           1.dp,
