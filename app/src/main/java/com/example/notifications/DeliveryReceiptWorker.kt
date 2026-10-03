@@ -28,48 +28,40 @@ class DeliveryReceiptWorker(
     val user = FirebaseAuth.getInstance().currentUser ?: return Result.success()
     val account = inputData.getString("account") ?: return Result.success()
     if (account != user.uid || isStopped) return Result.success()
-    val db = FirebaseFirestore.getInstance()
+    val conversationId = inputData.getString("cid") ?: return Result.success()
+    val messageId = inputData.getString("mid") ?: return Result.success()
+    if (conversationId.isBlank() || messageId.isBlank() || '/' in conversationId || '/' in messageId) return Result.success()
 
     val prefs = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    val prefix = "$PREFIX$account:"
-    val keys = prefs.all.keys.filter { it.startsWith(prefix) }
-    if (keys.isEmpty()) return Result.success()
+    val key = ackKey(account, conversationId, messageId)
+    if (!prefs.contains(key)) return Result.success()
 
-    var shouldRetry = false
-    for (key in keys) {
-      if (isStopped || FirebaseAuth.getInstance().currentUser?.uid != account) return Result.success()
-      val payload = key.removePrefix(prefix).split(SEPARATOR, limit = 2)
-      if (payload.size != 2 || payload[0].isBlank() || payload[1].isBlank()) {
-        prefs.edit().remove(key).apply()
-        continue
-      }
-
-      val conversationId = payload[0]
-      val messageId = payload[1]
-      runCatching {
-        val ref = db.document("conversations/$conversationId/messages/$messageId")
-        db.runTransaction { tx ->
-          val snapshot = tx.get(ref)
-          if (!snapshot.exists()) return@runTransaction
-          if (snapshot.getString("senderId") == user.uid) return@runTransaction
-          val current = snapshot.getString("status") ?: "SENT"
-          if (current == "SENT") tx.update(ref, "status", "DELIVERED")
-        }.await()
-      }.onSuccess {
-        prefs.edit().remove(key).apply()
-      }.onFailure {
-        shouldRetry = true
-      }
-    }
-
-    val stillPending = prefs.all.keys.any { it.startsWith(prefix) }
-    return if (shouldRetry && stillPending) Result.retry() else Result.success()
+    val db = FirebaseFirestore.getInstance()
+    return runCatching {
+      val ref = db.document("conversations/$conversationId/messages/$messageId")
+      db.runTransaction { tx ->
+        val snapshot = tx.get(ref)
+        if (!snapshot.exists()) return@runTransaction
+        if (snapshot.getString("senderId") == user.uid) return@runTransaction
+        val current = snapshot.getString("status") ?: "SENT"
+        if (current == "SENT") tx.update(ref, "status", "DELIVERED")
+      }.await()
+    }.fold(
+      onSuccess = {
+        if (FirebaseAuth.getInstance().currentUser?.uid == account) prefs.edit().remove(key).apply()
+        Result.success()
+      },
+      onFailure = { if (isStopped) Result.success() else Result.retry() }
+    )
   }
 
   companion object {
     private const val PREFS = "liquid-private"
     private const val PREFIX = "deliveryAck:"
     private const val SEPARATOR = "|"
+
+    internal fun ackKey(account: String, conversationId: String, messageId: String) =
+      "$PREFIX$account:$conversationId$SEPARATOR$messageId"
 
     fun enqueue(context: Context, conversationId: String, messageId: String) {
       if (conversationId.isBlank() || messageId.isBlank()) return
@@ -78,11 +70,15 @@ class DeliveryReceiptWorker(
       val appContext = context.applicationContext
       val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
       prefs.edit()
-        .putLong("$PREFIX$account:$conversationId$SEPARATOR$messageId", System.currentTimeMillis())
+        .putLong(ackKey(account, conversationId, messageId), System.currentTimeMillis())
         .apply()
 
       val request = OneTimeWorkRequestBuilder<DeliveryReceiptWorker>()
-        .setInputData(androidx.work.workDataOf("account" to account))
+        .setInputData(androidx.work.workDataOf(
+          "account" to account,
+          "cid" to conversationId,
+          "mid" to messageId
+        ))
         .setConstraints(
           Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)

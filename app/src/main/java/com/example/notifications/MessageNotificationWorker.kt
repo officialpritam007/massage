@@ -30,6 +30,10 @@ class MessageNotificationWorker(context: Context, params: WorkerParameters) : Co
     if (!current()) return Result.success()
     val db = FirebaseFirestore.getInstance()
     val prefs = applicationContext.getSharedPreferences("liquid-private", 0)
+    val done = "notificationDone:$account:$cid:$id"
+    // A message ID is immutable for notification purposes. Bail out before any
+    // Firestore reads when FCM or WorkManager redelivers the same event.
+    if (prefs.contains(done)) return Result.success()
     return try {
       // Read authenticated server truth: a deleted/hidden message must never be
       // redisplayed from stale cache or an untrusted plaintext push payload.
@@ -66,8 +70,6 @@ class MessageNotificationWorker(context: Context, params: WorkerParameters) : Co
         MessageContentDecoder.decode(applicationContext, account, cid, id, sender, it, peer.getString("e2eeKeyId").orEmpty())
       }
       val revision = fields?.let { MessageContentDecoder.revision(it) } ?: message.get("text").toString()
-      val done = "notificationDone:$account:$cid:$id"
-      if (prefs.getString(done, null) == revision) return Result.success()
       if (prefs.getBoolean("appResumed", false) && prefs.getString("visibleConversation", null) == cid) return Result.success()
       if (!current()) return Result.success()
       if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return Result.success()
