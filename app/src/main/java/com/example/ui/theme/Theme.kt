@@ -71,7 +71,15 @@ fun LiquidChatTheme(
     primary = glassConfig.accentColor,
     onPrimary = if (glassConfig.accentColor.luminance() > .179f) Color.Black else Color.White
   )
-  val resolvedConfig = glassConfig.copy(isDark = darkTheme, isGlassEnabled = true)
+  // Preserve the user's glass toggle and sanitize persisted values so malformed
+  // legacy settings cannot produce broken corners, excessive blur or invisible rims.
+  val resolvedConfig = glassConfig.copy(
+    isDark = darkTheme,
+    glassIntensity = glassConfig.glassIntensity.coerceIn(0.35f, 1f),
+    blurAlpha = glassConfig.blurAlpha.coerceIn(0f, 0.65f),
+    cornerRadiusDp = glassConfig.cornerRadiusDp.coerceIn(12f, 56f),
+    borderStrength = glassConfig.borderStrength.coerceIn(0.20f, 1f)
+  )
 
   CompositionLocalProvider(LocalLiquidGlass provides resolvedConfig) {
     MaterialTheme(

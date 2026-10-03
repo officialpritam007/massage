@@ -64,6 +64,10 @@ class ChatRepository(
   private val previewRetryAt = mutableMapOf<String, Long>()
   private val lastMessageIds = mutableMapOf<String, String>()
   private val summarySnapshots = mutableMapOf<String, DocumentSnapshot>()
+  // Only this set is trusted as proof that a conversation currently exists on the
+  // server. A cached chat can outlive a trusted cleanup/reset and must not make a
+  // later send skip the server bootstrap.
+  private val serverConfirmedConversations = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
   private val previewCache = mutableMapOf<String, String>()
   private val previewFallback = mutableMapOf<String, String>()
   private val peerKeyCheckedAt = mutableMapOf<String, Long>()
@@ -177,11 +181,26 @@ class ChatRepository(
   }
 
   private fun reportSnapshotFailure(area: String, t: Throwable) {
-    if (firestoreCode(t) == FirebaseFirestoreException.Code.RESOURCE_EXHAUSTED && !quotaPaused) {
+    val code = firestoreCode(t)
+    if (code == FirebaseFirestoreException.Code.RESOURCE_EXHAUSTED && !quotaPaused) {
       val delayMs = (prefs.getLong("quotaBackoff:$uid", 150_000L) * 2).coerceAtMost(3_600_000L)
       quotaPausedUntil = System.currentTimeMillis() + delayMs
       prefs.edit().putLong("quotaUntil:$uid", quotaPausedUntil).putLong("quotaBackoff:$uid", delayMs).apply()
     }
+
+    // Firestore listeners reconnect by themselves and the outbox has its own retry loop.
+    // Do not turn a short transport interruption into a persistent app-level error banner.
+    val transientTransport = code != FirebaseFirestoreException.Code.RESOURCE_EXHAUSTED &&
+      shouldAutoRetryOutbox(
+        firestoreCodeName = code?.name,
+        isIoFailure = t is java.io.IOException,
+        message = t.message.orEmpty()
+      )
+    if (transientTransport) {
+      if (_syncWarning.value?.startsWith("$area:") == true) _syncWarning.value = null
+      return
+    }
+
     _syncWarning.value = "$area: ${friendlyError(t, "could not be loaded")}"
   }
 
@@ -570,6 +589,7 @@ class ChatRepository(
     listeners.clear()
     messageListeners.values.forEach { it.remove() }
     messageListeners.clear()
+    serverConfirmedConversations.clear()
     decodeJobs.values.forEach { it.cancel() }
     decodeJobs.clear()
     conversationSetupJobs.values.forEach { it.cancel() }
@@ -678,6 +698,11 @@ class ChatRepository(
           if (snapshot.isEmpty && snapshot.metadata.isFromCache && _conversations.value.isNotEmpty()) return@guardSnapshot
           val next = snapshot.documents.mapNotNull { runCatching { toConversation(it) }.getOrNull() }
             .sortedByDescending { it.lastMessageTime }
+          if (!snapshot.metadata.isFromCache) {
+            val confirmed = snapshot.documents.map { it.id }.toSet()
+            serverConfirmedConversations.retainAll(confirmed)
+            serverConfirmedConversations.addAll(confirmed)
+          }
           val previousById = _conversations.value.associateBy { it.id }
           if (!resumed) next.filter { current ->
             val prior = previousById[current.id]
@@ -1274,13 +1299,14 @@ class ChatRepository(
 
     val ref = db.document("conversations/$cid")
     val cachedConversation = runCatching { ref.get(Source.CACHE).await() }.getOrNull()
-    if (cachedConversation?.exists() == true) return
+    if (cachedConversation?.exists() == true && cid in serverConfirmedConversations) return
 
     try {
-      // Conversation IDs are deterministic for the two participants. Merge only the
-      // immutable participant list so a cache miss can never reset an existing
-      // conversation's preview, unread count, mute/archive flags or timers.
+      // Cache alone is not proof of server existence: a trusted reset can remove the
+      // server document while an old local snapshot remains. The merge is idempotent,
+      // preserves all conversation state and server-confirms the parent before sending.
       ref.set(mapOf("participantIds" to ids), SetOptions.merge()).await()
+      serverConfirmedConversations += cid
     } catch (t: Throwable) {
       if (firestoreCode(t) != FirebaseFirestoreException.Code.PERMISSION_DENIED) throw t
 
@@ -1314,10 +1340,7 @@ class ChatRepository(
     if (tombstone in deleteTombstones) return false
 
     val cref = db.document("conversations/$cid")
-    val knownConversation = _conversations.value.any { it.id == cid } ||
-      summarySnapshots[cid]?.exists() == true ||
-      runCatching { cref.get(Source.CACHE).await().exists() }.getOrDefault(false)
-    if (!knownConversation) ensureConversationDirect(cid, otherUid)
+    if (cid !in serverConfirmedConversations) ensureConversationDirect(cid, otherUid)
 
     val mref = db.document("conversations/$cid/messages/$id")
     val now = System.currentTimeMillis()
@@ -1460,31 +1483,46 @@ class ChatRepository(
     val finalMessage = message.toMutableMap()
     if (disappearingSeconds > 0L) finalMessage["expiresAt"] = now + disappearingSeconds * 1000L
 
-    val batch = db.batch()
-    batch.set(mref, finalMessage)
-    batch.update(
-      cref,
-      mapOf(
-        "lastMessageId" to id,
-        "lastMessageText" to when (type) {
-          "TEXT" -> if (encryptedText) "Encrypted message" else text.take(500)
-          "IMAGE" -> "Photo"
-          "VIDEO" -> "Video"
-          "VOICE", "AUDIO" -> "Voice message"
-          else -> "Document"
-        },
-        "lastMessageTime" to now,
-        "lastMessageRevision" to now,
-        "lastMessageType" to type,
-        "lastMessageE2ee" to (message["e2ee"] ?: emptyMap<String, Any>()),
-        "lastMessageSenderId" to uid,
-        "unreadCounts.$otherUid" to FieldValue.increment(1),
-        "deletedFor" to FieldValue.arrayRemove(uid, otherUid),
-        "hiddenLastFor.$uid" to FieldValue.delete(),
-        "hiddenLastFor.$otherUid" to FieldValue.delete()
+    suspend fun commitMessageBatch() {
+      val batch = db.batch()
+      batch.set(mref, finalMessage)
+      batch.update(
+        cref,
+        mapOf(
+          "lastMessageId" to id,
+          "lastMessageText" to when (type) {
+            "TEXT" -> if (encryptedText) "Encrypted message" else text.take(500)
+            "IMAGE" -> "Photo"
+            "VIDEO" -> "Video"
+            "VOICE", "AUDIO" -> "Voice message"
+            else -> "Document"
+          },
+          "lastMessageTime" to now,
+          "lastMessageRevision" to now,
+          "lastMessageType" to type,
+          "lastMessageE2ee" to (message["e2ee"] ?: emptyMap<String, Any>()),
+          "lastMessageSenderId" to uid,
+          "unreadCounts.$otherUid" to FieldValue.increment(1),
+          "deletedFor" to FieldValue.arrayRemove(uid, otherUid),
+          "hiddenLastFor.$uid" to FieldValue.delete(),
+          "hiddenLastFor.$otherUid" to FieldValue.delete()
+        )
       )
-    )
-    batch.commit().await()
+      batch.commit().await()
+    }
+
+    try {
+      commitMessageBatch()
+    } catch (t: Throwable) {
+      // A trusted cleanup/reset can race a previously confirmed conversation.
+      // The failed batch is atomic, so recreating the parent and retrying the same
+      // stable message ID cannot partially double-apply the unread increment.
+      if (firestoreCode(t) != FirebaseFirestoreException.Code.NOT_FOUND) throw t
+      serverConfirmedConversations.remove(cid)
+      ensureConversationDirect(cid, otherUid)
+      commitMessageBatch()
+    }
+    serverConfirmedConversations += cid
     return true
   }
 

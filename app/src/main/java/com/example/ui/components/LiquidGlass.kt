@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.spring
@@ -39,7 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -50,6 +51,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import android.os.Build
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
@@ -113,7 +115,7 @@ fun GlassCard(
   val pressed by interactionSource.collectIsPressedAsState()
   val scale by animateFloatAsState(
     targetValue = if (pressed && onClick != null && !config.isReducedMotion) 0.97f else 1f,
-    animationSpec = spring(dampingRatio = 0.7f, stiffness = 450f),
+    animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
     label = "glass_card_press"
   )
   val surface = if (config.isDark) {
@@ -128,16 +130,18 @@ fun GlassCard(
   val specularHighlight = if (config.isDark) Color(0xFFD8FFFF).copy(alpha = 0.40f) else Color.White.copy(alpha = 0.95f)
   val shadow = if (config.isDark) Color.Black.copy(alpha = 0.56f) else Color.Black.copy(alpha = 0.10f)
 
-  val specularRimBrush = Brush.linearGradient(
-    colors = listOf(
-      specularHighlight,
-      specularHighlight.copy(alpha = if (config.isDark) 0.22f else 0.55f),
-      border.copy(alpha = (border.alpha * config.borderStrength).coerceIn(0.10f, 1f)),
-      border.copy(alpha = (border.alpha * config.borderStrength * 0.30f).coerceIn(0.04f, 0.40f))
-    ),
-    start = Offset.Zero,
-    end = Offset.Infinite
-  )
+  val specularRimBrush = remember(specularHighlight, border, config.borderStrength, config.isDark) {
+    Brush.linearGradient(
+      colors = listOf(
+        specularHighlight,
+        specularHighlight.copy(alpha = if (config.isDark) 0.22f else 0.55f),
+        border.copy(alpha = (border.alpha * config.borderStrength).coerceIn(0.10f, 1f)),
+        border.copy(alpha = (border.alpha * config.borderStrength * 0.30f).coerceIn(0.04f, 0.40f))
+      ),
+      start = Offset.Zero,
+      end = Offset.Infinite
+    )
+  }
 
   Box(
     modifier = modifier
@@ -145,28 +149,33 @@ fun GlassCard(
       .shadow(elevation, resolvedShape, ambientColor = shadow, spotColor = shadow)
       .clip(resolvedShape)
       .then(
-        if (backdrop != null && config.isGlassEnabled) {
+        if (backdrop != null && config.isGlassEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+          // Haze captures the real backdrop and delegates blur to the platform on Android 12+.
+          // Older devices intentionally use the translucent surface fallback below.
           Modifier.hazeEffect(backdrop) {
-            blurRadius = (config.blurAlpha.coerceIn(0f, 1f) * 200f).dp
-            noiseFactor = 0.025f
+            blurRadius = (14f + config.blurAlpha.coerceIn(0f, 0.65f) * 36f).dp
+            noiseFactor = 0.03f
             this.backgroundColor = glassBackground
           }
         } else Modifier
       )
       .background(glassBackground)
       .border(BorderStroke(1.dp, specularRimBrush), resolvedShape)
-      .drawWithContent {
-        drawContent()
-        drawRect(
-          brush = Brush.horizontalGradient(
-            colors = listOf(
-              specularHighlight.copy(alpha = if (config.isDark) 0.48f else 0.70f),
-              specularHighlight.copy(alpha = if (config.isDark) 0.16f else 0.28f),
-              Color.Transparent
-            )
-          ),
-          size = Size(size.width, 1.2.dp.toPx())
+      .drawWithCache {
+        val topSheen = Brush.horizontalGradient(
+          colors = listOf(
+            specularHighlight.copy(alpha = if (config.isDark) 0.48f else 0.70f),
+            specularHighlight.copy(alpha = if (config.isDark) 0.16f else 0.28f),
+            Color.Transparent
+          )
         )
+        onDrawWithContent {
+          drawContent()
+          drawRect(
+            brush = topSheen,
+            size = Size(size.width, 1.2.dp.toPx())
+          )
+        }
       }
       .then(
         if (onClick != null) Modifier.clickable(
@@ -204,7 +213,11 @@ fun GlassButton(
     animationSpec = tween(180),
     label = "glass_button_color"
   )
-  val buttonScale by animateFloatAsState(if (pressed && !config.isReducedMotion) 0.95f else 1f, spring(dampingRatio = .65f, stiffness = 450f), label = "button_spring")
+  val buttonScale by animateFloatAsState(
+    if (pressed && !config.isReducedMotion) 0.95f else 1f,
+    spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+    label = "button_spring"
+  )
   val contentColor = if (isPrimary) {
     if (config.accentColor.luminance() > .179f) Color.Black else Color.White
   } else if (config.isDark) TextPrimary else TextPrimaryLight
@@ -251,7 +264,11 @@ fun GlassIconButton(
   val iconTint = if (tint == TextPrimary && !config.isDark) TextPrimaryLight else tint
   val interactions = remember { MutableInteractionSource() }
   val pressed by interactions.collectIsPressedAsState()
-  val pressScale by animateFloatAsState(if (pressed && !config.isReducedMotion) .90f else 1f, spring(dampingRatio = .62f, stiffness = 440f), label = "icon_spring")
+  val pressScale by animateFloatAsState(
+    if (pressed && !config.isReducedMotion) .90f else 1f,
+    spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+    label = "icon_spring"
+  )
   Box(
     modifier = modifier
       .graphicsLayer { scaleX = pressScale; scaleY = pressScale }

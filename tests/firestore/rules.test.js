@@ -272,6 +272,37 @@ test('conversation bootstrap merge is non destructive and supports first send', 
   strictEqual(saved.data().unreadCounts.bob, 1);
 });
 
+test('a stale local conversation can be server-rebootstrapped before a retry send', async () => {
+  const alice = env.authenticatedContext('alice').firestore();
+  const cid = 'stale-rebootstrap';
+
+  await env.withSecurityRulesDisabled(async c => {
+    const admin = c.firestore();
+    await setDoc(doc(admin, `conversations/${cid}`), conversation);
+    await deleteDoc(doc(admin, `conversations/${cid}`));
+  });
+
+  await assertSucceeds(setDoc(
+    doc(alice, `conversations/${cid}`),
+    {participantIds: ['alice', 'bob']},
+    {merge: true}
+  ));
+
+  const send = writeBatch(alice);
+  send.set(doc(alice, `conversations/${cid}/messages/retry-1`), baseMessage());
+  send.update(doc(alice, `conversations/${cid}`), {
+    lastMessageId: 'retry-1',
+    lastMessageSenderId: 'alice',
+    lastMessageText: 'Encrypted message',
+    lastMessageTime: Date.now(),
+    lastMessageRevision: Date.now(),
+    lastMessageType: 'TEXT',
+    lastMessageE2ee: e2ee,
+    'unreadCounts.bob': increment(1)
+  });
+  await assertSucceeds(send.commit());
+});
+
 test('participants can create valid E2EE text messages', async () => {
   const alice = env.authenticatedContext('alice').firestore();
   await assertSucceeds(setDoc(doc(alice, 'conversations/newpair'), conversation));

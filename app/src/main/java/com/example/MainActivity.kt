@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.ViewModelProvider
 import com.example.data.network.LiquidApi
 import com.example.ui.LiquidChatApp
@@ -35,6 +36,7 @@ class MainActivity : ComponentActivity() {
     LiquidApi.context = applicationContext
     StartupCrashStore.markStage(this, "activity_onCreate")
     enableEdgeToEdge()
+    WindowCompat.setDecorFitsSystemWindows(window, false)
     notificationConversation = intent.getStringExtra("conversation_id")
 
     val existingCrash = StartupCrashStore.recentCrash(this)
