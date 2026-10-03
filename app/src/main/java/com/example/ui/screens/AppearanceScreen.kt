@@ -2,11 +2,11 @@ package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -18,9 +18,39 @@ import com.example.data.model.AppearanceSettings
 import com.example.ui.components.GlassButton
 import com.example.ui.components.GlassCard
 import com.example.ui.components.LiquidBackground
+import com.example.ui.components.liquidRoundedShape
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
-import kotlin.math.roundToInt
+import kotlin.math.abs
+
+private data class AppearancePreset(
+  val label: String,
+  val value: Float
+)
+
+private val blurPresets = listOf(
+  AppearancePreset("Normal", 0.20f),
+  AppearancePreset("Balanced", 0.35f),
+  AppearancePreset("Extra", 0.55f)
+)
+
+private val tintPresets = listOf(
+  AppearancePreset("Normal", 0.55f),
+  AppearancePreset("Balanced", 0.75f),
+  AppearancePreset("Extra", 0.92f)
+)
+
+private val borderPresets = listOf(
+  AppearancePreset("Normal", 0.45f),
+  AppearancePreset("Balanced", 0.70f),
+  AppearancePreset("Extra", 0.95f)
+)
+
+private val cornerPresets = listOf(
+  AppearancePreset("Normal", 18f),
+  AppearancePreset("Balanced", 30f),
+  AppearancePreset("Extra", 48f)
+)
 
 @Composable
 fun AppearanceScreen(viewModel: LiquidChatViewModel, onBackClick: () -> Unit) {
@@ -45,36 +75,36 @@ fun AppearanceScreen(viewModel: LiquidChatViewModel, onBackClick: () -> Unit) {
         onCheckedChange = { viewModel.updateAppearance(appearance.copy(isDarkMode = it)) }
       )
 
-      AppearanceSliderCard(
+      AppearancePresetCard(
         title = "Backdrop blur",
-        value = appearance.blurAlpha.coerceIn(0f, 1f) * 200f,
-        valueRange = 0f..200f,
-        valueLabel = { "${it.roundToInt()} dp" },
-        onValueChange = { viewModel.updateAppearance(appearance.copy(blurAlpha = (it / 200f).coerceIn(0f, 1f))) }
+        subtitle = "How strongly the background is diffused",
+        current = appearance.blurAlpha,
+        presets = blurPresets,
+        onSelected = { viewModel.updateAppearance(appearance.copy(blurAlpha = it)) }
       )
 
-      AppearanceSliderCard(
+      AppearancePresetCard(
         title = "Glass tint",
-        value = appearance.glassIntensity.coerceIn(0f, 1f) * 100f,
-        valueRange = 0f..100f,
-        valueLabel = { "${it.roundToInt()}%" },
-        onValueChange = { viewModel.updateAppearance(appearance.copy(glassIntensity = (it / 100f).coerceIn(0f, 1f))) }
+        subtitle = "How dense the translucent glass surface feels",
+        current = appearance.glassIntensity,
+        presets = tintPresets,
+        onSelected = { viewModel.updateAppearance(appearance.copy(glassIntensity = it)) }
       )
 
-      AppearanceSliderCard(
+      AppearancePresetCard(
         title = "Border highlight",
-        value = appearance.borderStrength.coerceIn(0f, 1f) * 100f,
-        valueRange = 0f..100f,
-        valueLabel = { "${it.roundToInt()}%" },
-        onValueChange = { viewModel.updateAppearance(appearance.copy(borderStrength = (it / 100f).coerceIn(0f, 1f))) }
+        subtitle = "Strength of the specular glass rim",
+        current = appearance.borderStrength,
+        presets = borderPresets,
+        onSelected = { viewModel.updateAppearance(appearance.copy(borderStrength = it)) }
       )
 
-      AppearanceSliderCard(
+      AppearancePresetCard(
         title = "Corner radius",
-        value = appearance.cornerRadiusDp.coerceIn(0f, 200f),
-        valueRange = 0f..200f,
-        valueLabel = { "${it.roundToInt()} px" },
-        onValueChange = { viewModel.updateAppearance(appearance.copy(cornerRadiusDp = it.coerceIn(0f, 200f))) }
+        subtitle = "Applies across shared glass cards, fields and buttons",
+        current = appearance.cornerRadiusDp,
+        presets = cornerPresets,
+        onSelected = { viewModel.updateAppearance(appearance.copy(cornerRadiusDp = it)) }
       )
 
       AppearanceAccentCard(
@@ -91,7 +121,19 @@ fun AppearanceScreen(viewModel: LiquidChatViewModel, onBackClick: () -> Unit) {
 
       GlassButton(
         "Restore balanced glass",
-        { viewModel.updateAppearance(AppearanceSettings()) },
+        {
+          viewModel.updateAppearance(
+            AppearanceSettings(
+              isDarkMode = appearance.isDarkMode,
+              glassIntensity = 0.75f,
+              blurAlpha = 0.35f,
+              cornerRadiusDp = 30f,
+              borderStrength = 0.70f,
+              accentColorHex = "#00E39C",
+              isReducedMotion = appearance.isReducedMotion
+            )
+          )
+        },
         modifier = Modifier.fillMaxWidth(),
         isPrimary = false
       )
@@ -104,14 +146,22 @@ private fun AppearanceGlassCard(content: @Composable ColumnScope.() -> Unit) {
   val glass = LocalLiquidGlass.current
   GlassCard(
     modifier = Modifier.fillMaxWidth(),
-    shape = RoundedCornerShape(28.dp),
-    backgroundColor = if (glass.isDark) Color(0xFF0D1F27).copy(alpha = .40f) else Color.White.copy(alpha = .52f),
-    borderColor = if (glass.isDark) Color.White.copy(alpha = .16f) else Color.White.copy(alpha = .72f),
+    shape = liquidRoundedShape(28f),
+    backgroundColor = if (glass.isDark) {
+      Color(0xFF0D1F27).copy(alpha = .40f)
+    } else {
+      Color.White.copy(alpha = .52f)
+    },
+    borderColor = if (glass.isDark) {
+      Color.White.copy(alpha = .16f)
+    } else {
+      Color.White.copy(alpha = .72f)
+    },
     elevation = 5.dp
   ) {
     Column(
       Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
-      verticalArrangement = Arrangement.spacedBy(10.dp),
+      verticalArrangement = Arrangement.spacedBy(11.dp),
       content = content
     )
   }
@@ -144,44 +194,60 @@ private fun AppearanceToggleCard(
 }
 
 @Composable
-private fun AppearanceSliderCard(
+private fun AppearancePresetCard(
   title: String,
-  value: Float,
-  valueRange: ClosedFloatingPointRange<Float>,
-  valueLabel: (Float) -> String,
-  onValueChange: (Float) -> Unit
+  subtitle: String,
+  current: Float,
+  presets: List<AppearancePreset>,
+  onSelected: (Float) -> Unit
 ) {
   val glass = LocalLiquidGlass.current
+  val selected = presets.minByOrNull { abs(current - it.value) }?.label ?: "Balanced"
+
   AppearanceGlassCard {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-      Text(
-        title,
-        modifier = Modifier.weight(1f),
-        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold)
-      )
-      Surface(
-        shape = RoundedCornerShape(999.dp),
-        color = glass.accentColor.copy(alpha = .13f),
-        border = BorderStroke(1.dp, glass.accentColor.copy(alpha = .24f))
-      ) {
-        Text(
-          valueLabel(value),
-          modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-          color = glass.accentColor,
-          style = MaterialTheme.typography.labelMedium
-        )
+    Text(
+      title,
+      style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold)
+    )
+    Text(
+      subtitle,
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+      presets.forEach { preset ->
+        val active = selected == preset.label
+        Surface(
+          onClick = { onSelected(preset.value) },
+          modifier = Modifier.weight(1f),
+          shape = liquidRoundedShape(14f),
+          color = if (active) {
+            glass.accentColor.copy(alpha = if (glass.isDark) .25f else .18f)
+          } else if (glass.isDark) {
+            Color.White.copy(alpha = .06f)
+          } else {
+            Color.White.copy(alpha = .54f)
+          },
+          border = BorderStroke(
+            1.dp,
+            if (active) glass.accentColor.copy(alpha = .75f)
+            else MaterialTheme.colorScheme.onSurface.copy(alpha = .10f)
+          )
+        ) {
+          Text(
+            preset.label,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 11.dp),
+            color = if (active) glass.accentColor else MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.labelLarge.copy(fontWeight = if (active) FontWeight.Bold else FontWeight.Medium),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+          )
+        }
       }
     }
-    Slider(
-      value = value.coerceIn(valueRange.start, valueRange.endInclusive),
-      onValueChange = onValueChange,
-      valueRange = valueRange,
-      colors = SliderDefaults.colors(
-        thumbColor = glass.accentColor,
-        activeTrackColor = glass.accentColor,
-        inactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = .12f)
-      )
-    )
   }
 }
 
@@ -198,7 +264,7 @@ private fun AppearanceAccentCard(
     )
     Row(
       modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.spacedBy(14.dp),
+      horizontalArrangement = Arrangement.SpaceBetween,
       verticalAlignment = Alignment.CenterVertically
     ) {
       accents.forEach { hex ->
@@ -209,7 +275,8 @@ private fun AppearanceAccentCard(
           color = color,
           border = BorderStroke(
             if (selected.equals(hex, ignoreCase = true)) 3.dp else 1.dp,
-            if (selected.equals(hex, ignoreCase = true)) MaterialTheme.colorScheme.onSurface else Color.White.copy(alpha = .35f)
+            if (selected.equals(hex, ignoreCase = true)) MaterialTheme.colorScheme.onSurface
+            else Color.White.copy(alpha = .35f)
           ),
           modifier = Modifier.size(42.dp)
         ) {}
