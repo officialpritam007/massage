@@ -71,6 +71,7 @@ import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import com.example.ui.components.GlassButton
 import com.example.ui.components.GlassCard
+import com.example.ui.components.liquidRoundedShape
 import com.example.ui.theme.DeepMidnight
 import com.example.ui.theme.GlassBorderStroke
 import com.example.ui.theme.LocalLiquidGlass
@@ -209,7 +210,7 @@ fun CameraScreen(
               verticalAlignment = Alignment.CenterVertically
             ) {
               Row(
-                Modifier.clip(RoundedCornerShape(12.dp))
+                Modifier.clip(liquidRoundedShape(12f))
                   .clickable(enabled = !previewDeleting, onClick = ::discardPreview)
                   .padding(horizontal = 16.dp, vertical = 10.dp)
                   .testTag("camera_retake_button"),
@@ -221,7 +222,7 @@ fun CameraScreen(
               }
 
               Box(
-                Modifier.clip(RoundedCornerShape(24.dp))
+                Modifier.clip(liquidRoundedShape(24f))
                   .background(Brush.horizontalGradient(listOf(glass.accentColor, glass.accentColor.copy(alpha = .72f))))
                   .clickable(enabled = !previewDeleting) {
                     capturedPhotoUri?.let { uri -> onPhotoCaptured(uri, captionText) }
@@ -320,7 +321,7 @@ fun CameraScreen(
       }
 
       Box(
-        Modifier.size(280.dp).align(Alignment.Center).border(1.dp, glass.accentColor.copy(alpha = 0.3f), RoundedCornerShape(24.dp))
+        Modifier.size(280.dp).align(Alignment.Center).border(1.dp, glass.accentColor.copy(alpha = 0.3f), liquidRoundedShape(24f))
       )
 
       Box(
