@@ -173,8 +173,20 @@ fun LiquidChatApp(
         ChatsHomeScreen(
           viewModel = chatViewModel,
           onNavigateToConversation = { navigateOnce(Screen.Conversation.createRoute(it)) },
-          onNavigateToSettings = { navigateOnce(Screen.Settings.route) },
-          onNavigateToContacts = { navigateOnce(Screen.Contacts.route) },
+          onNavigateToSettings = {
+            navController.navigate(Screen.Settings.route) {
+              popUpTo(Screen.Chats.route) { saveState = true }
+              launchSingleTop = true
+              restoreState = true
+            }
+          },
+          onNavigateToContacts = {
+            navController.navigate(Screen.Contacts.route) {
+              popUpTo(Screen.Chats.route) { saveState = true }
+              launchSingleTop = true
+              restoreState = true
+            }
+          },
           onNavigateToSearch = { navigateOnce(Screen.Search.route) },
           onNavigateToAppearance = { navigateOnce(Screen.Appearance.route) },
           onNavigateToProfile = { navigateOnce(Screen.ContactProfile.createRoute(it)) },
@@ -188,10 +200,18 @@ fun LiquidChatApp(
           viewModel = chatViewModel,
           onNavigateToConversation = { navigateOnce(Screen.Conversation.createRoute(it)) },
           onNavigateToChats = {
-            navController.popBackStack(Screen.Chats.route, false)
+            navController.navigate(Screen.Chats.route) {
+              popUpTo(Screen.Chats.route) { saveState = true }
+              launchSingleTop = true
+              restoreState = true
+            }
           },
           onNavigateToSettings = {
-            navController.navigate(Screen.Settings.route) { launchSingleTop = true }
+            navController.navigate(Screen.Settings.route) {
+              popUpTo(Screen.Chats.route) { saveState = true }
+              launchSingleTop = true
+              restoreState = true
+            }
           },
           onNavigateToSearch = { navigateOnce(Screen.Search.route) },
           onNavigateToProfile = { navigateOnce(Screen.ContactProfile.createRoute(it)) }
@@ -269,14 +289,30 @@ fun LiquidChatApp(
       composable(Screen.Settings.route) {
         SettingsScreen(
           viewModel = chatViewModel,
-          onBackClick = { navController.popBackStack() },
+          onBackClick = {
+            navController.navigate(Screen.Chats.route) {
+              popUpTo(Screen.Chats.route) { saveState = true }
+              launchSingleTop = true
+              restoreState = true
+            }
+          },
           onNavigateToAppearance = { navigateOnce(Screen.Appearance.route) },
           onNavigateToDiagnostics = { navigateOnce(Screen.Diagnostics.route) },
           onNavigateToProfile = { navigateOnce(Screen.ContactProfile.createRoute(it)) },
-          onNavigateToContacts = { navigateOnce(Screen.Contacts.route) },
+          onNavigateToContacts = {
+            navController.navigate(Screen.Contacts.route) {
+              popUpTo(Screen.Chats.route) { saveState = true }
+              launchSingleTop = true
+              restoreState = true
+            }
+          },
           onNavigateToHomeTab = { tab ->
             homeTab = tab
-            navController.popBackStack(Screen.Chats.route, false)
+            navController.navigate(Screen.Chats.route) {
+              popUpTo(Screen.Chats.route) { saveState = true }
+              launchSingleTop = true
+              restoreState = true
+            }
           },
           onLogout = {
             navController.navigate(Screen.Auth.route) {

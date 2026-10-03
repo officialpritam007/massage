@@ -17,9 +17,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -39,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.model.User
 import com.example.ui.components.GlassAvatar
+import com.example.ui.components.GlassBottomBar
 import com.example.ui.components.GlassCard
 import com.example.ui.components.GlassIconButton
 import com.example.ui.components.GlassTextField
@@ -56,7 +58,7 @@ fun ContactsScreen(
   onNavigateToProfile: (String) -> Unit,
   modifier: Modifier = Modifier
 ) {
-    LaunchedEffect(Unit) { viewModel.repository.refreshContacts() }
+  LaunchedEffect(Unit) { viewModel.repository.refreshContacts() }
   val users by viewModel.users.collectAsState()
   val conversations by viewModel.conversations.collectAsState()
   val me by viewModel.currentUser.collectAsState()
@@ -77,6 +79,8 @@ fun ContactsScreen(
     it.displayName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "#"
   }
 
+  val totalUnread = conversations.sumOf { it.unreadCount }
+
   LiquidBackground(modifier = modifier, crystal = true) {
     Scaffold(
       containerColor = Color.Transparent,
@@ -85,17 +89,21 @@ fun ContactsScreen(
           selectedRoute = "contacts",
           onNavigateToChats = onNavigateToChats,
           onNavigateToContacts = {},
-          onNavigateToSettings = onNavigateToSettings
+          onNavigateToSettings = onNavigateToSettings,
+          unreadChatsCount = totalUnread
         )
       }
     ) { padding ->
       LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(padding),
+        modifier = Modifier
+          .fillMaxSize()
+          .padding(padding),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(9.dp)
       ) {
         item(key = "contacts-header") {
           Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            // iOS WhatsApp Header
             Row(
               Modifier.fillMaxWidth(),
               verticalAlignment = Alignment.CenterVertically
@@ -103,47 +111,113 @@ fun ContactsScreen(
               Text(
                 "Contacts",
                 style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.weight(1f)
               )
-              GlassIconButton(Icons.Default.MoreHoriz, "Contacts menu", onNavigateToSearch, size = 46.dp)
+              GlassIconButton(
+                Icons.Default.Search,
+                "Search directory",
+                onNavigateToSearch,
+                size = 44.dp
+              )
               Spacer(Modifier.width(8.dp))
               GlassIconButton(
                 Icons.Default.Add,
-                "Find contact",
+                "New contact",
                 onNavigateToSearch,
-                size = 48.dp,
+                size = 46.dp,
                 tint = Color.White,
                 backgroundColor = glass.accentColor.copy(alpha = .86f)
               )
             }
+
+            // Search input field
             GlassTextField(
               value = query,
               onValueChange = { query = it },
-              placeholder = "Search contacts",
+              placeholder = "Search contacts by name or @username",
               modifier = Modifier.fillMaxWidth(),
               leadingIcon = {
-                Icon(Icons.Default.Search, contentDescription = null, tint = glass.accentColor, modifier = Modifier.size(22.dp))
+                Icon(
+                  Icons.Default.Search,
+                  contentDescription = null,
+                  tint = glass.accentColor,
+                  modifier = Modifier.size(22.dp)
+                )
               },
               shape = RoundedCornerShape(28.dp),
-              minHeight = 54.dp
+              minHeight = 52.dp
             )
+          }
+        }
+
+        // WhatsApp-style "New Contact" quick action item
+        item(key = "new-contact-row") {
+          GlassCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            backgroundColor = if (glass.isDark) Color(0xFF142A31).copy(alpha = .72f) else Color.White.copy(alpha = .58f),
+            borderColor = Color.White.copy(alpha = if (glass.isDark) .16f else .58f),
+            elevation = 2.dp,
+            onClick = onNavigateToSearch
+          ) {
+            Row(
+              Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              GlassIconButton(
+                Icons.Default.PersonAdd,
+                "New contact",
+                onNavigateToSearch,
+                size = 44.dp,
+                tint = Color.White,
+                backgroundColor = glass.accentColor.copy(alpha = .85f)
+              )
+              Spacer(Modifier.width(14.dp))
+              Column(Modifier.weight(1f)) {
+                Text(
+                  "New Contact",
+                  style = MaterialTheme.typography.titleMedium,
+                  fontWeight = FontWeight.Bold,
+                  color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                  "Discover and add new people to Liquid Chat",
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+              }
+              Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp)
+              )
+            }
           }
         }
 
         if (contacts.isEmpty()) {
           item(key = "contacts-empty") {
             GlassCard(
-              Modifier.fillMaxWidth().padding(top = 20.dp),
+              Modifier
+                .fillMaxWidth()
+                .padding(top = 20.dp),
               shape = RoundedCornerShape(28.dp),
               backgroundColor = if (glass.isDark) Color(0xFF142A31).copy(alpha = .72f) else Color.White.copy(alpha = .60f)
             ) {
               Column(
-                Modifier.fillMaxWidth().padding(vertical = 36.dp),
+                Modifier
+                  .fillMaxWidth()
+                  .padding(vertical = 36.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
               ) {
-                Text("No contacts found", style = MaterialTheme.typography.titleMedium)
-                Text("Search by name or username", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("No contacts found", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Text("Search by name or username to start chatting", color = MaterialTheme.colorScheme.onSurfaceVariant)
               }
             }
           }
@@ -152,44 +226,52 @@ fun ContactsScreen(
             item(key = "letter-$letter") {
               Text(
                 letter,
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = glass.accentColor,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
               )
             }
             items(people, key = { it.uid }) { user ->
               GlassCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(28.dp),
+                shape = RoundedCornerShape(26.dp),
                 backgroundColor = if (glass.isDark) Color(0xFF142A31).copy(alpha = .70f) else Color.White.copy(alpha = .56f),
                 borderColor = Color.White.copy(alpha = if (glass.isDark) .16f else .58f),
-                elevation = 4.dp,
-                onClick = { onNavigateToProfile(user.uid) }
+                elevation = 3.dp,
+                onClick = {
+                  // Direct 1-to-1 conversation launch like iOS WhatsApp
+                  val convId = viewModel.getOrCreateConversationId(user.uid)
+                  onNavigateToConversation(convId)
+                }
               ) {
                 Row(
-                  Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 10.dp),
+                  Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 13.dp, vertical = 10.dp),
                   verticalAlignment = Alignment.CenterVertically
                 ) {
                   GlassAvatar(
                     photoUrl = user.photoUrl,
                     name = user.displayName.ifBlank { "Contact" },
-                    size = 56.dp,
-                    isOnline = user.isOnline && user.onlineVisible
+                    size = 52.dp,
+                    isOnline = user.isOnline && user.onlineVisible,
+                    onClick = { onNavigateToProfile(user.uid) }
                   )
                   Spacer(Modifier.width(14.dp))
                   Column(Modifier.weight(1f)) {
                     Text(
                       user.displayName.ifBlank { "Contact" },
                       style = MaterialTheme.typography.titleMedium,
-                      fontWeight = FontWeight.SemiBold,
+                      fontWeight = FontWeight.Bold,
                       color = MaterialTheme.colorScheme.onSurface,
                       maxLines = 1,
                       overflow = TextOverflow.Ellipsis
                     )
                     val subtitle = when {
                       user.isOnline && user.onlineVisible -> "Online"
+                      user.bio.isNotBlank() -> user.bio
                       user.username.isNotBlank() -> "@${user.username}"
-                      else -> user.bio
+                      else -> "Hey there! I am using Liquid Chat."
                     }
                     Text(
                       subtitle,
@@ -199,7 +281,17 @@ fun ContactsScreen(
                       overflow = TextOverflow.Ellipsis
                     )
                   }
-                  Icon(Icons.Default.ChevronRight, contentDescription = "Open profile", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
+                  IconButton(
+                    onClick = { onNavigateToProfile(user.uid) },
+                    modifier = Modifier.size(34.dp)
+                  ) {
+                    Icon(
+                      Icons.Default.ChevronRight,
+                      contentDescription = "View profile",
+                      tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                      modifier = Modifier.size(22.dp)
+                    )
+                  }
                 }
               }
             }

@@ -1,5 +1,18 @@
 # Liquid Chat complete UI update
 
+## 4.2.4 ZIP integration review — 2026-10-03
+
+- Compared `liquid_chat_ios26_update.zip` against current `main`, commit `cadc2b21bb4fd38c43d047398e0066a660d4c786`. The archive changes five UI/navigation files only.
+- Included the updated Chats header, search field, archive row, pinned indicator, direct contact-to-chat action, and diagonal glass highlights.
+- Restored the missing shared `GlassBottomBar` in `ui/components`; the uploaded screens imported it but the archive contained no implementation. Chats, Contacts and Settings now share the same selected-tab animation and unread badge.
+- Added accessible selected-tab semantics and regression checks for tab callbacks and unread-count updates.
+- Preserved the Chats navigation entry and saved state when returning from Settings.
+- Bumped Android version to 4.2.4 / 424.
+- Firebase, Cloudinary, notification/decryption, account cleanup, security rules and existing workflows are unchanged by this UI integration.
+- The 24 trusted-cleanup unit tests and JSON/TOML/XML parse checks passed locally. Android unit tests, Firestore emulator tests and APK assembly are verified by the `Build Android APK` workflow before advancing `main`.
+
+The notes below describe earlier UI work and its original verification status.
+
 ## Included source changes
 
 - Replaced the plain background with a shared royal-blue to deep-navy gradient in Dark Mode and a light-blue gradient in Light Mode.

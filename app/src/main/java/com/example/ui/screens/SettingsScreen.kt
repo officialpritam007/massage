@@ -66,6 +66,7 @@ fun SettingsScreen(
   val blocked by viewModel.blockedUserIds.collectAsState()
   val users by viewModel.users.collectAsState()
   val messages by viewModel.messages.collectAsState()
+  val conversations by viewModel.conversations.collectAsState()
   val deletionStatus by viewModel.deletionStatus.collectAsState()
   val deletionPending by viewModel.deletionPending.collectAsState()
   val deletionRunning by viewModel.deletionRunning.collectAsState()
@@ -150,11 +151,13 @@ fun SettingsScreen(
     Scaffold(
       containerColor = Color.Transparent,
       bottomBar = {
+        val totalUnread = conversations.sumOf { it.unreadCount }
         GlassBottomBar(
           selectedRoute = "settings",
           onNavigateToChats = { onNavigateToHomeTab("All") },
           onNavigateToContacts = onNavigateToContacts,
-          onNavigateToSettings = {}
+          onNavigateToSettings = {},
+          unreadChatsCount = totalUnread
         )
       }
     ) { padding ->

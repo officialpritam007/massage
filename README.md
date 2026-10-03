@@ -1,4 +1,4 @@
-# Liquid Chat 4.2.3
+# Liquid Chat 4.2.4
 
 A Kotlin/Jetpack Compose **1-to-1 realtime messaging app** using a zero-paid-backend architecture.
 

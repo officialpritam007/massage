@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -101,8 +102,19 @@ fun GlassCard(
   val backdrop = LocalGlassBackdrop.current
   val border = borderColor ?: if (config.isDark) GlassBorderStrokeDark else Color.White.copy(alpha = 0.38f)
   val resolvedShape: Shape = shape ?: RoundedCornerShape(config.cornerRadiusDp.coerceIn(16f, 32f).dp)
-  val topHighlight = if (config.isDark) Color(0xFFD8FFFF).copy(alpha = 0.32f) else Color.White.copy(alpha = 0.95f)
+  val specularHighlight = if (config.isDark) Color(0xFFD8FFFF).copy(alpha = 0.40f) else Color.White.copy(alpha = 0.95f)
   val shadow = if (config.isDark) Color.Black.copy(alpha = 0.56f) else Color.Black.copy(alpha = 0.10f)
+
+  val specularRimBrush = Brush.linearGradient(
+    colors = listOf(
+      specularHighlight,
+      specularHighlight.copy(alpha = if (config.isDark) 0.22f else 0.55f),
+      border.copy(alpha = (border.alpha * config.borderStrength).coerceIn(0.10f, 1f)),
+      border.copy(alpha = (border.alpha * config.borderStrength * 0.30f).coerceIn(0.04f, 0.40f))
+    ),
+    start = Offset.Zero,
+    end = Offset.Infinite
+  )
 
   Box(
     modifier = modifier
@@ -119,12 +131,18 @@ fun GlassCard(
         } else Modifier
       )
       .background(glassBackground)
-      .border(BorderStroke(1.dp, Brush.verticalGradient(listOf(topHighlight, border.copy(alpha = (border.alpha * config.borderStrength).coerceIn(0.06f, 1f))))), resolvedShape)
+      .border(BorderStroke(1.dp, specularRimBrush), resolvedShape)
       .drawWithContent {
         drawContent()
         drawRect(
-          color = topHighlight.copy(alpha = if (config.isDark) 0.48f else 0.70f),
-          size = Size(size.width, 1.dp.toPx())
+          brush = Brush.horizontalGradient(
+            colors = listOf(
+              specularHighlight.copy(alpha = if (config.isDark) 0.48f else 0.70f),
+              specularHighlight.copy(alpha = if (config.isDark) 0.16f else 0.28f),
+              Color.Transparent
+            )
+          ),
+          size = Size(size.width, 1.2.dp.toPx())
         )
       }
       .then(
@@ -135,8 +153,6 @@ fun GlassCard(
         ) else Modifier
       )
   ) {
-    // The highlight is drawn by the parent modifier so decorative glass never
-    // participates in measurement. Compact content therefore stays compact.
     CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides androidx.compose.material3.MaterialTheme.colorScheme.onSurface) { content() }
   }
 }
@@ -325,12 +341,34 @@ fun GlassBadge(count: Int, modifier: Modifier = Modifier, color: Color = CyanAcc
   if (count <= 0) return
   val config = LocalLiquidGlass.current
   Box(
-    modifier = modifier.defaultMinSize(minWidth = 20.dp, minHeight = 20.dp).clip(RoundedCornerShape(10.dp))
-      .background(color.copy(alpha = 0.82f)).border(1.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+    modifier = modifier
+      .defaultMinSize(minWidth = 20.dp, minHeight = 20.dp)
+      .shadow(elevation = 3.dp, shape = RoundedCornerShape(10.dp), ambientColor = color.copy(alpha = 0.45f), spotColor = color)
+      .clip(RoundedCornerShape(10.dp))
+      .background(color.copy(alpha = 0.90f))
+      .border(
+        BorderStroke(
+          1.dp,
+          Brush.linearGradient(
+            listOf(Color.White.copy(alpha = 0.75f), Color.White.copy(alpha = 0.20f)),
+            start = Offset.Zero,
+            end = Offset.Infinite
+          )
+        ),
+        RoundedCornerShape(10.dp)
+      )
       .padding(horizontal = 6.dp, vertical = 2.dp),
     contentAlignment = Alignment.Center
   ) {
-    Text(if (count > 99) "99+" else count.toString(), style = TextStyle(color = if (config.isDark) Color.Black else Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center))
+    Text(
+      if (count > 99) "99+" else count.toString(),
+      style = TextStyle(
+        color = if (config.isDark) Color.Black else Color.White,
+        fontWeight = FontWeight.Bold,
+        fontSize = 11.sp,
+        textAlign = TextAlign.Center
+      )
+    )
   }
 }
 
