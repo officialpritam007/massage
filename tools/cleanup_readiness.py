@@ -25,6 +25,12 @@ def audit_readiness(db, auth, cleaner, credential, project, approvals, automatio
     certificate = db.document("runtime/cleanupInventory").get().to_dict() or {}
     clean_inventory = certificate.get("complete") is True and certificate.get("noExportsConfirmed") is True
     report["inventoryCutoverVerified"] = clean_inventory
+    roots = [ref.id for ref in db.collections()]
+    # Collection labels are schema metadata. Hide long/custom labels that could
+    # embed an owner ID; never inspect or log the documents beneath them here.
+    import re
+    safe_admin_labels = {"accountDeletionRequests", "accountDeletionReceipts", "deletionProofs"}
+    report["collectionLabels"] = [name if name in safe_admin_labels or re.fullmatch(r"[A-Za-z_]{1,20}", name) else "custom-label-redacted" for name in roots]
     runtime = db.document("runtime/cleanup").get().to_dict() or {}
     age = int(time.time() * 1000) - runtime.get("updatedAt", 0)
     report["runtime"] = {"enabled": runtime.get("enabled") is True, "heartbeatFresh": 0 <= age <= 3_600_000}
