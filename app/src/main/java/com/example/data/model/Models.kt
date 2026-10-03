@@ -78,9 +78,9 @@ data class Conversation(
 
 data class AppearanceSettings(
   val isDarkMode: Boolean = true,
-  val glassIntensity: Float = 0.85f,
-  val blurAlpha: Float = 0.70f,
-  val cornerRadiusDp: Float = 32f,
+  val glassIntensity: Float = 0.75f,
+  val blurAlpha: Float = 0.35f,
+  val cornerRadiusDp: Float = 30f,
   val borderStrength: Float = 0.70f,
   val accentColorHex: String = "#00E39C",
   val isReducedMotion: Boolean = false
