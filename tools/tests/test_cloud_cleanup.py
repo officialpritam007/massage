@@ -429,6 +429,17 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual([], db.deleted)
         auth.delete_user.assert_not_called()
 
+    def test_legacy_account_registries_are_reset_but_unknown_configuration_is_blocked(self):
+        from cleanup_inventory import reset_collections
+        db, auth, cleaner = self.fixture()
+        db.data["legacyNotificationReceipts/one"] = {"uid": "alice", "messageId": "one"}
+        self.assertIn("legacyNotificationReceipts", reset_collections(db, {"alice", "bob"}))
+        self.assertIn("_sessions", reset_collections(db, {"alice", "bob"}))
+        db.data["unreviewedSettings/project"] = {"configuration": True}
+        with self.assertRaises(CleanupBlocked):
+            reset_collections(db, {"alice", "bob"})
+        self.assertEqual([], db.deleted)
+
 
 if __name__ == "__main__":
     unittest.main()

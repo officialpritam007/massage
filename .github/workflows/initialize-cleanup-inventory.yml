@@ -59,6 +59,12 @@ jobs:
           CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
           CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
         run: python tools/cloud_cleanup.py --audit-only
+      - name: Validate scoped uploads and deletion with disposable accounts
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/cleanup-account.json
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        run: python tools/cleanup_smoke_test.py
       - name: Remove credentials
         if: always()
         run: rm -f "$RUNNER_TEMP/cleanup-account.json"

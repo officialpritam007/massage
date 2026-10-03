@@ -16,8 +16,28 @@ from urllib.parse import quote
 from cloud_cleanup import CleanupBlocked, TOKEN_EXPIRY_GRACE_MS, media_identity
 
 
-USER_COLLECTIONS = {"users", "directory", "usernames", "conversations", "reports"}
+USER_COLLECTIONS = {"users", "directory", "usernames", "conversations", "reports",
+                    "_rate", "_sessions", "media", "messageTombstones"}
 ADMIN_COLLECTIONS = {"runtime", "accountDeletionRequests", "deletionProofs"}
+USER_REFERENCE_FIELDS = {"uid", "userId", "ownerId", "senderId", "recipientId", "participantIds",
+                         "conversationId", "messageId", "assetId", "fileId", "mediaUrl", "sessionId"}
+
+
+def reset_collections(db, accounts):
+    """Recognize old account/message/media registries without deleting config."""
+    names = set(USER_COLLECTIONS)
+    for ref in db.collections():
+        if ref.id in names | ADMIN_COLLECTIONS:
+            continue
+        documents = list(ref.stream())
+        if ref.id in accounts or (documents and all(
+            doc.id in accounts or bool(USER_REFERENCE_FIELDS & (doc.to_dict() or {}).keys())
+            for doc in documents
+        )):
+            names.add(ref.id)
+        else:
+            raise CleanupBlocked("An unreviewed database collection prevents an automatic inventory reset.")
+    return names
 
 
 def load_policy(path):
@@ -114,13 +134,11 @@ def initialize_inventory(db, auth, cleaner, google_session, policy):
         print("Inventory cutover already verified; existing user data was not reset again.")
         return
     verify_database_backups(google_session, policy["projectId"])
-    collections = list(db.collections())
-    if any(ref.id not in USER_COLLECTIONS | ADMIN_COLLECTIONS for ref in collections):
-        raise CleanupBlocked("An unreviewed database collection prevents an automatic inventory reset.")
     started_at = existing.get("startedAt") or int(time.time() * 1000)
     accounts = {user.uid for user in auth.list_users().iterate_all()}
     for collection in ("users", "directory", "accountDeletionRequests"):
         accounts.update(ref.id for ref in db.collection(collection).list_documents())
+    user_collections = reset_collections(db, accounts)
     if len(accounts) > 200:
         raise CleanupBlocked("This reset requires a reviewed batch plan for the larger account inventory.")
     # Disable old unsigned clients first. The replacement preset remains signed
@@ -154,14 +172,14 @@ def initialize_inventory(db, auth, cleaner, google_session, policy):
         cleaner.delete(identity)
         if cleaner.resource(identity) is not None:
             raise CleanupBlocked("Provider deletion is not verified yet.")
-    for name in USER_COLLECTIONS:
+    for name in user_collections:
         db.recursive_delete(db.collection(name))
     for account in accounts:
         try:
             auth.delete_user(account)
         except auth.UserNotFoundError:
             pass
-    if app_resources(cleaner) or any(next(db.collection(name).list_documents(), None) is not None for name in USER_COLLECTIONS):
+    if app_resources(cleaner) or any(next(db.collection(name).list_documents(), None) is not None for name in user_collections):
         raise CleanupBlocked("The old inventory is not empty; initialization can be retried.")
     # Resuming after a crash keeps the original pending gates. A later completion
     # never needs a UID list in the permanent inventory certificate.
