@@ -89,6 +89,7 @@ class ChatRepository(
 
   private var heartbeat: Job? = null
   private var outboxJob: Job? = null
+  private var outboxRetryJob: Job? = null
   private var appearanceJob: Job? = null
   private var syncRecoveryJob: Job? = null
   private val syncRecoveryAttempts = mutableMapOf<String, Int>()
@@ -586,6 +587,8 @@ class ChatRepository(
     _historyLoading.value = emptyMap()
     heartbeat?.cancel()
     outboxJob?.cancel()
+    outboxRetryJob?.cancel()
+    outboxRetryJob = null
     syncRecoveryJob?.cancel()
     syncRecoveryJob = null
   }
@@ -623,9 +626,9 @@ class ChatRepository(
         (snapshot.get("appearance") as? Map<*, *>)?.let { a ->
           val remoteAppearance = AppearanceSettings(
             isDarkMode = anyBoolean(a["isDarkMode"], true),
-            glassIntensity = (a["glassIntensity"] as? Number)?.toFloat() ?: 0.85f,
-            blurAlpha = (a["blurAlpha"] as? Number)?.toFloat() ?: 0.70f,
-            cornerRadiusDp = (a["cornerRadiusDp"] as? Number)?.toFloat() ?: 32f,
+            glassIntensity = (a["glassIntensity"] as? Number)?.toFloat() ?: 0.75f,
+            blurAlpha = (a["blurAlpha"] as? Number)?.toFloat() ?: 0.35f,
+            cornerRadiusDp = (a["cornerRadiusDp"] as? Number)?.toFloat() ?: 30f,
             borderStrength = (a["borderStrength"] as? Number)?.toFloat() ?: 0.70f,
             accentColorHex = a["accentColorHex"] as? String ?: "#00E39C",
             isReducedMotion = anyBoolean(a["isReducedMotion"], false)
@@ -699,7 +702,7 @@ class ChatRepository(
       while (isActive && uid == account) {
         flushOutbox()
         if (appearanceDirty && !quotaPaused && appearanceJob?.isActive != true) updateAppearance(_appearance.value)
-        delay(15_000)
+        delay(5_000)
       }
     }
     heartbeat = scope.launch {
@@ -1617,6 +1620,17 @@ class ChatRepository(
     }
   }
 
+  private fun scheduleOutboxRetry(account: String) {
+    if (outboxRetryJob?.isActive == true) return
+    outboxRetryJob = scope.launch {
+      runCatching { db.enableNetwork().await() }
+      delay(1_500)
+      if (uid == account && account.isNotBlank() && !deletingAccount && !cleanupQueued) {
+        flushOutbox()
+      }
+    }
+  }
+
   private suspend fun flushOutbox() {
     if (uid.isBlank() || deletingAccount || cleanupQueued || quotaPaused || !sending.tryLock()) return
     val account = uid
@@ -1652,29 +1666,39 @@ class ChatRepository(
               sendMessageDirect(data)
             }
           } catch (timeout: TimeoutCancellationException) {
-            failed += id
-            updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.FAILED) }
-            _syncWarning.value = "Message send timed out. Tap the failed message to retry."
-            continue
+            failed -= id
+            updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.SENDING) }
+            _syncWarning.value = "Message queued · reconnecting automatically"
+            scheduleOutboxRetry(account)
+            break
           }
           prefs.edit().remove(key).apply()
+          failed -= id
           if (!created) {
             removeLocalMessage(cid, id)
           } else {
             updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.SENT) }
+            if (_syncWarning.value?.startsWith("Message") == true) _syncWarning.value = null
           }
         } catch (e: Exception) {
           if (e is CancellationException) throw e
-          if (firestoreCode(e) == FirebaseFirestoreException.Code.RESOURCE_EXHAUSTED) {
+          val code = firestoreCode(e)
+          if (code == FirebaseFirestoreException.Code.RESOURCE_EXHAUSTED) {
             reportSnapshotFailure("Messages", e)
+            failed -= id
             updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.SENDING) }
             break
           }
-          if (e !is java.io.IOException) {
-            failed += id
-            updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.FAILED) }
-            _syncWarning.value = "Message: " + friendlyError(e)
+          if (shouldAutoRetryOutbox(code?.name, e is java.io.IOException)) {
+            failed -= id
+            updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.SENDING) }
+            _syncWarning.value = "Message queued · reconnecting automatically"
+            scheduleOutboxRetry(account)
+            break
           }
+          failed += id
+          updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.FAILED) }
+          _syncWarning.value = "Message: " + friendlyError(e)
         }
       }
     } finally {
@@ -2073,6 +2097,9 @@ class ChatRepository(
   fun setPresence(value: Boolean) {
     prefs.edit().putBoolean("appResumed", value).apply()
     resumed = value
+    if (value && uid.isNotBlank() && !deletingAccount && !cleanupQueued) {
+      scope.launch { flushOutbox() }
+    }
     if (uid.isNotBlank()) writePresence(value)
   }
 
@@ -2153,8 +2180,8 @@ class ChatRepository(
     runCatching {
       val j = JSONObject(raw)
       val a = AppearanceSettings(
-        j.optBoolean("isDarkMode", true), j.optDouble("glassIntensity", .85).toFloat(),
-        j.optDouble("blurAlpha", .70).toFloat(), j.optDouble("cornerRadiusDp", 32.0).toFloat(),
+        j.optBoolean("isDarkMode", true), j.optDouble("glassIntensity", .75).toFloat(),
+        j.optDouble("blurAlpha", .35).toFloat(), j.optDouble("cornerRadiusDp", 30.0).toFloat(),
         j.optDouble("borderStrength", .70).toFloat(), j.optString("accentColorHex", "#00E39C"),
         j.optBoolean("isReducedMotion", false)
       )
