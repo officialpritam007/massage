@@ -49,7 +49,7 @@ fun GlassDialog(
     ) {
       GlassCard(
         modifier = Modifier.fillMaxWidth().widthIn(max = 440.dp),
-        shape = RoundedCornerShape(30.dp),
+        shape = liquidRoundedShape(30f),
         backgroundColor = denseGlass,
         elevation = 18.dp
       ) {
