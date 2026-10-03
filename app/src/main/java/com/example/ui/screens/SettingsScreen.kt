@@ -530,10 +530,33 @@ fun SettingsScreen(
             ) { Text("Contact support") }
           }
 
-          "Log out", "Delete account" -> {
-            Text("Logging out permanently deletes your account, profile, chats on both sides, and uploaded media. It also erases this device’s keys, downloads and cached data. You cannot undo this or restore your old chats by signing in again.")
+          "Log out" -> {
+            Text("Log out removes this device session, local message cache and notifications. Your Firebase account, conversations and uploaded media remain in the cloud.")
+            Text("Your device-bound E2EE identity is preserved so encrypted chats can be read again after signing back in on this device.")
+            deletionError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            GlassButton(
+              text = "Log out",
+              onClick = { beginSessionLogout() },
+              modifier = Modifier.fillMaxWidth(),
+              isLoading = busy,
+              enabled = !busy
+            )
+          }
+
+          "Delete account" -> {
+            Text("Delete Account permanently removes your profile, one-to-one conversation data and owned app media after trusted cloud cleanup.")
+            Text("This cannot be undone. Logging out is available separately if you only want to end this device session.")
+            GlassButton(
+              text = "Continue",
+              onClick = { dialog = "Confirm deletion" },
+              modifier = Modifier.fillMaxWidth()
+            )
+          }
+
+          "Confirm deletion" -> {
+            Text("Final confirmation: permanently erase this account and cloud data.")
             Text("Keep the app installed until deletion is confirmed. Uninstalling alone cannot erase cloud data.")
-            Text("Final verification waits 70 minutes after cloud cleanup for old sessions to expire, plus worker scheduling. Check again later if it is pending.")
+            Text("Final verification can include the old-session expiry window plus cleanup-worker scheduling.")
             if (!googleProvider && !deletionPending) GlassTextField(
               deletionPassword, { deletionPassword = it }, placeholder = "Confirm password",
               visualTransformation = PasswordVisualTransformation()
@@ -541,7 +564,7 @@ fun SettingsScreen(
             deletionStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             deletionError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             GlassButton(
-              text = if (deletionPending) "Check deletion" else if (googleProvider) "Verify with Google and delete" else "Delete all data and log out",
+              text = if (deletionPending) "Check deletion" else if (googleProvider) "Verify with Google and delete" else "Permanently delete account",
               onClick = { beginPermanentDeletion() },
               modifier = Modifier.fillMaxWidth(),
               isLoading = busy || deletionRunning,
