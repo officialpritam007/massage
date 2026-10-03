@@ -64,6 +64,7 @@ import com.example.ui.components.GlassCard
 import com.example.ui.components.GlassDialog
 import com.example.ui.components.GlassIconButton
 import com.example.ui.components.LiquidBackground
+import com.example.ui.components.liquidRoundedShape
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
 import kotlinx.coroutines.delay
@@ -222,7 +223,7 @@ fun ChatsHomeScreen(
                         // Search Bar Card
                         GlassCard(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(32.dp),
+                            shape = liquidRoundedShape(32f),
                             backgroundColor = if (glass.isDark) darkSearch else lightSearch,
                             borderColor = Color.White.copy(alpha = if (glass.isDark) .19f else .62f),
                             elevation = 4.dp,
@@ -265,7 +266,7 @@ fun ChatsHomeScreen(
                     item(key = "archived-row") {
                         GlassCard(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(26.dp),
+                            shape = liquidRoundedShape(26f),
                             backgroundColor = if (glass.isDark) darkRow else lightRow,
                             borderColor = Color.White.copy(alpha = .14f),
                             elevation = 2.dp,
@@ -324,7 +325,7 @@ fun ChatsHomeScreen(
                     ) {
                         GlassCard(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(28.dp),
+                            shape = liquidRoundedShape(28f),
                             backgroundColor = if (glass.isDark) darkRow else lightRow,
                             borderColor = Color.White.copy(alpha = if (glass.isDark) .15f else .55f),
                             elevation = if (glass.isDark) 6.dp else 3.dp,
@@ -467,7 +468,7 @@ fun ChatsHomeScreen(
                             Modifier
                                 .fillMaxWidth()
                                 .padding(top = 28.dp),
-                            shape = RoundedCornerShape(32.dp),
+                            shape = liquidRoundedShape(32f),
                             backgroundColor = if (glass.isDark) darkRow else lightRow,
                             elevation = 3.dp
                         ) {
@@ -591,7 +592,7 @@ private fun GlassFilterPill(
 ) {
     val config = LocalLiquidGlass.current
     GlassCard(
-        shape = RoundedCornerShape(24.dp),
+        shape = liquidRoundedShape(24f),
         backgroundColor = if (selected) config.accentColor.copy(alpha = .82f)
         else Color.White.copy(alpha = if (config.isDark) .10f else .58f),
         borderColor = if (selected) Color.White.copy(alpha = .38f)
