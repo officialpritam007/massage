@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -65,8 +66,8 @@ fun GlassBottomBar(
     GlassCard(
       Modifier.fillMaxWidth(),
       shape = liquidRoundedShape(32f),
-      backgroundColor = if (config.isDark) Color(0xFF12262D).copy(alpha = .86f)
-      else Color.White.copy(alpha = .66f),
+      backgroundColor = if (config.isDark) Color(0xFF12262D).copy(alpha = .62f)
+      else Color.White.copy(alpha = .48f),
       borderColor = Color.White.copy(alpha = if (config.isDark) .17f else .56f),
       elevation = 12.dp
     ) {
@@ -75,7 +76,7 @@ fun GlassBottomBar(
         val selectedOffset by animateDpAsState(
           targetValue = itemWidth * selectedIndex.coerceAtLeast(0),
           animationSpec = if (config.isReducedMotion) tween(0)
-          else spring(dampingRatio = .68f, stiffness = 390f),
+          else spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
           label = "tab_glass_pill"
         )
         if (selectedIndex >= 0) {
