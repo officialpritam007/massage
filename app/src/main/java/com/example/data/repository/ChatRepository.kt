@@ -1198,30 +1198,38 @@ class ChatRepository(
   }
 
   private suspend fun ensureOwnDirectoryReady(account: String) {
-    val deletion = db.document("accountDeletionRequests/$account").get(Source.SERVER).await()
-    if (deletion.exists()) {
-      enterDeletionPending(account, deletion.safeString("proofId"), accepted = true)
-      throw IllegalStateException("This account is being removed. Finish deletion or sign in with a different account.")
-    }
-
     val directoryRef = db.document("directory/$account")
-    val current = directoryRef.get(Source.SERVER).await()
+    val cachedDirectory = runCatching { directoryRef.get(Source.CACHE).await() }.getOrNull()
     val identity = E2eeCrypto.ensureIdentity(LiquidApi.context, account)
+    val cachedIdentityReady = cachedDirectory?.exists() == true &&
+      cachedDirectory.safeString("e2eePublicKey").isNotBlank() &&
+      cachedDirectory.safeString("e2eeKeyId").isNotBlank()
+    if (cachedIdentityReady) return
+
+    val current = directoryRef.get().await()
     val missingIdentity =
       current.safeString("e2eePublicKey").isBlank() || current.safeString("e2eeKeyId").isBlank()
     if (current.exists() && !missingIdentity) return
 
-    val own = db.document("users/$account").get(Source.SERVER).await()
-    check(own.exists()) { "Your profile is not ready. Sign in again." }
+    val stateUser = _currentUser.value.takeIf { it.uid == account && it.displayName.isNotBlank() }
+    val own = if (stateUser == null) db.document("users/$account").get().await() else null
+    if (stateUser == null) check(own?.exists() == true) { "Your profile is not ready. Sign in again." }
+
+    val displayName = stateUser?.displayName ?: own!!.safeString("displayName", "User")
+    val username = stateUser?.username ?: own!!.safeString("username")
+    val bio = stateUser?.bio ?: own!!.safeString("bio")
+    val photo = stateUser?.photoUrl ?: own!!.safeString("photoUrl")
+    val createdAt = stateUser?.createdAt?.takeIf { it > 0L }
+      ?: own?.safeLong("createdAt", System.currentTimeMillis())?.takeIf { it > 0L }
+      ?: System.currentTimeMillis()
 
     val common = mutableMapOf<String, Any>(
-      "displayName" to own.safeString("displayName", "User").take(60),
-      "username" to own.safeString("username").take(32),
-      "bio" to own.safeString("bio").take(160),
+      "displayName" to displayName.take(60),
+      "username" to username.take(32),
+      "bio" to bio.take(160),
       "e2eePublicKey" to identity.publicKey,
       "e2eeKeyId" to identity.keyId
     )
-    val photo = own.safeString("photoUrl")
     if (photo.startsWith("https://res.cloudinary.com/mthzgqhv/")) {
       common["photoUrl"] = photo
     }
@@ -1229,8 +1237,6 @@ class ChatRepository(
     if (current.exists()) {
       directoryRef.set(common, SetOptions.merge()).await()
     } else {
-      val createdAt = own.safeLong("createdAt", System.currentTimeMillis())
-        .takeIf { it > 0L } ?: System.currentTimeMillis()
       directoryRef.set(
         common + mapOf(
           "uid" to account,
@@ -1253,8 +1259,18 @@ class ChatRepository(
     }
 
     ensureOwnDirectoryReady(account)
-    val peer = db.document("directory/$otherUid").get(Source.SERVER).await()
-    check(peer.exists()) { "This contact is no longer available." }
+
+    val knownPeer = _users.value.any { it.uid == otherUid } || pendingPeers[cid]?.uid == otherUid
+    if (!knownPeer) {
+      val peer = runCatching {
+        db.document("directory/$otherUid").get(Source.CACHE).await()
+      }.getOrNull()?.takeIf { it.exists() }
+        ?: db.document("directory/$otherUid").get().await()
+      check(peer.exists()) { "This contact is no longer available." }
+      val user = toUser(peer)
+      pendingPeers[cid] = user
+      _users.update { list -> (list.filterNot { it.uid == otherUid } + user).distinctBy { it.uid } }
+    }
 
     val ref = db.document("conversations/$cid")
     try {
