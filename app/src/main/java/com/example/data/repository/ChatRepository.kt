@@ -1345,16 +1345,36 @@ class ChatRepository(
     var recipientKeyId = ""
     if (type == "TEXT" || text.isNotBlank()) {
       val cached = _users.value.find { it.uid == otherUid }
-      if (cached?.e2eePublicKey?.isNotBlank() == true && now - (peerKeyCheckedAt[otherUid] ?: 0L) < 60_000L) {
-        recipientPublicKey = cached.e2eePublicKey
+      val cachedKeyReady = cached?.e2eePublicKey?.isNotBlank() == true &&
+        cached.e2eeKeyId.isNotBlank()
+      val cacheFresh = now - (peerKeyCheckedAt[otherUid] ?: 0L) < 10 * 60_000L
+
+      if (cachedKeyReady && cacheFresh) {
+        recipientPublicKey = cached!!.e2eePublicKey
         recipientKeyId = cached.e2eeKeyId
       } else {
-        val recipient = db.document("directory/$otherUid").get().await()
-        recipientPublicKey = recipient.safeString("e2eePublicKey")
-        recipientKeyId = recipient.safeString("e2eeKeyId")
-        val user = toUser(recipient)
-        _users.update { list -> list.filterNot { it.uid == otherUid } + user }
-        peerKeyCheckedAt[otherUid] = now
+        val refreshed = runCatching {
+          db.document("directory/$otherUid").get().await()
+        }
+        val recipient = refreshed.getOrNull()
+        if (recipient?.exists() == true) {
+          recipientPublicKey = recipient.safeString("e2eePublicKey")
+          recipientKeyId = recipient.safeString("e2eeKeyId")
+          val user = toUser(recipient)
+          _users.update { list -> list.filterNot { it.uid == otherUid } + user }
+          pendingPeers[cid] = user
+          peerKeyCheckedAt[otherUid] = now
+        } else if (cachedKeyReady && refreshed.exceptionOrNull()?.let {
+            shouldAutoRetryOutbox(firestoreCode(it)?.name, it is java.io.IOException, message = it.message.orEmpty())
+          } == true
+        ) {
+          // Encryption remains possible with the last verified peer key. The peer
+          // listener/contacts refresh will replace it when Firestore reconnects.
+          recipientPublicKey = cached!!.e2eePublicKey
+          recipientKeyId = cached.e2eeKeyId
+        } else {
+          refreshed.exceptionOrNull()?.let { throw it }
+        }
       }
       require(recipientPublicKey.isNotBlank() && recipientKeyId.isNotBlank()) {
         "This contact must update Liquid Chat before encrypted messaging can start"
@@ -1639,10 +1659,16 @@ class ChatRepository(
   private fun scheduleOutboxRetry(account: String) {
     if (outboxRetryJob?.isActive == true) return
     outboxRetryJob = scope.launch {
-      runCatching { db.enableNetwork().await() }
-      delay(1_500)
-      if (uid == account && account.isNotBlank() && !deletingAccount && !cleanupQueued) {
+      var delayMs = 1_200L
+      repeat(4) {
+        if (uid != account || account.isBlank() || deletingAccount || cleanupQueued) return@launch
+        runCatching { auth.currentUser?.getIdToken(false)?.await() }
+        runCatching { db.enableNetwork().await() }
+        delay(delayMs)
         flushOutbox()
+        val stillPending = prefs.all.keys.any { it.startsWith("outbox:$account:") }
+        if (!stillPending) return@launch
+        delayMs = (delayMs * 2).coerceAtMost(8_000L)
       }
     }
   }
@@ -1684,7 +1710,11 @@ class ChatRepository(
           } catch (timeout: TimeoutCancellationException) {
             failed -= id
             updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.SENDING) }
-            _syncWarning.value = "Message queued · reconnecting automatically"
+            if (_syncWarning.value?.startsWith("Message:") == true ||
+              _syncWarning.value?.startsWith("Message queued") == true
+            ) {
+              _syncWarning.value = null
+            }
             scheduleOutboxRetry(account)
             break
           }
@@ -1705,10 +1735,21 @@ class ChatRepository(
             updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.SENDING) }
             break
           }
-          if (shouldAutoRetryOutbox(code?.name, e is java.io.IOException)) {
+          if (shouldAutoRetryOutbox(
+              firestoreCodeName = code?.name,
+              isIoFailure = e is java.io.IOException,
+              message = e.message.orEmpty()
+            )
+          ) {
             failed -= id
             updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.SENDING) }
-            _syncWarning.value = "Message queued · reconnecting automatically"
+            // The bubble status is enough feedback. A transient Firestore transport
+            // failure is not surfaced as a permanent error banner.
+            if (_syncWarning.value?.startsWith("Message:") == true ||
+              _syncWarning.value?.startsWith("Message queued") == true
+            ) {
+              _syncWarning.value = null
+            }
             scheduleOutboxRetry(account)
             break
           }
