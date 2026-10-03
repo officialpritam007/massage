@@ -47,10 +47,8 @@ internal fun shouldAutoRetryOutbox(
   ) return true
 
   val normalized = message.lowercase()
+  if ("unavailable" in normalized || "network" in normalized || "offline" in normalized) return true
   return listOf(
-    "client is offline",
-    "network is unavailable",
-    "network unavailable",
     "connection unavailable",
     "failed to connect",
     "unable to resolve host",
