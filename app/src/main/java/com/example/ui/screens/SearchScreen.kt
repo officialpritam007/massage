@@ -57,6 +57,7 @@ import com.example.ui.components.GlassAvatar
 import com.example.ui.components.GlassCard
 import com.example.ui.components.GlassTextField
 import com.example.ui.components.LiquidBackground
+import com.example.ui.components.liquidRoundedShape
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.GlassBorderStroke
 import com.example.ui.theme.LocalLiquidGlass
@@ -174,9 +175,9 @@ fun SearchScreen(
                 searchHistory.forEach { historyQuery ->
                   Box(
                     modifier = Modifier
-                      .clip(RoundedCornerShape(16.dp))
+                      .clip(liquidRoundedShape(16f))
                       .background(if (glassConfig.isDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.70f))
-                      .border(1.dp, GlassBorderStroke, RoundedCornerShape(16.dp))
+                      .border(1.dp, GlassBorderStroke, liquidRoundedShape(16f))
                       .clickable { viewModel.onSearchQueryChanged(historyQuery) }
                       .padding(horizontal = 14.dp, vertical = 8.dp)
                   ) {
@@ -202,7 +203,7 @@ fun SearchScreen(
             items(searchResults.users) { user ->
               GlassCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
+                shape = liquidRoundedShape(18f),
                 onClick = { onNavigateToProfile(user.uid) }
               ) {
                 Row(
@@ -241,7 +242,7 @@ fun SearchScreen(
             items(searchResults.conversations) { conv ->
               GlassCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
+                shape = liquidRoundedShape(18f),
                 onClick = { onNavigateToConversation(conv.id) }
               ) {
                 Row(
@@ -271,7 +272,7 @@ fun SearchScreen(
             items(searchResults.messages) { msg ->
               GlassCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
+                shape = liquidRoundedShape(18f),
                 onClick = {
                   viewModel.requestMessageJump(msg.conversationId, msg.id)
                   onNavigateToConversation(msg.conversationId)
