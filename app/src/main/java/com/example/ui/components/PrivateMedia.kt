@@ -20,7 +20,9 @@ fun PrivateImage(
   model: String?,
   contentDescription: String?,
   modifier: Modifier = Modifier,
-  contentScale: ContentScale = ContentScale.Crop
+  contentScale: ContentScale = ContentScale.Crop,
+  fallbackText: String? = null,
+  preview: Boolean = false
 ) {
   var resolved by remember(model) { mutableStateOf<Any?>(LiquidApi.peekCachedPrivateMedia(model)) }
   var failed by remember(model) { mutableStateOf(false) }
@@ -35,24 +37,26 @@ fun PrivateImage(
       failed = true
     } else if (resolved == null || retry > 0) {
       runCatching { LiquidApi.cachedPrivateMedia(model, forceRefresh = retry > 0) }
-        .onSuccess { resolved = it }
+        .onSuccess { resolved = it; imageFailed = false; failed = false }
         .onFailure { failed = true }
     }
   }
 
   Box(
     modifier = modifier
+      .then(if (preview) Modifier.height(if (failed || imageFailed) 92.dp else if (resolved == null) 88.dp else 190.dp) else Modifier)
       .clip(RoundedCornerShape(18.dp))
       .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)),
     contentAlignment = Alignment.Center
   ) {
     when {
       failed || imageFailed -> {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-          Text("Photo unavailable", style = MaterialTheme.typography.labelSmall)
-          TextButton(onClick = {
-            retry++
-          }) {
+        if (fallbackText != null) {
+          Text(fallbackText, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleMedium)
+        } else Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(10.dp)) {
+          Icon(Icons.Default.Refresh, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+          Text("Photo unavailable", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.labelSmall)
+          if (LiquidApi.isSupportedMedia(model)) TextButton(onClick = { retry++ }) {
             Icon(Icons.Default.Refresh, null, Modifier.size(16.dp))
             Spacer(Modifier.width(5.dp))
             Text("Retry")
@@ -60,7 +64,11 @@ fun PrivateImage(
         }
       }
       resolved == null -> {
-        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+        if (fallbackText != null) Text(fallbackText, color = MaterialTheme.colorScheme.onSurface)
+        else Column(horizontalAlignment = Alignment.CenterHorizontally) {
+          CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+          Text("Loading photo…", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
+        }
       }
       else -> {
         AsyncImage(

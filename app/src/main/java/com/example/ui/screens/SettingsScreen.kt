@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import com.example.BuildConfig
+import com.example.R
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubbleOutline
@@ -30,6 +31,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.credentials.CredentialManager
+import androidx.credentials.CustomCredential
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import androidx.compose.ui.unit.dp
 import com.example.data.repository.removeProfilePhoto
 import com.example.ui.components.*
@@ -58,6 +66,9 @@ fun SettingsScreen(
   val blocked by viewModel.blockedUserIds.collectAsState()
   val users by viewModel.users.collectAsState()
   val messages by viewModel.messages.collectAsState()
+  val deletionStatus by viewModel.deletionStatus.collectAsState()
+  val deletionPending by viewModel.deletionPending.collectAsState()
+  val deletionRunning by viewModel.deletionRunning.collectAsState()
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
   val glass = LocalLiquidGlass.current
@@ -70,12 +81,48 @@ fun SettingsScreen(
   var usernameStatus by remember { mutableStateOf<String?>(null) }
   var checkingUsername by remember { mutableStateOf(false) }
   var busy by remember { mutableStateOf(false) }
+  var deletionPassword by remember { mutableStateOf("") }
+  var deletionError by remember { mutableStateOf<String?>(null) }
   var cacheSize by remember { mutableLongStateOf(0L) }
   var photoDeleting by remember { mutableStateOf(false) }
   var photoDeleteFailed by remember { mutableStateOf(false) }
   var locallyRemovedPhoto by remember { mutableStateOf(false) }
   var pendingPhotoUri by remember { mutableStateOf<android.net.Uri?>(null) }
   var showOwnPhoto by remember { mutableStateOf(false) }
+  val credentialManager = remember(context) { CredentialManager.create(context) }
+  val googleProvider = viewModel.hasGoogleProvider()
+  LaunchedEffect(deletionPending) { if (deletionPending) dialog = "Delete account" }
+
+  fun beginPermanentDeletion() {
+    if (busy || deletionRunning) return
+    busy = true
+    deletionError = null
+    scope.launch {
+      try {
+        val googleToken = if (googleProvider && !deletionPending) {
+          val option = GetGoogleIdOption.Builder()
+            .setFilterByAuthorizedAccounts(false)
+            .setServerClientId(context.getString(R.string.default_web_client_id))
+            .setAutoSelectEnabled(false).build()
+          val credential = credentialManager.getCredential(context,
+            GetCredentialRequest.Builder().addCredentialOption(option).build()).credential
+          check(credential is CustomCredential && credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) { "Google verification did not return a supported credential" }
+          GoogleIdTokenCredential.createFrom(credential.data).idToken
+        } else null
+        viewModel.deleteAccount(deletionPassword, googleToken) { ok, message ->
+          busy = false
+          deletionPassword = ""
+          if (ok) { dialog = ""; onLogout() } else deletionError = message
+        }
+      } catch (_: GetCredentialCancellationException) {
+        busy = false
+      } catch (t: Exception) {
+        if (t is kotlinx.coroutines.CancellationException) throw t
+        busy = false
+        deletionError = t.message ?: "Could not verify your account"
+      }
+    }
+  }
 
   LaunchedEffect(me.photoUrl) {
     if (me.photoUrl.isNotBlank() && !photoDeleting) locallyRemovedPhoto = false
@@ -197,7 +244,7 @@ fun SettingsScreen(
             horizontalArrangement = Arrangement.SpaceEvenly
           ) {
             SettingsStat(Icons.Default.Whatshot, activeDays.toString(), "Days active")
-            SettingsStat(Icons.Default.ChatBubbleOutline, sentCount.toString(), "Messages sent")
+            SettingsStat(Icons.Default.ChatBubbleOutline, sentCount.toString(), "Loaded sent messages")
             SettingsStat(Icons.Default.People, contactCount.toString(), "Contacts")
           }
         }
@@ -269,7 +316,7 @@ fun SettingsScreen(
     }
 
     if (dialog.isNotBlank()) {
-      GlassDialog(dialog, onDismiss = { if (!busy) dialog = "" }) {
+      GlassDialog(dialog, onDismiss = { if (!busy && !deletionRunning && !deletionPending) { dialog = ""; deletionPassword = ""; deletionError = null } }) {
         when (dialog) {
           "Profile" -> {
             GlassTextField(name, { name = it.take(60) }, placeholder = "Name")
@@ -364,7 +411,7 @@ fun SettingsScreen(
             Text("Chat attachments upload directly to Cloudinary; the returned secure URL is saved in Firestore. Maximum attachment size: 9 MB.")
             Text("Liquid Chat does not back up app data or E2EE private keys.")
             Text("Uninstalling clears this device's local cache and encryption identity; Firestore chat data is not automatically erased.")
-            Text("Clearing temporary cache does not delete server data; logout does.")
+            Text("Clear cache removes temporary downloads from this device. To permanently erase your account and cloud data, use Delete account or Log out and wait for deletion to finish.")
             if (upload != null) {
               Text("Wait for the current upload to finish before clearing cache.")
             } else {
@@ -413,43 +460,22 @@ fun SettingsScreen(
             ) { Text("Contact support") }
           }
 
-          "Log out" -> {
-            Text(
-              "Logging out clears this device session and local cache. Your Firebase account and Firestore chat data remain available for the next sign-in."
+          "Log out", "Delete account" -> {
+            Text("Logging out permanently deletes your account, profile, chats on both sides, and uploaded media. It also erases this device’s keys, downloads and cached data. You cannot undo this or restore your old chats by signing in again.")
+            Text("Keep the app installed until deletion is confirmed. Uninstalling alone cannot erase cloud data.")
+            Text("Final verification waits 70 minutes after cloud cleanup for old sessions to expire, plus worker scheduling. Check again later if it is pending.")
+            if (!googleProvider && !deletionPending) GlassTextField(
+              deletionPassword, { deletionPassword = it }, placeholder = "Confirm password",
+              visualTransformation = PasswordVisualTransformation()
             )
+            deletionStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            deletionError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             GlassButton(
-              text = "Log out",
-              onClick = {
-                busy = true
-                viewModel.logout { ok, _ ->
-                  busy = false
-                  if (ok) {
-                    dialog = ""
-                    onLogout()
-                  }
-                }
-              },
+              text = if (deletionPending) "Check deletion" else if (googleProvider) "Verify with Google and delete" else "Delete all data and log out",
+              onClick = { beginPermanentDeletion() },
               modifier = Modifier.fillMaxWidth(),
-              isLoading = busy
-            )
-          }
-
-          "Delete account" -> {
-            Text("This deletes your Firebase account/profile and hides your chats for this account. Direct Cloudinary media may remain stored because no Admin API secret is shipped in the app. Sign in again first if recent authentication is required.")
-            GlassButton(
-              text = "Permanently delete",
-              onClick = {
-                busy = true
-                viewModel.deleteAccount { ok, _ ->
-                  busy = false
-                  if (ok) {
-                    dialog = ""
-                    onLogout()
-                  }
-                }
-              },
-              modifier = Modifier.fillMaxWidth(),
-              isLoading = busy
+              isLoading = busy || deletionRunning,
+              enabled = !busy && !deletionRunning
             )
           }
         }

@@ -36,6 +36,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -68,6 +74,9 @@ fun SearchScreen(
   val searchQuery by viewModel.searchQuery.collectAsState()
   val searchResults by viewModel.searchResults.collectAsState()
   val searchHistory by viewModel.searchHistory.collectAsState()
+  val focus = remember { FocusRequester() }
+  val keyboard = LocalSoftwareKeyboardController.current
+  LaunchedEffect(Unit) { withFrameNanos { }; focus.requestFocus(); keyboard?.show() }
   val glassConfig = LocalLiquidGlass.current
 
   LiquidBackground(modifier = modifier) {
@@ -96,7 +105,7 @@ fun SearchScreen(
               value = searchQuery,
               onValueChange = { viewModel.onSearchQueryChanged(it) },
               placeholder = "Search messages and people...",
-              modifier = Modifier.weight(1f),
+              modifier = Modifier.weight(1f).focusRequester(focus),
               leadingIcon = {
                 Icon(Icons.Default.Search, contentDescription = null, tint = CyanAccent, modifier = Modifier.size(20.dp))
               },
@@ -124,6 +133,12 @@ fun SearchScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
       ) {
         if (searchQuery.isBlank()) {
+          item {
+            Column(Modifier.fillMaxWidth().padding(vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+              Text("Search your chats", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+              Text("Type a name, username or message. Message search covers history loaded on this device.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+          }
           // Recent Searches Chips
           if (searchHistory.isNotEmpty()) {
             item {

@@ -68,6 +68,7 @@ import com.example.ui.components.VoiceWaveformPlayer
 import com.example.ui.theme.EmeraldOnline
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
+import com.example.data.network.LiquidApi
 
 @Composable
 fun ContactProfileScreen(
@@ -95,7 +96,7 @@ fun ContactProfileScreen(
     }
 
     val shared = conversation?.let { messages[it.id] }.orEmpty()
-        .filter { it.mediaUrl.isNotBlank() && !it.isDeleted }
+        .filter { LiquidApi.isSupportedMedia(it.mediaUrl) && !it.isDeleted }
         .sortedByDescending { it.createdAt }
 
     var report by remember { mutableStateOf(false) }

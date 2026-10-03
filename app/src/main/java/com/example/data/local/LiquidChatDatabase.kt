@@ -25,6 +25,13 @@ abstract class LiquidChatDatabase : RoomDatabase() {
     @Volatile
     private var INSTANCE: LiquidChatDatabase? = null
 
+    fun clearForLogout(context: Context) = synchronized(this) {
+      INSTANCE?.clearAllTables()
+      INSTANCE?.close()
+      INSTANCE = null
+      context.deleteDatabase("liquid_chat_db")
+    }
+
     fun getDatabase(context: Context): LiquidChatDatabase {
       return INSTANCE ?: synchronized(this) {
         val instance = Room.databaseBuilder(

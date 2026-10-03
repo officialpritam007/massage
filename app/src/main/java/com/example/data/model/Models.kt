@@ -54,7 +54,8 @@ data class Message(
   val isDeleted: Boolean = false,
   val isPinned: Boolean = false,
   val isStarred: Boolean = false,
-  val expiresAt: Long? = null
+  val expiresAt: Long? = null,
+  val encryptionUnavailable: Boolean = false
 )
 
 data class Conversation(

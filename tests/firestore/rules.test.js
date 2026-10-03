@@ -1,5 +1,6 @@
 import {test,before,after} from 'node:test';
 import {readFileSync} from 'node:fs';
+import {deepStrictEqual, strictEqual} from 'node:assert';
 import {
   initializeTestEnvironment,
   assertFails,
@@ -7,13 +8,18 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   collection,
+  arrayUnion,
   doc,
+  deleteDoc,
   getDoc,
   getDocs,
   query,
+  runTransaction,
   setDoc,
+  serverTimestamp,
   updateDoc,
-  where
+  where,
+  writeBatch
 } from 'firebase/firestore';
 
 let env;
@@ -251,6 +257,37 @@ test('recipient delivery, delete-for-me and reaction updates are authorized', as
   ));
 });
 
+test('delete-for-me atomically hides the latest message and its preview, and safely retries', async () => {
+  const cid = 'delete-latest';
+  await env.withSecurityRulesDisabled(async c => {
+    await setDoc(doc(c.firestore(), `conversations/${cid}`), {
+      ...conversation, lastMessageId: 'last', lastMessageText: 'Encrypted message'
+    });
+    await setDoc(doc(c.firestore(), `conversations/${cid}/messages/last`), baseMessage());
+  });
+  const bob = env.authenticatedContext('bob').firestore();
+  const messageRef = doc(bob, `conversations/${cid}/messages/last`);
+  const chatRef = doc(bob, `conversations/${cid}`);
+  const hide = () => runTransaction(bob, async tx => {
+    const message = await tx.get(messageRef);
+    const chat = await tx.get(chatRef);
+    if (!message.exists()) return;
+    if (!message.data().hiddenFor.includes('bob')) {
+      tx.update(messageRef, {hiddenFor: arrayUnion('bob')});
+    }
+    if (chat.data().lastMessageId === 'last') {
+      tx.update(chatRef, {'hiddenLastFor.bob': 'last'});
+    }
+  });
+  await assertSucceeds(hide());
+  await assertSucceeds(hide());
+  deepStrictEqual((await getDoc(messageRef)).data().hiddenFor, ['bob']);
+  strictEqual((await getDoc(chatRef)).data().hiddenLastFor.bob, 'last');
+  strictEqual((await getDoc(chatRef)).data().lastMessageId, 'last');
+  const alice = env.authenticatedContext('alice').firestore();
+  strictEqual((await getDoc(doc(alice, `conversations/${cid}`))).data().hiddenLastFor.alice, undefined);
+});
+
 test('only participants can read messages and sender identity cannot be forged', async () => {
   const alice = env.authenticatedContext('alice').firestore();
   const eve = env.authenticatedContext('eve').firestore();
@@ -302,4 +339,124 @@ test('signed-in user can submit a constrained report but cannot spoof reporter',
     reason: 'Forged report',
     createdAt: Date.now()
   }));
+});
+
+test('encrypted preview must match the authenticated message, including atomic sends and edits', async () => {
+  const alice = env.authenticatedContext('alice').firestore();
+  const cid = 'preview-envelope';
+  await setDoc(doc(alice, `conversations/${cid}`), conversation);
+  const send = writeBatch(alice);
+  send.set(doc(alice, `conversations/${cid}/messages/last`), baseMessage());
+  send.update(doc(alice, `conversations/${cid}`), {
+    lastMessageId: 'last', lastMessageSenderId: 'alice',
+    lastMessageText: 'Encrypted message', lastMessageType: 'TEXT',
+    lastMessageRevision: Date.now(), lastMessageE2ee: e2ee
+  });
+  await assertSucceeds(send.commit());
+  await assertFails(updateDoc(doc(alice, `conversations/${cid}`), {
+    lastMessageE2ee: {...e2ee, e2eeCiphertext: 'forged-summary'}
+  }));
+  await assertFails(updateDoc(doc(alice, `conversations/${cid}`), {lastMessageId: 'missing'}));
+  const edited = {...e2ee, e2eeCiphertext: 'edited', e2eeSignature: 'new-signature'};
+  const edit = writeBatch(alice);
+  edit.update(doc(alice, `conversations/${cid}/messages/last`), {text: '', e2ee: edited, isEdited: true});
+  edit.update(doc(alice, `conversations/${cid}`), {lastMessageE2ee: edited, lastMessageRevision: Date.now()});
+  await assertSucceeds(edit.commit());
+});
+
+test('a delivery acknowledgement cannot downgrade an already read message', async () => {
+  const bob = env.authenticatedContext('bob').firestore();
+  await env.withSecurityRulesDisabled(c => setDoc(doc(c.firestore(), 'conversations/pair/messages/read'), baseMessage({status: 'READ'})));
+  await assertFails(updateDoc(doc(bob, 'conversations/pair/messages/read'), {status: 'DELIVERED'}));
+  await assertSucceeds(updateDoc(doc(bob, 'conversations/pair/messages/read'), {status: 'READ'}));
+});
+
+test('device tokens and immutable upload proofs are private to their owner', async () => {
+  const alice = env.authenticatedContext('alice').firestore();
+  const bob = env.authenticatedContext('bob').firestore();
+  const device = 'users/alice/devices/phone';
+  await assertSucceeds(setDoc(doc(alice, device), {token: 'private-token', platform: 'android', updatedAt: serverTimestamp()}));
+  await assertFails(getDoc(doc(bob, device)));
+  await assertFails(setDoc(doc(bob, device), {token: 'stolen', platform: 'android', updatedAt: serverTimestamp()}));
+  const path = 'users/alice/mediaUploads/asset-one';
+  const receipt = {assetId: 'asset-one', publicId: 'liquid-chat/one', version: 123,
+    resourceType: 'image', secureUrl: 'https://res.cloudinary.com/mthzgqhv/image/upload/v123/liquid-chat/one.jpg',
+    signature: 'a'.repeat(40), createdAt: serverTimestamp()};
+  await assertSucceeds(setDoc(doc(alice, path), receipt));
+  await assertSucceeds(setDoc(doc(alice, path), receipt)); // Retry after an ambiguous network response.
+  await assertFails(getDoc(doc(bob, path)));
+  await assertFails(updateDoc(doc(alice, path), {publicId: 'someone-else'}));
+  await assertFails(deleteDoc(doc(alice, path)));
+});
+
+test('only a recently authenticated owner can queue deletion and cannot forge completion', async () => {
+  const recent = Math.floor(Date.now() / 1000);
+  const owner = env.authenticatedContext('purge-owner', {auth_time: recent}).firestore();
+  const stale = env.authenticatedContext('stale-owner', {auth_time: recent - 600}).firestore();
+  const bob = env.authenticatedContext('bob', {auth_time: recent}).firestore();
+  const pending = uid => ({uid, status: 'pending', requestedAt: serverTimestamp(), proofId: 'a'.repeat(64)});
+  await assertFails(setDoc(doc(owner, 'accountDeletionRequests/purge-owner'), {...pending('purge-owner'), proofId: 'guessable'}));
+  await assertFails(setDoc(doc(stale, 'accountDeletionRequests/stale-owner'), pending('stale-owner')));
+  await assertFails(setDoc(doc(bob, 'accountDeletionRequests/purge-owner'), pending('purge-owner')));
+  await assertFails(setDoc(doc(owner, 'accountDeletionRequests/purge-owner'), {...pending('purge-owner'), conversationIds: ['pair']}));
+  await assertSucceeds(setDoc(doc(owner, 'accountDeletionRequests/purge-owner'), pending('purge-owner')));
+  await assertFails(updateDoc(doc(owner, 'accountDeletionRequests/purge-owner'), {status: 'complete'}));
+  await assertFails(deleteDoc(doc(owner, 'accountDeletionRequests/purge-owner')));
+  await assertFails(getDoc(doc(bob, 'accountDeletionRequests/purge-owner')));
+  await assertSucceeds(getDoc(doc(owner, 'accountDeletionRequests/purge-owner')));
+});
+
+test('queued deletion freezes both participants and closes profile, username and report write paths', async () => {
+  const recent = Math.floor(Date.now() / 1000);
+  const owner = env.authenticatedContext('purge-freeze', {auth_time: recent}).firestore();
+  const bob = env.authenticatedContext('bob').firestore();
+  const cid = 'purge-frozen-chat';
+  await env.withSecurityRulesDisabled(async c => {
+    const db = c.firestore();
+    await setDoc(doc(db, 'users/purge-freeze'), {uid: 'purge-freeze', displayName: 'Old user'});
+    await setDoc(doc(db, `conversations/${cid}`), {...conversation, participantIds: ['purge-freeze', 'bob']});
+  });
+  await setDoc(doc(owner, 'accountDeletionRequests/purge-freeze'), {uid: 'purge-freeze', status: 'pending', requestedAt: serverTimestamp(), proofId: 'b'.repeat(64)});
+  await assertFails(getDoc(doc(owner, 'users/purge-freeze')));
+  await assertFails(updateDoc(doc(owner, 'users/purge-freeze'), {displayName: 'Restored'}));
+  await assertFails(setDoc(doc(owner, 'usernames/purge_freeze'), {uid: 'purge-freeze'}));
+  await assertFails(setDoc(doc(owner, 'reports/purge-freeze'), {reporterId: 'purge-freeze', reportedUid: 'bob', reason: 'New report', createdAt: Date.now()}));
+  await assertFails(setDoc(doc(bob, `conversations/${cid}/messages/after-request`), baseMessage({senderId: 'bob'})));
+  await assertFails(setDoc(doc(bob, 'conversations/purge-new-chat'), {...conversation, participantIds: ['purge-freeze', 'bob']}));
+  await env.withSecurityRulesDisabled(c => updateDoc(doc(c.firestore(), 'accountDeletionRequests/purge-freeze'), {status: 'failed', error: 'Provider unavailable'}));
+  await assertSucceeds(updateDoc(doc(owner, 'accountDeletionRequests/purge-freeze'), {status: 'pending'}));
+  await env.withSecurityRulesDisabled(c => setDoc(doc(c.firestore(), 'accountDeletionRequests/purge-freeze'), {uid: 'purge-freeze', status: 'complete'}));
+  await assertFails(deleteDoc(doc(owner, 'accountDeletionRequests/purge-freeze')));
+});
+
+test('deleted owners with still-valid tokens cannot remove the gate or recreate data', async () => {
+  const stale = env.authenticatedContext('deleted-owner').firestore();
+  await env.withSecurityRulesDisabled(c => setDoc(doc(c.firestore(), 'accountDeletionRequests/deleted-owner'), {
+    uid: 'deleted-owner', status: 'revoking', proofId: 'c'.repeat(64), readyAt: Date.now() + 4200000
+  }));
+  await assertFails(deleteDoc(doc(stale, 'accountDeletionRequests/deleted-owner')));
+  await assertFails(setDoc(doc(stale, 'users/deleted-owner'), {uid: 'deleted-owner', displayName: 'Restored'}));
+  await assertFails(setDoc(doc(stale, 'directory/deleted-owner'), {uid: 'deleted-owner', displayName: 'Restored'}));
+});
+
+test('random deletion proof is readable after Auth deletion but cannot be listed or forged', async () => {
+  const anonymous = env.unauthenticatedContext().firestore();
+  const owner = env.authenticatedContext('proof-owner', {auth_time: Math.floor(Date.now() / 1000)}).firestore();
+  const proofId = 'd'.repeat(64);
+  await env.withSecurityRulesDisabled(c => setDoc(doc(c.firestore(), `deletionProofs/${proofId}`), {status: 'revoking', readyAt: Date.now() + 4200000}));
+  await assertSucceeds(getDoc(doc(anonymous, `deletionProofs/${proofId}`)));
+  await assertFails(getDocs(collection(anonymous, 'deletionProofs')));
+  await assertFails(getDoc(doc(anonymous, 'deletionProofs/guessable')));
+  await assertFails(setDoc(doc(anonymous, `deletionProofs/${'e'.repeat(64)}`), {status: 'complete'}));
+  await assertFails(updateDoc(doc(anonymous, `deletionProofs/${proofId}`), {status: 'complete'}));
+  await assertFails(deleteDoc(doc(anonymous, `deletionProofs/${proofId}`)));
+  await assertFails(setDoc(doc(owner, 'accountDeletionRequests/proof-owner'), {uid: 'proof-owner', status: 'pending', proofId, requestedAt: serverTimestamp()}));
+  await env.withSecurityRulesDisabled(c => setDoc(doc(c.firestore(), `deletionProofs/${proofId}`), {status: 'complete', completedAt: serverTimestamp()}));
+  await assertSucceeds(deleteDoc(doc(anonymous, `deletionProofs/${proofId}`)));
+});
+
+test('a peer cannot recreate conversations or reports referring to a deleted directory', async () => {
+  const bob = env.authenticatedContext('bob').firestore();
+  await assertFails(setDoc(doc(bob, 'conversations/deleted-peer'), {...conversation, participantIds: ['bob', 'gone-owner']}));
+  await assertFails(setDoc(doc(bob, 'reports/deleted-peer'), {reporterId: 'bob', reportedUid: 'gone-owner', reason: 'Gone user', createdAt: Date.now()}));
 });

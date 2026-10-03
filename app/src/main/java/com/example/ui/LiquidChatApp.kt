@@ -18,6 +18,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.data.model.MessageType
@@ -52,8 +53,16 @@ fun LiquidChatApp(
     onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
   }
 
-  val referenceAccent = appearance.accentColorHex.isBlank() || appearance.accentColorHex.equals("#176BFF", ignoreCase = true)
-  val referenceDark = appearance.isDarkMode || referenceAccent
+  val referenceAccent = appearance.accentColorHex.isBlank()
+  val referenceDark = appearance.isDarkMode
+  val view = androidx.compose.ui.platform.LocalView.current
+  SideEffect {
+    val window = (view.context as? android.app.Activity)?.window
+    if (window != null) androidx.core.view.WindowCompat.getInsetsController(window, view).apply {
+      isAppearanceLightStatusBars = !referenceDark
+      isAppearanceLightNavigationBars = !referenceDark
+    }
+  }
   val glassConfig = LiquidGlassConfig(
     glassIntensity = appearance.glassIntensity,
     blurAlpha = appearance.blurAlpha,
@@ -75,11 +84,29 @@ fun LiquidChatApp(
     glassConfig = glassConfig
   ) {
     val navController = rememberNavController()
+    val currentEntry by navController.currentBackStackEntryAsState()
+    LaunchedEffect(currentEntry?.destination?.route) {
+      val route = currentEntry?.destination?.route
+      if (route != Screen.Conversation.route && route != Screen.ContactProfile.route) {
+        chatViewModel.repository.stopOpenConversationObservers()
+      }
+    }
+    fun navigateOnce(route: String) {
+      navController.navigate(route) { launchSingleTop = true }
+    }
     val startDestination = if (chatViewModel.isUserLoggedIn()) Screen.Chats.route else Screen.Auth.route
+    val deletionPending by chatViewModel.deletionPending.collectAsState()
+    val deletionComplete by chatViewModel.deletionComplete.collectAsState()
+    LaunchedEffect(deletionPending, deletionComplete) {
+      if (deletionComplete) navController.navigate(Screen.Auth.route) {
+        popUpTo(0) { inclusive = true }
+        launchSingleTop = true
+      } else if (deletionPending) navigateOnce(Screen.Settings.route)
+    }
 
     LaunchedEffect(notificationConversation) {
-      if (!notificationConversation.isNullOrBlank() && chatViewModel.isUserLoggedIn()) {
-        navController.navigate(Screen.Conversation.createRoute(notificationConversation))
+      if (!notificationConversation.isNullOrBlank() && chatViewModel.isUserLoggedIn() && !deletionPending) {
+        navigateOnce(Screen.Conversation.createRoute(notificationConversation))
         onNotificationHandled()
       }
     }
@@ -123,25 +150,19 @@ fun LiquidChatApp(
     Box(Modifier.fillMaxSize()) {
       NavHost(
         navController = navController,
-      startDestination = startDestination,
-      enterTransition = {
-        if (appearance.isReducedMotion) fadeIn(tween(0))
-        else fadeIn(tween(180)) + slideInHorizontally(
-          spring(dampingRatio = 0.8f, stiffness = 420f)
-        ) { it / 5 }
-      },
-      exitTransition = { fadeOut(tween(if (appearance.isReducedMotion) 0 else 130)) },
-      popEnterTransition = { fadeIn(tween(if (appearance.isReducedMotion) 0 else 180)) },
-      popExitTransition = {
-        if (appearance.isReducedMotion) fadeOut(tween(0))
-        else fadeOut(tween(150)) + slideOutHorizontally(tween(220)) { it / 4 }
-      }
+        startDestination = startDestination,
+        // Glass screens are translucent. Crossfades exposed the previous
+        // screen's text through the new page during every navigation.
+        enterTransition = { EnterTransition.None },
+        exitTransition = { ExitTransition.None },
+        popEnterTransition = { EnterTransition.None },
+        popExitTransition = { ExitTransition.None }
     ) {
       composable(Screen.Auth.route) {
         AuthScreen(
           viewModel = chatViewModel,
           onAuthenticated = {
-            navController.navigate(Screen.Chats.route) {
+            navController.navigate(if (chatViewModel.deletionPending.value) Screen.Settings.route else Screen.Chats.route) {
               popUpTo(Screen.Auth.route) { inclusive = true }
             }
           }
@@ -151,12 +172,12 @@ fun LiquidChatApp(
       composable(Screen.Chats.route) {
         ChatsHomeScreen(
           viewModel = chatViewModel,
-          onNavigateToConversation = { navController.navigate(Screen.Conversation.createRoute(it)) },
-          onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
-          onNavigateToContacts = { navController.navigate(Screen.Contacts.route) },
-          onNavigateToSearch = { navController.navigate(Screen.Search.route) },
-          onNavigateToAppearance = { navController.navigate(Screen.Appearance.route) },
-          onNavigateToProfile = { navController.navigate(Screen.ContactProfile.createRoute(it)) },
+          onNavigateToConversation = { navigateOnce(Screen.Conversation.createRoute(it)) },
+          onNavigateToSettings = { navigateOnce(Screen.Settings.route) },
+          onNavigateToContacts = { navigateOnce(Screen.Contacts.route) },
+          onNavigateToSearch = { navigateOnce(Screen.Search.route) },
+          onNavigateToAppearance = { navigateOnce(Screen.Appearance.route) },
+          onNavigateToProfile = { navigateOnce(Screen.ContactProfile.createRoute(it)) },
           initialTab = homeTab,
           onHomeTabSelected = { homeTab = it }
         )
@@ -165,15 +186,15 @@ fun LiquidChatApp(
       composable(Screen.Contacts.route) {
         ContactsScreen(
           viewModel = chatViewModel,
-          onNavigateToConversation = { navController.navigate(Screen.Conversation.createRoute(it)) },
+          onNavigateToConversation = { navigateOnce(Screen.Conversation.createRoute(it)) },
           onNavigateToChats = {
             navController.popBackStack(Screen.Chats.route, false)
           },
           onNavigateToSettings = {
             navController.navigate(Screen.Settings.route) { launchSingleTop = true }
           },
-          onNavigateToSearch = { navController.navigate(Screen.Search.route) },
-          onNavigateToProfile = { navController.navigate(Screen.ContactProfile.createRoute(it)) }
+          onNavigateToSearch = { navigateOnce(Screen.Search.route) },
+          onNavigateToProfile = { navigateOnce(Screen.ContactProfile.createRoute(it)) }
         )
       }
 
@@ -186,8 +207,8 @@ fun LiquidChatApp(
           conversationId = convId,
           viewModel = chatViewModel,
           onBackClick = { navController.popBackStack() },
-          onNavigateToProfile = { navController.navigate(Screen.ContactProfile.createRoute(it)) },
-          onNavigateToCamera = { navController.navigate(Screen.Camera.createRoute(convId)) }
+          onNavigateToProfile = { navigateOnce(Screen.ContactProfile.createRoute(it)) },
+          onNavigateToCamera = { navigateOnce(Screen.Camera.createRoute(convId)) }
         )
       }
 
@@ -218,8 +239,8 @@ fun LiquidChatApp(
       composable(Screen.Search.route) {
         SearchScreen(
           viewModel = chatViewModel,
-          onNavigateToConversation = { navController.navigate(Screen.Conversation.createRoute(it)) },
-          onNavigateToProfile = { navController.navigate(Screen.ContactProfile.createRoute(it)) },
+          onNavigateToConversation = { navigateOnce(Screen.Conversation.createRoute(it)) },
+          onNavigateToProfile = { navigateOnce(Screen.ContactProfile.createRoute(it)) },
           onBackClick = { navController.popBackStack() }
         )
       }
@@ -233,7 +254,7 @@ fun LiquidChatApp(
           userId = userId,
           viewModel = chatViewModel,
           onBackClick = { navController.popBackStack() },
-          onNavigateToConversation = { navController.navigate(Screen.Conversation.createRoute(it)) }
+          onNavigateToConversation = { navigateOnce(Screen.Conversation.createRoute(it)) }
         )
       }
 
@@ -249,10 +270,10 @@ fun LiquidChatApp(
         SettingsScreen(
           viewModel = chatViewModel,
           onBackClick = { navController.popBackStack() },
-          onNavigateToAppearance = { navController.navigate(Screen.Appearance.route) },
-          onNavigateToDiagnostics = { navController.navigate(Screen.Diagnostics.route) },
-          onNavigateToProfile = { navController.navigate(Screen.ContactProfile.createRoute(it)) },
-          onNavigateToContacts = { navController.navigate(Screen.Contacts.route) },
+          onNavigateToAppearance = { navigateOnce(Screen.Appearance.route) },
+          onNavigateToDiagnostics = { navigateOnce(Screen.Diagnostics.route) },
+          onNavigateToProfile = { navigateOnce(Screen.ContactProfile.createRoute(it)) },
+          onNavigateToContacts = { navigateOnce(Screen.Contacts.route) },
           onNavigateToHomeTab = { tab ->
             homeTab = tab
             navController.popBackStack(Screen.Chats.route, false)
@@ -260,6 +281,7 @@ fun LiquidChatApp(
           onLogout = {
             navController.navigate(Screen.Auth.route) {
               popUpTo(0) { inclusive = true }
+              launchSingleTop = true
             }
           }
         )

@@ -26,15 +26,19 @@ class DeliveryReceiptWorker(
 
   override suspend fun doWork(): Result {
     val user = FirebaseAuth.getInstance().currentUser ?: return Result.success()
+    val account = inputData.getString("account") ?: return Result.success()
+    if (account != user.uid || isStopped) return Result.success()
     val db = FirebaseFirestore.getInstance()
 
     val prefs = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    val keys = prefs.all.keys.filter { it.startsWith(PREFIX) }
+    val prefix = "$PREFIX$account:"
+    val keys = prefs.all.keys.filter { it.startsWith(prefix) }
     if (keys.isEmpty()) return Result.success()
 
     var shouldRetry = false
     for (key in keys) {
-      val payload = key.removePrefix(PREFIX).split(SEPARATOR, limit = 2)
+      if (isStopped || FirebaseAuth.getInstance().currentUser?.uid != account) return Result.success()
+      val payload = key.removePrefix(prefix).split(SEPARATOR, limit = 2)
       if (payload.size != 2 || payload[0].isBlank() || payload[1].isBlank()) {
         prefs.edit().remove(key).apply()
         continue
@@ -58,7 +62,7 @@ class DeliveryReceiptWorker(
       }
     }
 
-    val stillPending = prefs.all.keys.any { it.startsWith(PREFIX) }
+    val stillPending = prefs.all.keys.any { it.startsWith(prefix) }
     return if (shouldRetry && stillPending) Result.retry() else Result.success()
   }
 
@@ -69,14 +73,16 @@ class DeliveryReceiptWorker(
 
     fun enqueue(context: Context, conversationId: String, messageId: String) {
       if (conversationId.isBlank() || messageId.isBlank()) return
+      val account = FirebaseAuth.getInstance().currentUser?.uid ?: return
 
       val appContext = context.applicationContext
       val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
       prefs.edit()
-        .putLong("$PREFIX$conversationId$SEPARATOR$messageId", System.currentTimeMillis())
+        .putLong("$PREFIX$account:$conversationId$SEPARATOR$messageId", System.currentTimeMillis())
         .apply()
 
       val request = OneTimeWorkRequestBuilder<DeliveryReceiptWorker>()
+        .setInputData(androidx.work.workDataOf("account" to account))
         .setConstraints(
           Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -84,10 +90,11 @@ class DeliveryReceiptWorker(
         )
         .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.SECONDS)
         .addTag("delivery-receipt:$messageId")
+        .addTag("account:$account")
         .build()
 
       WorkManager.getInstance(appContext).enqueueUniqueWork(
-        "delivery-receipt:$conversationId:$messageId",
+        "delivery-receipt:$account:$conversationId:$messageId",
         ExistingWorkPolicy.KEEP,
         request
       )
