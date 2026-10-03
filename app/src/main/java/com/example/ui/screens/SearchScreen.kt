@@ -58,8 +58,6 @@ import com.example.ui.components.GlassCard
 import com.example.ui.components.GlassTextField
 import com.example.ui.components.LiquidBackground
 import com.example.ui.components.liquidRoundedShape
-import com.example.ui.theme.CyanAccent
-import com.example.ui.theme.GlassBorderStroke
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
 
@@ -108,7 +106,7 @@ fun SearchScreen(
               placeholder = "Search messages and people...",
               modifier = Modifier.weight(1f).focusRequester(focus),
               leadingIcon = {
-                Icon(Icons.Default.Search, contentDescription = null, tint = CyanAccent, modifier = Modifier.size(20.dp))
+                Icon(Icons.Default.Search, contentDescription = null, tint = glassConfig.accentColor, modifier = Modifier.size(20.dp))
               },
               trailingIcon = {
                 if (searchQuery.isNotEmpty()) {
@@ -160,7 +158,7 @@ fun SearchScreen(
 
                 Text(
                   text = "Clear All",
-                  style = MaterialTheme.typography.labelSmall.copy(color = CyanAccent),
+                  style = MaterialTheme.typography.labelSmall.copy(color = glassConfig.accentColor),
                   modifier = Modifier.clickable { viewModel.clearSearchHistory() }
                 )
               }
@@ -177,7 +175,7 @@ fun SearchScreen(
                     modifier = Modifier
                       .clip(liquidRoundedShape(16f))
                       .background(if (glassConfig.isDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.70f))
-                      .border(1.dp, GlassBorderStroke, liquidRoundedShape(16f))
+                      .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = .12f), liquidRoundedShape(16f))
                       .clickable { viewModel.onSearchQueryChanged(historyQuery) }
                       .padding(horizontal = 14.dp, vertical = 8.dp)
                   ) {
@@ -197,7 +195,7 @@ fun SearchScreen(
             item {
               Text(
                 text = "PEOPLE & CONTACTS",
-                style = MaterialTheme.typography.labelSmall.copy(color = CyanAccent, fontWeight = FontWeight.Bold)
+                style = MaterialTheme.typography.labelSmall.copy(color = glassConfig.accentColor, fontWeight = FontWeight.Bold)
               )
             }
             items(searchResults.users) { user ->
@@ -225,7 +223,7 @@ fun SearchScreen(
                     },
                     modifier = Modifier.size(36.dp)
                   ) {
-                    Icon(Icons.Default.Chat, contentDescription = "Chat", tint = CyanAccent, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.Chat, contentDescription = "Chat", tint = glassConfig.accentColor, modifier = Modifier.size(20.dp))
                   }
                 }
               }
@@ -236,7 +234,7 @@ fun SearchScreen(
             item {
               Text(
                 text = "CHATS",
-                style = MaterialTheme.typography.labelSmall.copy(color = CyanAccent, fontWeight = FontWeight.Bold)
+                style = MaterialTheme.typography.labelSmall.copy(color = glassConfig.accentColor, fontWeight = FontWeight.Bold)
               )
             }
             items(searchResults.conversations) { conv ->
@@ -266,7 +264,7 @@ fun SearchScreen(
             item {
               Text(
                 text = "MESSAGES",
-                style = MaterialTheme.typography.labelSmall.copy(color = CyanAccent, fontWeight = FontWeight.Bold)
+                style = MaterialTheme.typography.labelSmall.copy(color = glassConfig.accentColor, fontWeight = FontWeight.Bold)
               )
             }
             items(searchResults.messages) { msg ->
@@ -284,7 +282,7 @@ fun SearchScreen(
                     .padding(12.dp),
                   verticalAlignment = Alignment.CenterVertically
                 ) {
-                  Icon(Icons.Default.Chat, contentDescription = null, tint = CyanAccent, modifier = Modifier.size(24.dp))
+                  Icon(Icons.Default.Chat, contentDescription = null, tint = glassConfig.accentColor, modifier = Modifier.size(24.dp))
                   Spacer(modifier = Modifier.width(12.dp))
                   Column(modifier = Modifier.weight(1f)) {
                     Text(msg.senderName, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
