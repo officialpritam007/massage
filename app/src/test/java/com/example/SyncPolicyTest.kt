@@ -50,6 +50,8 @@ class SyncPolicyTest {
     assertTrue(shouldAutoRetryOutbox(null, message = "Failed to get document because the client is offline."))
     assertTrue(shouldAutoRetryOutbox(null, message = "Unable to resolve host firestore.googleapis.com"))
     assertTrue(shouldAutoRetryOutbox(null, message = "Connection unavailable"))
+    assertTrue(shouldAutoRetryOutbox(null, message = "A network error occurred while contacting Firestore"))
+    assertTrue(shouldAutoRetryOutbox(null, message = "UNAVAILABLE: service temporarily unavailable"))
     assertFalse(shouldAutoRetryOutbox("PERMISSION_DENIED", message = "Missing or insufficient permissions"))
     assertFalse(shouldAutoRetryOutbox("FAILED_PRECONDITION"))
   }
