@@ -14,6 +14,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -48,7 +49,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -62,7 +65,6 @@ import com.example.data.model.Message
 import com.example.data.model.MessageDeliveryStatus
 import com.example.data.model.MessageType
 import com.example.ui.components.GlassAvatar
-import com.example.ui.components.GlassCard
 import com.example.ui.components.PrivateImage
 import com.example.ui.components.PrivateVideoThumbnail
 import com.example.ui.components.VoiceWaveformPlayer
@@ -226,11 +228,18 @@ fun MessageBubbleV2(
                 }
                 .combinedClickable(onClick = { if (LiquidApi.isSupportedMedia(message.mediaUrl)) onMedia() }, onLongClick = onLongClick)
         ) {
-            GlassCard(
-                shape = shape,
-                backgroundColor = bg,
-                borderColor = borderColor,
-                elevation = if (effectiveHighlighted) 7.dp else 2.dp
+            // Message rows deliberately avoid backdrop blur. Rendering a haze layer for every
+            // LazyColumn item is expensive; tint + rim + a small shadow keeps the glass language.
+            Box(
+                Modifier
+                    .shadow(
+                        elevation = if (effectiveHighlighted) 7.dp else 2.dp,
+                        shape = shape,
+                        clip = false
+                    )
+                    .clip(shape)
+                    .background(bg)
+                    .border(1.dp, borderColor, shape)
             ) {
                 Column(
                     Modifier
@@ -361,11 +370,17 @@ fun MessageBubbleV2(
                 }
             }
             if (message.reactions.isNotEmpty()) {
-                GlassCard(
-                    modifier = Modifier.padding(top = 2.dp),
-                    shape = RoundedCornerShape(999.dp),
-                    backgroundColor = if (config.isDark) Color(0xFF142A31).copy(alpha = .82f) else Color.White.copy(alpha = .76f),
-                    elevation = 1.dp
+                val reactionShape = RoundedCornerShape(999.dp)
+                Box(
+                    Modifier
+                        .padding(top = 2.dp)
+                        .clip(reactionShape)
+                        .background(if (config.isDark) Color(0xFF142A31).copy(alpha = .82f) else Color.White.copy(alpha = .76f))
+                        .border(
+                            1.dp,
+                            if (config.isDark) Color.White.copy(alpha = .10f) else Color.White.copy(alpha = .62f),
+                            reactionShape
+                        )
                 ) {
                     Row(Modifier.padding(horizontal = 7.dp, vertical = 3.dp)) {
                         message.reactions.forEach { reaction ->
