@@ -1,7 +1,6 @@
 package com.example
 
 import androidx.compose.material3.Text
-import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import com.example.ui.components.GlassCard
@@ -31,6 +30,6 @@ class LiquidGlassFallbackTest {
       }
     }
 
-    compose.onNodeWithText("fallback-glass-ok").assertExists()
+    compose.onNodeWithText("fallback-glass-ok").fetchSemanticsNode()
   }
 }
