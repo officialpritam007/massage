@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import com.example.ui.components.liquidRoundedShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,7 +43,7 @@ fun CompactDeleteMessageDialogV3(
         ) {
             GlassCard(
                 modifier = Modifier.fillMaxWidth().widthIn(max = 360.dp),
-                shape = RoundedCornerShape(27.dp),
+                shape = liquidRoundedShape(27f),
                 backgroundColor = if (glass.isDark) {
                     Color(0xFF0A141F).copy(alpha = .72f)
                 } else {
@@ -108,7 +109,7 @@ fun CompactEditMessageDialogV3(
         ) {
             GlassCard(
                 modifier = Modifier.fillMaxWidth().widthIn(max = 400.dp),
-                shape = RoundedCornerShape(27.dp),
+                shape = liquidRoundedShape(27f),
                 backgroundColor = if (glass.isDark) {
                     Color(0xFF0A141F).copy(alpha = .72f)
                 } else {
@@ -132,7 +133,7 @@ fun CompactEditMessageDialogV3(
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
                         singleLine = false,
                         maxLines = 5,
-                        shape = RoundedCornerShape(20.dp)
+                        shape = liquidRoundedShape(20f)
                     )
                     Row(
                         Modifier.fillMaxWidth(),
