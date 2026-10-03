@@ -192,61 +192,81 @@ fun SettingsScreen(
 
         GlassCard(
           modifier = Modifier.fillMaxWidth(),
-          shape = androidx.compose.foundation.shape.RoundedCornerShape(30.dp),
-          backgroundColor = if (glass.isDark) Color(0xFF142A31).copy(alpha = .76f) else Color.White.copy(alpha = .60f),
-          borderColor = Color.White.copy(alpha = if (glass.isDark) .16f else .58f),
-          elevation = 6.dp,
-          onClick = { onNavigateToProfile(me.uid) }
+          shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+          backgroundColor = if (glass.isDark) Color(0xFF142C34).copy(alpha = .82f) else Color.White.copy(alpha = .70f),
+          borderColor = if (glass.isDark) Color(0xFF142C34).copy(alpha = .82f) else Color.White.copy(alpha = .70f),
+          elevation = 7.dp
         ) {
-          Row(
-            Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 13.dp),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Box(contentAlignment = Alignment.BottomEnd) {
-              DustDeleteContainerV2(active = photoDeleting, reduced = glass.isReducedMotion) {
-                GlassAvatar(
-                  shownPhoto,
-                  me.displayName.ifBlank { "Your profile" },
-                  66.dp,
-                  onClick = { if (!photoDeleting) showOwnPhoto = true }
+          Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Box(contentAlignment = Alignment.BottomEnd) {
+                DustDeleteContainerV2(active = photoDeleting, reduced = glass.isReducedMotion) {
+                  GlassAvatar(
+                    shownPhoto,
+                    me.displayName.ifBlank { "Your profile" },
+                    68.dp,
+                    onClick = { if (!photoDeleting) showOwnPhoto = true }
+                  )
+                }
+                GlassIconButton(
+                  Icons.Default.PhotoCamera,
+                  "Change photo",
+                  { photo.launch("image/*") },
+                  size = 32.dp,
+                  tint = Color.White,
+                  backgroundColor = glass.accentColor.copy(alpha = .88f)
                 )
               }
-              GlassIconButton(
-                Icons.Default.PhotoCamera,
-                "Change photo",
-                { photo.launch("image/*") },
-                size = 32.dp,
-                tint = Color.White,
-                backgroundColor = glass.accentColor.copy(alpha = .86f)
-              )
-            }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-              Text(
-                me.displayName.ifBlank { "Your profile" },
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1
-              )
-              Text(
-                me.bio.ifBlank { "Hey there! I am using Liquid Chat" },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1
-              )
-              Row {
-                TextButton(onClick = { dialog = "Profile" }, contentPadding = PaddingValues(0.dp)) {
-                  Text("Edit profile", color = glass.accentColor)
-                }
-                if (shownPhoto.isNotBlank()) {
-                  Spacer(Modifier.width(10.dp))
-                  TextButton(onClick = ::removePhoto, contentPadding = PaddingValues(0.dp)) {
-                    Text("Remove", color = MaterialTheme.colorScheme.error)
-                  }
+              Spacer(Modifier.width(14.dp))
+              Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(
+                  me.displayName.ifBlank { "Your profile" },
+                  style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                  color = MaterialTheme.colorScheme.onSurface,
+                  maxLines = 1
+                )
+                Text(
+                  me.bio.ifBlank { "Hey there! I am using Liquid Chat" },
+                  style = MaterialTheme.typography.bodyMedium,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  maxLines = 2
+                )
+                Box(
+                  Modifier
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(999.dp))
+                    .background(glass.accentColor.copy(alpha = .14f))
+                    .padding(horizontal = 9.dp, vertical = 4.dp)
+                ) {
+                  Text(
+                    "@" + me.username.ifBlank { "username" },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = glass.accentColor
+                  )
                 }
               }
             }
-            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+              ProfileGlassAction(
+                text = "Edit profile",
+                modifier = Modifier.weight(1f),
+                onClick = { dialog = "Profile" }
+              )
+              ProfileGlassAction(
+                text = if (photoDeleting) "Removing…" else "Remove photo",
+                modifier = Modifier.weight(1f),
+                enabled = shownPhoto.isNotBlank() && !photoDeleting,
+                destructive = true,
+                onClick = ::removePhoto
+              )
+            }
+            if (photoDeleteFailed) {
+              Text(
+                "Could not remove the profile photo. Try again.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+              )
+            }
           }
         }
 
@@ -256,56 +276,84 @@ fun SettingsScreen(
 
         GlassCard(
           modifier = Modifier.fillMaxWidth(),
-          shape = androidx.compose.foundation.shape.RoundedCornerShape(30.dp),
-          backgroundColor = if (glass.isDark) Color(0xFF142A31).copy(alpha = .72f) else Color.White.copy(alpha = .56f),
-          borderColor = Color.White.copy(alpha = if (glass.isDark) .14f else .54f),
-          elevation = 5.dp
+          shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+          backgroundColor = if (glass.isDark) Color(0xFF10252D).copy(alpha = .60f) else Color.White.copy(alpha = .58f),
+          borderColor = Color.White.copy(alpha = if (glass.isDark) .13f else .58f),
+          elevation = 4.dp
         ) {
           Row(
-            Modifier.fillMaxWidth().padding(vertical = 14.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
+            Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
           ) {
-            SettingsStat(Icons.Default.Whatshot, activeDays.toString(), "Days active")
-            SettingsStat(Icons.Default.ChatBubbleOutline, sentCount.toString(), "Loaded sent messages")
-            SettingsStat(Icons.Default.People, contactCount.toString(), "Contacts")
+            SettingsStat(Icons.Default.Whatshot, activeDays.toString(), "Days active", Color(0xFFFF9F0A), Modifier.weight(1f))
+            SettingsMetricDivider()
+            SettingsStat(Icons.Default.ChatBubbleOutline, sentCount.toString(), "Sent messages", glass.accentColor, Modifier.weight(1f))
+            SettingsMetricDivider()
+            SettingsStat(Icons.Default.People, contactCount.toString(), "Contacts", Color(0xFF007AFF), Modifier.weight(1f))
           }
         }
 
-        GlassVisualSettingRow(Icons.Default.Person, "Account") { dialog = "Profile" }
-        GlassVisualSettingRow(Icons.Default.Lock, "Privacy") { dialog = "Privacy" }
-        GlassVisualSettingRow(Icons.Default.ChatBubbleOutline, "Chats") { onNavigateToHomeTab("All") }
-        GlassVisualSettingRow(Icons.Default.Notifications, "Notifications") { dialog = "Notifications" }
-        GlassVisualSettingRow(Icons.Default.Storage, "Storage and data") {
-          scope.launch {
-            cacheSize = withContext(Dispatchers.IO) {
-              context.cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        SettingsSection("SETTINGS") {
+          ProfessionalSettingItem(Icons.Default.Person, "Account", "Display name, username, phone", Color(0xFF007AFF)) { dialog = "Profile" }
+          SettingDivider()
+          ProfessionalSettingItem(Icons.Default.Lock, "Privacy", "Last seen, read receipts, online status", Color(0xFF34C759)) { dialog = "Privacy" }
+          SettingDivider()
+          ProfessionalSettingItem(Icons.Default.ChatBubbleOutline, "Chats", "Wallpapers and conversation shortcuts", Color(0xFF30D158)) { onNavigateToHomeTab("All") }
+          SettingDivider()
+          ProfessionalSettingItem(Icons.Default.Notifications, "Notifications", "Alerts, vibration and message previews", Color(0xFFFF3B30)) { dialog = "Notifications" }
+        }
+
+        SettingsSection("PERSONALIZATION & DATA") {
+          ProfessionalSettingItem(
+            Icons.Default.Palette,
+            "Appearance",
+            "Liquid Glass, accent palettes and motion",
+            Color(0xFFAF52DE),
+            value = if (appearance.isDarkMode) "Dark" else "Light"
+          ) { onNavigateToAppearance() }
+          SettingDivider()
+          ProfessionalSettingItem(Icons.Default.Storage, "Storage and Data", "Network usage and cache cleaner", Color(0xFF32ADE6)) {
+            scope.launch {
+              cacheSize = withContext(Dispatchers.IO) {
+                context.cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+              }
+              dialog = "Data & Storage"
             }
-            dialog = "Data & Storage"
           }
         }
-        GlassVisualSettingRow(Icons.Default.Palette, "Appearance") { onNavigateToAppearance() }
-        GlassVisualSettingRow(Icons.Default.HelpOutline, "Help") { dialog = "About & Support" }
 
-        Text(
-          "Liquid Chat v" + BuildConfig.VERSION_NAME,
-          modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-          textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-          color = glass.accentColor.copy(alpha = .82f),
-          style = MaterialTheme.typography.bodyMedium
-        )
+        SettingsSection("SUPPORT") {
+          ProfessionalSettingItem(Icons.Default.HelpOutline, "Help & Support", "FAQ and direct developer contact", Color(0xFFFF9500)) { dialog = "About & Support" }
+          SettingDivider()
+          ProfessionalSettingItem(Icons.Default.DeveloperMode, "Developer Diagnostics", "E2EE status, cloud sync and quotas", Color(0xFF5856D6)) { onNavigateToDiagnostics() }
+        }
 
-        GlassCard(Modifier.fillMaxWidth(), shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)) {
-          Column(Modifier.padding(8.dp)) {
-            TextButton(onClick = onNavigateToDiagnostics, modifier = Modifier.fillMaxWidth()) {
-              Text("Developer diagnostics", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            TextButton(onClick = { dialog = "Log out" }, modifier = Modifier.fillMaxWidth()) {
-              Text("Log out", color = MaterialTheme.colorScheme.error)
-            }
-            TextButton(onClick = { dialog = "Delete account" }, modifier = Modifier.fillMaxWidth()) {
-              Text("Delete account", color = MaterialTheme.colorScheme.error)
-            }
-          }
+        SettingsSection("ACCOUNT ACTIONS") {
+          ProfessionalSettingItem(Icons.Default.ExitToApp, "Log Out", "Clear this device session safely", Color(0xFFFF9F0A)) { dialog = "Log out" }
+          SettingDivider()
+          ProfessionalSettingItem(Icons.Default.DeleteForever, "Delete Account", "Permanently erase account and cloud data", Color(0xFFFF453A), destructive = true) { dialog = "Delete account" }
+        }
+
+        Column(
+          Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 6.dp),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+          Text(
+            "Liquid Chat v" + BuildConfig.VERSION_NAME,
+            color = glass.accentColor.copy(alpha = .86f),
+            style = MaterialTheme.typography.labelLarge
+          )
+          Text(
+            "Firebase Auth + Firestore + Cloudinary • free-tier architecture",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelSmall
+          )
+          Text(
+            "Text messages use device-bound end-to-end encryption",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelSmall
+          )
         }
 
         Spacer(Modifier.height(8.dp))
