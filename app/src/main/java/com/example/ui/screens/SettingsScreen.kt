@@ -192,7 +192,7 @@ fun SettingsScreen(
 
         GlassCard(
           modifier = Modifier.fillMaxWidth(),
-          shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+          shape = liquidRoundedShape(28f),
           backgroundColor = if (glass.isDark) Color(0xFF142C34).copy(alpha = .82f) else Color.White.copy(alpha = .70f),
           borderColor = if (glass.isDark) Color(0xFF142C34).copy(alpha = .82f) else Color.White.copy(alpha = .70f),
           elevation = 7.dp
@@ -276,7 +276,7 @@ fun SettingsScreen(
 
         GlassCard(
           modifier = Modifier.fillMaxWidth(),
-          shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+          shape = liquidRoundedShape(24f),
           backgroundColor = if (glass.isDark) Color(0xFF10252D).copy(alpha = .60f) else Color.White.copy(alpha = .58f),
           borderColor = Color.White.copy(alpha = if (glass.isDark) .13f else .58f),
           elevation = 4.dp
@@ -626,7 +626,7 @@ private fun ProfileGlassAction(
   val foreground = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
   Box(
     modifier
-      .clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+      .clip(liquidRoundedShape(18f))
       .background(if (glass.isDark) Color.White.copy(alpha = .08f) else Color.White.copy(alpha = .55f))
       .clickable(enabled = enabled, onClick = onClick)
       .padding(horizontal = 12.dp, vertical = 11.dp),
@@ -652,7 +652,7 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
     )
     GlassCard(
       modifier = Modifier.fillMaxWidth(),
-      shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+      shape = liquidRoundedShape(24f),
       backgroundColor = if (glass.isDark) Color(0xFF11262E).copy(alpha = .62f) else Color.White.copy(alpha = .60f),
       borderColor = Color.White.copy(alpha = if (glass.isDark) .13f else .62f),
       elevation = 4.dp
