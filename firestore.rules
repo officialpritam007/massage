@@ -23,6 +23,12 @@ service cloud.firestore {
         && !exists(/databases/$(database)/documents/accountDeletionRequests/$(data.participantIds[1]));
     }
 
+    function otherParticipant(data) {
+      return data.participantIds[0] == request.auth.uid
+        ? data.participantIds[1]
+        : data.participantIds[0];
+    }
+
     function participant(cid) {
       return activeAccount()
         && conversationExists(cid)
@@ -186,12 +192,12 @@ service cloud.firestore {
         && request.auth.uid in resource.data.participantIds;
 
       allow create: if activeAccount()
-        && membersActive(request.resource.data)
-        && exists(/databases/$(database)/documents/directory/$(request.resource.data.participantIds[0]))
-        && exists(/databases/$(database)/documents/directory/$(request.resource.data.participantIds[1]))
         && request.resource.data.participantIds is list
         && request.resource.data.participantIds.size() == 2
         && request.auth.uid in request.resource.data.participantIds
+        && membersActive(request.resource.data)
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && exists(/databases/$(database)/documents/directory/$(otherParticipant(request.resource.data)))
         && request.resource.data.keys().hasOnly([
           'participantIds', 'lastMessageId', 'lastMessageTime', 'lastMessageText',
           'lastMessageSenderId', 'lastMessageE2ee', 'lastMessageRevision', 'lastMessageType', 'unreadCounts', 'deletedFor', 'deletedBefore',
