@@ -71,9 +71,7 @@ import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import com.example.ui.components.GlassButton
 import com.example.ui.components.GlassCard
-import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.DeepMidnight
-import com.example.ui.theme.ElectricBlue
 import com.example.ui.theme.GlassBorderStroke
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.theme.TextMuted
@@ -141,11 +139,11 @@ fun CameraScreen(
           Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(
               Modifier.size(64.dp).clip(CircleShape)
-                .background(CyanAccent.copy(alpha = 0.15f))
-                .border(1.dp, CyanAccent.copy(alpha = 0.4f), CircleShape),
+                .background(glass.accentColor.copy(alpha = 0.15f))
+                .border(1.dp, glass.accentColor.copy(alpha = 0.4f), CircleShape),
               contentAlignment = Alignment.Center
             ) {
-              Icon(Icons.Default.PhotoCamera, null, tint = CyanAccent, modifier = Modifier.size(32.dp))
+              Icon(Icons.Default.PhotoCamera, null, tint = glass.accentColor, modifier = Modifier.size(32.dp))
             }
             Spacer(Modifier.height(16.dp))
             Text(
@@ -224,7 +222,7 @@ fun CameraScreen(
 
               Box(
                 Modifier.clip(RoundedCornerShape(24.dp))
-                  .background(Brush.horizontalGradient(listOf(CyanAccent, ElectricBlue)))
+                  .background(Brush.horizontalGradient(listOf(glass.accentColor, glass.accentColor.copy(alpha = .72f))))
                   .clickable(enabled = !previewDeleting) {
                     capturedPhotoUri?.let { uri -> onPhotoCaptured(uri, captionText) }
                   }
@@ -267,7 +265,7 @@ fun CameraScreen(
       if (imageCapture == null) {
         Box(Modifier.fillMaxSize().background(DeepMidnight), contentAlignment = Alignment.Center) {
           Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator(color = CyanAccent)
+            CircularProgressIndicator(color = glass.accentColor)
             Spacer(Modifier.height(16.dp))
             Text("Starting camera…", color = Color.White)
           }
@@ -302,7 +300,7 @@ fun CameraScreen(
             ImageCapture.FLASH_MODE_AUTO -> Icons.Default.FlashAuto
             else -> Icons.Default.FlashOff
           }
-          Icon(flashIcon, "Toggle Flash", tint = if (flashMode != ImageCapture.FLASH_MODE_OFF) CyanAccent else Color.White)
+          Icon(flashIcon, "Toggle Flash", tint = if (flashMode != ImageCapture.FLASH_MODE_OFF) glass.accentColor else Color.White)
         }
 
         IconButton(
@@ -322,7 +320,7 @@ fun CameraScreen(
       }
 
       Box(
-        Modifier.size(280.dp).align(Alignment.Center).border(1.dp, CyanAccent.copy(alpha = 0.3f), RoundedCornerShape(24.dp))
+        Modifier.size(280.dp).align(Alignment.Center).border(1.dp, glass.accentColor.copy(alpha = 0.3f), RoundedCornerShape(24.dp))
       )
 
       Box(
@@ -331,8 +329,8 @@ fun CameraScreen(
       ) {
         Box(
           Modifier.size(80.dp).clip(CircleShape)
-            .background(CyanAccent.copy(alpha = 0.25f))
-            .border(2.dp, CyanAccent, CircleShape)
+            .background(glass.accentColor.copy(alpha = 0.25f))
+            .border(2.dp, glass.accentColor, CircleShape)
             .clickable(enabled = !isCapturing && imageCapture != null) {
               val capture = imageCapture ?: return@clickable
               isCapturing = true
@@ -360,7 +358,7 @@ fun CameraScreen(
           contentAlignment = Alignment.Center
         ) {
           if (isCapturing) {
-            CircularProgressIndicator(color = CyanAccent, modifier = Modifier.size(36.dp), strokeWidth = 3.dp)
+            CircularProgressIndicator(color = glass.accentColor, modifier = Modifier.size(36.dp), strokeWidth = 3.dp)
           } else {
             Box(Modifier.size(62.dp).clip(CircleShape).background(Color.White))
           }
