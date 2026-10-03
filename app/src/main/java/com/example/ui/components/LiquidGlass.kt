@@ -101,7 +101,7 @@ fun GlassCard(
   val glassBackground = backgroundColor ?: surface
   val backdrop = LocalGlassBackdrop.current
   val border = borderColor ?: if (config.isDark) GlassBorderStrokeDark else Color.White.copy(alpha = 0.38f)
-  val resolvedShape: Shape = shape ?: RoundedCornerShape(config.cornerRadiusDp.coerceIn(16f, 32f).dp)
+  val resolvedShape: Shape = shape ?: RoundedCornerShape(config.cornerRadiusDp.coerceIn(0f, 200f).dp)
   val specularHighlight = if (config.isDark) Color(0xFFD8FFFF).copy(alpha = 0.40f) else Color.White.copy(alpha = 0.95f)
   val shadow = if (config.isDark) Color.Black.copy(alpha = 0.56f) else Color.Black.copy(alpha = 0.10f)
 
@@ -124,7 +124,7 @@ fun GlassCard(
       .then(
         if (backdrop != null && config.isGlassEnabled) {
           Modifier.hazeEffect(backdrop) {
-            blurRadius = (16f + config.blurAlpha * 24f).dp
+            blurRadius = (config.blurAlpha.coerceIn(0f, 1f) * 200f).dp
             noiseFactor = 0.025f
             this.backgroundColor = glassBackground
           }
@@ -185,7 +185,7 @@ fun GlassButton(
   val contentColor = if (isPrimary) {
     if (config.accentColor.luminance() > .179f) Color.Black else Color.White
   } else if (config.isDark) TextPrimary else TextPrimaryLight
-  val resolvedShape = shape ?: RoundedCornerShape(config.cornerRadiusDp.coerceIn(0f, 64f).dp)
+  val resolvedShape = shape ?: RoundedCornerShape(config.cornerRadiusDp.coerceIn(0f, 200f).dp)
 
   Box(
     modifier = modifier
@@ -266,7 +266,7 @@ fun GlassTextField(
   val config = LocalLiquidGlass.current
   val primaryText = if (config.isDark) TextPrimary else TextPrimaryLight
   val secondaryText = if (config.isDark) Color(0xFFB7CBE2) else TextSecondaryLight
-  val resolvedShape = shape ?: RoundedCornerShape(config.cornerRadiusDp.coerceIn(0f, 64f).dp)
+  val resolvedShape = shape ?: RoundedCornerShape(config.cornerRadiusDp.coerceIn(0f, 200f).dp)
   Box(
     modifier = modifier
       .defaultMinSize(minHeight = minHeight)
