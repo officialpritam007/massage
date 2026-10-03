@@ -62,6 +62,7 @@ import com.example.ui.components.GlassDialog
 import com.example.ui.components.GlassHeader
 import com.example.ui.components.GlassTextField
 import com.example.ui.components.LiquidBackground
+import com.example.ui.components.liquidRoundedShape
 import com.example.ui.components.PrivateImage
 import com.example.ui.components.PrivateVideoThumbnail
 import com.example.ui.components.VoiceWaveformPlayer
@@ -118,7 +119,7 @@ fun ContactProfileScreen(
 
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(32.dp),
+                shape = liquidRoundedShape(32f),
                 backgroundColor = if (glass.isDark) {
                     Color(0xFF142A31).copy(alpha = .76f)
                 } else {
@@ -251,7 +252,7 @@ fun ContactProfileScreen(
             if (user.uid != me.uid) {
                 GlassCard(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(26.dp),
+                    shape = liquidRoundedShape(26f),
                     elevation = 1.dp
                 ) {
                     Column(
@@ -297,7 +298,7 @@ fun ContactProfileScreen(
             if (shared.isEmpty()) {
                 GlassCard(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(26.dp),
+                    shape = liquidRoundedShape(26f),
                     elevation = 0.dp
                 ) {
                     Text(
@@ -326,7 +327,7 @@ fun ContactProfileScreen(
             if (user.uid != me.uid) {
                 GlassCard(
                     Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(28.dp),
+                    shape = liquidRoundedShape(28f),
                     elevation = 1.dp
                 ) {
                     Column(Modifier.fillMaxWidth().padding(8.dp)) {
@@ -421,7 +422,7 @@ private fun ProfileInfoRow(
     val glass = LocalLiquidGlass.current
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = liquidRoundedShape(20f),
         backgroundColor = if (glass.isDark) Color.White.copy(alpha = .075f) else Color.White.copy(alpha = .58f),
         elevation = 0.dp
     ) {
@@ -459,7 +460,7 @@ private fun SharedMediaCard(
             MessageType.FILE -> Modifier.width(170.dp).height(116.dp)
             else -> Modifier.size(116.dp)
         },
-        shape = RoundedCornerShape(24.dp),
+        shape = liquidRoundedShape(24f),
         backgroundColor = if (glass.isDark) Color(0xFF142A31).copy(alpha = .70f)
         else Color.White.copy(alpha = .58f),
         elevation = 1.dp,
