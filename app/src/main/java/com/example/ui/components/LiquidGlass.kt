@@ -76,6 +76,17 @@ import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.TextSecondaryLight
 
 @Composable
+fun liquidRoundedShape(
+  baseDp: Float = 28f,
+  minDp: Float = 8f,
+  maxDp: Float = 72f
+): RoundedCornerShape {
+  val config = LocalLiquidGlass.current
+  val scale = (config.cornerRadiusDp / 30f).coerceIn(0.6f, 1.8f)
+  return RoundedCornerShape((baseDp * scale).coerceIn(minDp, maxDp).dp)
+}
+
+@Composable
 fun GlassCard(
   modifier: Modifier = Modifier,
   shape: Shape? = null,
@@ -101,7 +112,7 @@ fun GlassCard(
   val glassBackground = backgroundColor ?: surface
   val backdrop = LocalGlassBackdrop.current
   val border = borderColor ?: if (config.isDark) GlassBorderStrokeDark else Color.White.copy(alpha = 0.38f)
-  val resolvedShape: Shape = shape ?: RoundedCornerShape(config.cornerRadiusDp.coerceIn(0f, 200f).dp)
+  val resolvedShape: Shape = shape ?: liquidRoundedShape(30f)
   val specularHighlight = if (config.isDark) Color(0xFFD8FFFF).copy(alpha = 0.40f) else Color.White.copy(alpha = 0.95f)
   val shadow = if (config.isDark) Color.Black.copy(alpha = 0.56f) else Color.Black.copy(alpha = 0.10f)
 
@@ -185,7 +196,7 @@ fun GlassButton(
   val contentColor = if (isPrimary) {
     if (config.accentColor.luminance() > .179f) Color.Black else Color.White
   } else if (config.isDark) TextPrimary else TextPrimaryLight
-  val resolvedShape = shape ?: RoundedCornerShape(config.cornerRadiusDp.coerceIn(0f, 200f).dp)
+  val resolvedShape = shape ?: liquidRoundedShape(24f)
 
   Box(
     modifier = modifier
