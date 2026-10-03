@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import com.example.ui.components.liquidRoundedShape
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -78,7 +79,7 @@ fun MessageActionSheetV3(
         ) {
             GlassCard(
                 modifier = Modifier.fillMaxWidth().widthIn(max = 370.dp),
-                shape = RoundedCornerShape(28.dp),
+                shape = liquidRoundedShape(28f),
                 backgroundColor = if (glass.isDark) {
                     Color(0xFF08131E).copy(alpha = .72f)
                 } else {
@@ -113,7 +114,7 @@ fun MessageActionSheetV3(
 
                     GlassCard(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(22.dp),
+                        shape = liquidRoundedShape(22f),
                         backgroundColor = glass.accentColor.copy(alpha = if (glass.isDark) .12f else .08f),
                         elevation = 0.dp
                     ) {
@@ -216,7 +217,7 @@ private fun MessageActionTileV3(
     val glass = LocalLiquidGlass.current
     GlassCard(
         modifier = modifier,
-        shape = RoundedCornerShape(19.dp),
+        shape = liquidRoundedShape(19f),
         backgroundColor = if (glass.isDark) Color.White.copy(alpha = .055f)
         else Color.White.copy(alpha = .24f),
         elevation = 0.dp,
@@ -256,7 +257,7 @@ private fun MessageActionRowV3(
 
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(19.dp),
+        shape = liquidRoundedShape(19f),
         backgroundColor = when {
             destructive -> MaterialTheme.colorScheme.error.copy(alpha = .065f)
             glass.isDark -> Color.White.copy(alpha = .05f)
