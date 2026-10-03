@@ -51,9 +51,9 @@ GitHub Actions validates free-tier configuration, runs Firestore security-rule e
 
 Firestore rules deploy independently; Firebase Functions are not part of this architecture.
 
-## Permanent logout / account deletion
+## Session logout / account deletion
 
-Both actions now permanently erase the account, its one-to-one conversation trees and owned uploads, then erase this device's databases, keys, preferences, work and notifications. They require recent authentication and a configured trusted cleanup worker; an unavailable worker or unverified media fails visibly instead of reporting successful deletion. Pending deletion survives process death and blocks old chat restoration.
+Log out now ends only the current device session: it removes local message cache, pending work, notifications and the device FCM registration while preserving the cloud account and device E2EE identity for a later sign-in. Delete account remains the irreversible path that erases the account, one-to-one conversation trees and owned uploads after trusted cleanup. Permanent deletion requires recent authentication and never reports success before cloud verification.
 
 Final verification includes a **70-minute wait after Auth deletion**, plus worker scheduling, so tokens on other devices expire before the UID gate is removed. A random status proof without a UID allows the app to resume without the deleted Auth account. Keep the app installed until the local wipe is confirmed.
 
