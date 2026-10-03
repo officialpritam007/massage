@@ -578,20 +578,26 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun SettingsStat(icon: ImageVector, value: String, label: String) {
-  val config = LocalLiquidGlass.current
+private fun SettingsStat(
+  icon: ImageVector,
+  value: String,
+  label: String,
+  color: Color,
+  modifier: Modifier = Modifier
+) {
   Column(
+    modifier = modifier.padding(horizontal = 6.dp),
     horizontalAlignment = Alignment.CenterHorizontally,
     verticalArrangement = Arrangement.spacedBy(4.dp)
   ) {
     Box(
       Modifier
-        .size(38.dp)
-        .clip(androidx.compose.foundation.shape.CircleShape)
-        .background(config.accentColor.copy(alpha = .18f)),
+        .size(36.dp)
+        .clip(androidx.compose.foundation.shape.RoundedCornerShape(11.dp))
+        .background(color.copy(alpha = .16f)),
       contentAlignment = Alignment.Center
     ) {
-      Icon(icon, contentDescription = null, tint = config.accentColor, modifier = Modifier.size(20.dp))
+      Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(19.dp))
     }
     Text(value, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
     Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -599,43 +605,127 @@ private fun SettingsStat(icon: ImageVector, value: String, label: String) {
 }
 
 @Composable
-private fun GlassVisualSettingRow(
-  icon: ImageVector,
-  title: String,
+private fun SettingsMetricDivider() {
+  Box(
+    Modifier
+      .width(1.dp)
+      .height(32.dp)
+      .background(MaterialTheme.colorScheme.onSurface.copy(alpha = .10f))
+  )
+}
+
+@Composable
+private fun ProfileGlassAction(
+  text: String,
+  modifier: Modifier = Modifier,
+  enabled: Boolean = true,
+  destructive: Boolean = false,
   onClick: () -> Unit
 ) {
-  val config = LocalLiquidGlass.current
-  GlassCard(
-    modifier = Modifier.fillMaxWidth(),
-    shape = androidx.compose.foundation.shape.RoundedCornerShape(27.dp),
-    backgroundColor = if (config.isDark) Color(0xFF142A31).copy(alpha = .72f) else Color.White.copy(alpha = .56f),
-    borderColor = Color.White.copy(alpha = if (config.isDark) .14f else .54f),
-    elevation = 4.dp,
-    onClick = onClick
+  val glass = LocalLiquidGlass.current
+  val foreground = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+  Box(
+    modifier
+      .clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+      .background(if (glass.isDark) Color.White.copy(alpha = .08f) else Color.White.copy(alpha = .55f))
+      .clickable(enabled = enabled, onClick = onClick)
+      .padding(horizontal = 12.dp, vertical = 11.dp),
+    contentAlignment = Alignment.Center
   ) {
-    Row(
-      Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 10.dp),
-      verticalAlignment = Alignment.CenterVertically
+    Text(
+      text,
+      style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+      color = if (enabled) foreground else foreground.copy(alpha = .35f)
+    )
+  }
+}
+
+@Composable
+private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+  val glass = LocalLiquidGlass.current
+  Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+    Text(
+      title,
+      style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+      modifier = Modifier.padding(horizontal = 10.dp)
+    )
+    GlassCard(
+      modifier = Modifier.fillMaxWidth(),
+      shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+      backgroundColor = if (glass.isDark) Color(0xFF11262E).copy(alpha = .62f) else Color.White.copy(alpha = .60f),
+      borderColor = Color.White.copy(alpha = if (glass.isDark) .13f else .62f),
+      elevation = 4.dp
     ) {
-      Box(
-        Modifier
-          .size(48.dp)
-          .clip(androidx.compose.foundation.shape.CircleShape)
-          .background(Color.White.copy(alpha = if (config.isDark) .13f else .72f)),
-        contentAlignment = Alignment.Center
-      ) {
-        Icon(icon, contentDescription = null, tint = if (config.isDark) Color.White else MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(23.dp))
-      }
-      Spacer(Modifier.width(14.dp))
+      Column(Modifier.padding(vertical = 4.dp), content = content)
+    }
+  }
+}
+
+@Composable
+private fun ProfessionalSettingItem(
+  icon: ImageVector,
+  title: String,
+  subtitle: String,
+  badgeColor: Color,
+  value: String? = null,
+  destructive: Boolean = false,
+  onClick: () -> Unit
+) {
+  Row(
+    Modifier
+      .fillMaxWidth()
+      .clickable(onClick = onClick)
+      .padding(horizontal = 14.dp, vertical = 12.dp),
+    verticalAlignment = Alignment.CenterVertically
+  ) {
+    Box(
+      Modifier
+        .size(36.dp)
+        .clip(androidx.compose.foundation.shape.RoundedCornerShape(11.dp))
+        .background(badgeColor),
+      contentAlignment = Alignment.Center
+    ) {
+      Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+    }
+    Spacer(Modifier.width(16.dp))
+    Column(Modifier.weight(1f)) {
       Text(
         title,
         style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-        color = MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier.weight(1f)
+        color = if (destructive) Color(0xFFFF453A) else MaterialTheme.colorScheme.onSurface
       )
-      Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
+      Text(
+        subtitle,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1
+      )
     }
+    if (!value.isNullOrBlank()) {
+      Text(
+        value,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+      )
+      Spacer(Modifier.width(7.dp))
+    }
+    Icon(
+      Icons.Default.ChevronRight,
+      contentDescription = null,
+      tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .72f),
+      modifier = Modifier.size(20.dp)
+    )
   }
+}
+
+@Composable
+private fun SettingDivider() {
+  HorizontalDivider(
+    modifier = Modifier.padding(start = 66.dp, end = 14.dp),
+    thickness = .5.dp,
+    color = MaterialTheme.colorScheme.onSurface.copy(alpha = .10f)
+  )
 }
 
 private fun conversationsCountForSettings(
@@ -643,37 +733,6 @@ private fun conversationsCountForSettings(
   users: List<com.example.data.model.User>
 ): Int {
   return maxOf(users.count { it.uid.isNotBlank() }, messages.keys.count()).coerceAtLeast(0)
-}
-
-@Composable
-private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
-  Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-    Text(
-      title,
-      style = MaterialTheme.typography.labelLarge,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-      modifier = Modifier.padding(horizontal = 8.dp)
-    )
-    GlassCard(Modifier.fillMaxWidth()) {
-      Column(Modifier.padding(vertical = 5.dp), content = content)
-    }
-  }
-}
-
-@Composable
-private fun SettingRow(title: String, subtitle: String? = null, onClick: () -> Unit) {
-  Column(
-    modifier = Modifier
-      .fillMaxWidth()
-      .clickable(onClick = onClick)
-      .padding(horizontal = 16.dp, vertical = 13.dp)
-  ) {
-    Text(title, style = MaterialTheme.typography.bodyLarge)
-    if (!subtitle.isNullOrBlank()) {
-      Spacer(Modifier.height(2.dp))
-      Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-  }
 }
 
 @Composable
