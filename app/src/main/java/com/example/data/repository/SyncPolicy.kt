@@ -32,15 +32,34 @@ internal class PresenceWriteGate(private val intervalMs: Long = 60_000L) {
 internal fun shouldAutoRetryOutbox(
   firestoreCodeName: String?,
   isIoFailure: Boolean = false,
-  timedOut: Boolean = false
+  timedOut: Boolean = false,
+  message: String = ""
 ): Boolean {
   if (isIoFailure || timedOut) return true
-  return firestoreCodeName in setOf(
-    "UNAVAILABLE",
-    "DEADLINE_EXCEEDED",
-    "ABORTED",
-    "INTERNAL",
-    "UNKNOWN",
-    "CANCELLED"
-  )
+  if (firestoreCodeName in setOf(
+      "UNAVAILABLE",
+      "DEADLINE_EXCEEDED",
+      "ABORTED",
+      "INTERNAL",
+      "UNKNOWN",
+      "CANCELLED"
+    )
+  ) return true
+
+  val normalized = message.lowercase()
+  return listOf(
+    "client is offline",
+    "network is unavailable",
+    "network unavailable",
+    "connection unavailable",
+    "failed to connect",
+    "unable to resolve host",
+    "host is unresolved",
+    "dns",
+    "transport closed",
+    "channel shutdown",
+    "connection reset",
+    "timeout",
+    "timed out"
+  ).any(normalized::contains)
 }
