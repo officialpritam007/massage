@@ -2,6 +2,8 @@ package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +35,7 @@ fun AppearanceScreen(viewModel: LiquidChatViewModel, onBackClick: () -> Unit) {
         .fillMaxSize()
         .statusBarsPadding()
         .navigationBarsPadding()
+        .verticalScroll(rememberScrollState())
         .padding(horizontal = 18.dp, vertical = 16.dp),
       verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
