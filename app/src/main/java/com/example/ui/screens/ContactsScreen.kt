@@ -45,6 +45,7 @@ import com.example.ui.components.GlassCard
 import com.example.ui.components.GlassIconButton
 import com.example.ui.components.GlassTextField
 import com.example.ui.components.LiquidBackground
+import com.example.ui.components.liquidRoundedShape
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
 
@@ -146,7 +147,7 @@ fun ContactsScreen(
                   modifier = Modifier.size(22.dp)
                 )
               },
-              shape = RoundedCornerShape(28.dp),
+              shape = liquidRoundedShape(28f),
               minHeight = 52.dp
             )
           }
@@ -156,7 +157,7 @@ fun ContactsScreen(
         item(key = "new-contact-row") {
           GlassCard(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
+            shape = liquidRoundedShape(24f),
             backgroundColor = if (glass.isDark) Color(0xFF142A31).copy(alpha = .72f) else Color.White.copy(alpha = .58f),
             borderColor = Color.White.copy(alpha = if (glass.isDark) .16f else .58f),
             elevation = 2.dp,
@@ -206,7 +207,7 @@ fun ContactsScreen(
               Modifier
                 .fillMaxWidth()
                 .padding(top = 20.dp),
-              shape = RoundedCornerShape(28.dp),
+              shape = liquidRoundedShape(28f),
               backgroundColor = if (glass.isDark) Color(0xFF142A31).copy(alpha = .72f) else Color.White.copy(alpha = .60f)
             ) {
               Column(
@@ -234,7 +235,7 @@ fun ContactsScreen(
             items(people, key = { it.uid }) { user ->
               GlassCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(26.dp),
+                shape = liquidRoundedShape(26f),
                 backgroundColor = if (glass.isDark) Color(0xFF142A31).copy(alpha = .70f) else Color.White.copy(alpha = .56f),
                 borderColor = Color.White.copy(alpha = if (glass.isDark) .16f else .58f),
                 elevation = 3.dp,
