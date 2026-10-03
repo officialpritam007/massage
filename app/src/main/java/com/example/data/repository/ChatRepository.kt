@@ -5,6 +5,7 @@ import com.example.data.crypto.E2eeCrypto
 import com.example.data.crypto.MessageContentDecoder
 import com.example.data.local.AccountDataWiper
 import com.example.data.local.SecureMessageCache
+import com.example.data.local.LiquidChatDatabase
 import com.example.data.model.*
 import com.example.data.network.LiquidApi
 import com.google.firebase.Timestamp
@@ -162,7 +163,7 @@ class ChatRepository(
       firestoreCode(t) == FirebaseFirestoreException.Code.RESOURCE_EXHAUSTED ->
         "Firestore quota is temporarily exhausted. Saved chats are available and queued messages are retained. Sync will retry with backoff."
       message.contains("PERMISSION_DENIED", true) || message.contains("insufficient permissions", true) ->
-        "Firebase access was denied. Check the deployed app security rules."
+        "This operation is not available for the current session or contact. Refresh Contacts or sign in again."
       message.contains("UNAVAILABLE", true) || message.contains("network", true) || t is java.io.IOException ->
         "Connection unavailable. Your pending messages will retry when the network returns."
       message.contains("token", true) && message.contains("expired", true) ->
@@ -320,6 +321,7 @@ class ChatRepository(
   }
 
   private fun finishLocalLogout() {
+    val account = uid
     stopSync()
     appearanceJob?.cancel()
     uploadJob?.cancel()
@@ -327,6 +329,15 @@ class ChatRepository(
     activeUpload = null
     failedUpload = null
     retryUpload = null
+    if (account.isNotBlank()) {
+      runCatching { SecureMessageCache.clear(LiquidApi.context, account) }
+      runCatching { LiquidChatDatabase.clearForLogout(LiquidApi.context) }
+      runCatching {
+        androidx.work.WorkManager.getInstance(LiquidApi.context)
+          .cancelAllWorkByTag("account:$account")
+      }
+    }
+    runCatching { androidx.core.app.NotificationManagerCompat.from(LiquidApi.context).cancelAll() }
     LiquidApi.clear()
     prefs.edit().clear().apply()
     auth.signOut()
@@ -521,7 +532,18 @@ class ChatRepository(
   }
 
   fun logout(password: String = "", googleIdToken: String? = null, onResult: (Result<Unit>) -> Unit = {}) {
-    scope.launch { onResult(deleteAccount(password, googleIdToken)) }
+    scope.launch {
+      val result = runCatching {
+        val account = uid
+        require(account.isNotBlank()) { "You are already logged out." }
+        stopSync()
+        runCatching {
+          db.document("users/$account/devices/${installationId()}").delete().await()
+        }
+        finishLocalLogout()
+      }
+      onResult(result)
+    }
   }
 
   fun close() {
@@ -1161,32 +1183,109 @@ class ChatRepository(
     _messages.update { map -> map.mapValues { (_, messages) -> messages.filter { it.expiresAt == null || it.expiresAt > now } } }
   }
 
+  private suspend fun ensureOwnDirectoryReady(account: String) {
+    val deletion = db.document("accountDeletionRequests/$account").get(Source.SERVER).await()
+    if (deletion.exists()) {
+      enterDeletionPending(account, deletion.safeString("proofId"), accepted = true)
+      throw IllegalStateException("This account is being removed. Finish deletion or sign in with a different account.")
+    }
+
+    val directoryRef = db.document("directory/$account")
+    val current = directoryRef.get(Source.SERVER).await()
+    val identity = E2eeCrypto.ensureIdentity(LiquidApi.context, account)
+    val missingIdentity =
+      current.safeString("e2eePublicKey").isBlank() || current.safeString("e2eeKeyId").isBlank()
+    if (current.exists() && !missingIdentity) return
+
+    val own = db.document("users/$account").get(Source.SERVER).await()
+    check(own.exists()) { "Your profile is not ready. Sign in again." }
+
+    val common = mutableMapOf<String, Any>(
+      "displayName" to own.safeString("displayName", "User").take(60),
+      "username" to own.safeString("username").take(32),
+      "bio" to own.safeString("bio").take(160),
+      "e2eePublicKey" to identity.publicKey,
+      "e2eeKeyId" to identity.keyId
+    )
+    val photo = own.safeString("photoUrl")
+    if (photo.startsWith("https://res.cloudinary.com/mthzgqhv/")) {
+      common["photoUrl"] = photo
+    }
+
+    if (current.exists()) {
+      directoryRef.set(common, SetOptions.merge()).await()
+    } else {
+      val createdAt = own.safeLong("createdAt", System.currentTimeMillis())
+        .takeIf { it > 0L } ?: System.currentTimeMillis()
+      directoryRef.set(
+        common + mapOf(
+          "uid" to account,
+          "createdAt" to createdAt,
+          "isOnline" to false,
+          "onlineVisible" to true,
+          "lastSeenVisible" to true,
+          "heartbeatAt" to 0L,
+          "lastSeen" to 0L
+        )
+      ).await()
+    }
+  }
+
   private suspend fun ensureConversationDirect(cid: String, otherUid: String) {
-    val ids = listOf(uid, otherUid).sorted()
-    require(ids.size == 2 && uid.isNotBlank() && otherUid.isNotBlank() && uid != otherUid) {
+    val account = uid
+    val ids = listOf(account, otherUid).sorted()
+    require(ids.size == 2 && account.isNotBlank() && otherUid.isNotBlank() && account != otherUid) {
       "Invalid contact"
     }
+
+    ensureOwnDirectoryReady(account)
+    val peer = db.document("directory/$otherUid").get(Source.SERVER).await()
+    check(peer.exists()) { "This contact is no longer available." }
+
     val ref = db.document("conversations/$cid")
-    db.runTransaction { tx ->
-      val snap = tx.get(ref)
-      if (!snap.exists()) tx.set(ref,
-        mapOf(
-          "participantIds" to ids,
-          "lastMessageId" to "",
-          "lastMessageTime" to 0L,
-          "lastMessageText" to "",
-          "lastMessageSenderId" to "",
-          "unreadCounts" to emptyMap<String, Int>(),
-          "deletedFor" to emptyList<String>(),
-          "deletedBefore" to emptyMap<String, Long>(),
-          "hiddenLastFor" to emptyMap<String, String>(),
-          "archivedFor" to emptyList<String>(),
-          "mutedFor" to emptyList<String>(),
-          "favoriteFor" to emptyList<String>(),
-          "disappearingSeconds" to 0L
+    try {
+      db.runTransaction { tx ->
+        val snap = tx.get(ref)
+        if (!snap.exists()) {
+          tx.set(
+            ref,
+            mapOf(
+              "participantIds" to ids,
+              "lastMessageId" to "",
+              "lastMessageTime" to 0L,
+              "lastMessageText" to "",
+              "lastMessageSenderId" to "",
+              "unreadCounts" to emptyMap<String, Int>(),
+              "deletedFor" to emptyList<String>(),
+              "deletedBefore" to emptyMap<String, Long>(),
+              "hiddenLastFor" to emptyMap<String, String>(),
+              "archivedFor" to emptyList<String>(),
+              "mutedFor" to emptyList<String>(),
+              "favoriteFor" to emptyList<String>(),
+              "disappearingSeconds" to 0L
+            )
+          )
+        }
+      }.await()
+    } catch (t: Throwable) {
+      if (firestoreCode(t) != FirebaseFirestoreException.Code.PERMISSION_DENIED) throw t
+
+      runCatching { auth.currentUser?.getIdToken(true)?.await() }
+      val ownDeletion = runCatching {
+        db.document("accountDeletionRequests/$account").get(Source.SERVER).await()
+      }.getOrNull()
+      if (ownDeletion?.exists() == true) {
+        enterDeletionPending(account, ownDeletion.safeString("proofId"), accepted = true)
+        throw IllegalStateException(
+          "This account is being removed. Conversation access is disabled.",
+          t
         )
+      }
+      throw IllegalStateException(
+        "Conversation is unavailable. Refresh Contacts; the contact may be removing their account.",
+        t
       )
-    }.await()
+    }
   }
 
   private suspend fun sendMessageDirect(data: Map<String, Any?>): Boolean {
