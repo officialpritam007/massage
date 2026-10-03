@@ -204,6 +204,38 @@ test('legacy photo URL does not block unrelated session or presence updates', as
   ));
 });
 
+test('legacy owner without a public directory can repair it and start a conversation', async () => {
+  await env.withSecurityRulesDisabled(async c => {
+    const db = c.firestore();
+    await setDoc(doc(db, 'users/legacy'), {
+      uid: 'legacy',
+      displayName: 'Legacy',
+      username: 'legacy',
+      bio: ''
+    });
+  });
+
+  const legacy = env.authenticatedContext('legacy').firestore();
+  await assertSucceeds(setDoc(doc(legacy, 'directory/legacy'), {
+    uid: 'legacy',
+    displayName: 'Legacy',
+    username: 'legacy',
+    bio: '',
+    e2eePublicKey: 'legacy-public',
+    e2eeKeyId: 'legacy-key',
+    isOnline: false,
+    onlineVisible: true,
+    lastSeenVisible: true,
+    heartbeatAt: 0,
+    lastSeen: 0
+  }));
+
+  await assertSucceeds(setDoc(doc(legacy, 'conversations/legacy-bob'), {
+    ...conversation,
+    participantIds: ['legacy', 'bob']
+  }));
+});
+
 test('participants can create valid E2EE text messages', async () => {
   const alice = env.authenticatedContext('alice').firestore();
   await assertSucceeds(setDoc(doc(alice, 'conversations/newpair'), conversation));
