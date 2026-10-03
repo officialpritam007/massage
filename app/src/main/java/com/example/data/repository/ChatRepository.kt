@@ -1273,30 +1273,29 @@ class ChatRepository(
     }
 
     val ref = db.document("conversations/$cid")
+    val cachedConversation = runCatching { ref.get(Source.CACHE).await() }.getOrNull()
+    if (cachedConversation?.exists() == true) return
+
+    val initialConversation = mapOf(
+      "participantIds" to ids,
+      "lastMessageId" to "",
+      "lastMessageTime" to 0L,
+      "lastMessageText" to "",
+      "lastMessageSenderId" to "",
+      "unreadCounts" to emptyMap<String, Int>(),
+      "deletedFor" to emptyList<String>(),
+      "deletedBefore" to emptyMap<String, Long>(),
+      "hiddenLastFor" to emptyMap<String, String>(),
+      "archivedFor" to emptyList<String>(),
+      "mutedFor" to emptyList<String>(),
+      "favoriteFor" to emptyList<String>(),
+      "disappearingSeconds" to 0L
+    )
+
     try {
-      db.runTransaction { tx ->
-        val snap = tx.get(ref)
-        if (!snap.exists()) {
-          tx.set(
-            ref,
-            mapOf(
-              "participantIds" to ids,
-              "lastMessageId" to "",
-              "lastMessageTime" to 0L,
-              "lastMessageText" to "",
-              "lastMessageSenderId" to "",
-              "unreadCounts" to emptyMap<String, Int>(),
-              "deletedFor" to emptyList<String>(),
-              "deletedBefore" to emptyMap<String, Long>(),
-              "hiddenLastFor" to emptyMap<String, String>(),
-              "archivedFor" to emptyList<String>(),
-              "mutedFor" to emptyList<String>(),
-              "favoriteFor" to emptyList<String>(),
-              "disappearingSeconds" to 0L
-            )
-          )
-        }
-      }.await()
+      // Conversation IDs are deterministic for the two participants, so a merge-set
+      // is idempotent and does not need an online-only transaction read.
+      ref.set(initialConversation, SetOptions.merge()).await()
     } catch (t: Throwable) {
       if (firestoreCode(t) != FirebaseFirestoreException.Code.PERMISSION_DENIED) throw t
 
@@ -1329,9 +1328,12 @@ class ChatRepository(
     val tombstone = cid + ":" + id
     if (tombstone in deleteTombstones) return false
 
-    if (_conversations.value.none { it.id == cid }) ensureConversationDirect(cid, otherUid)
-
     val cref = db.document("conversations/$cid")
+    val knownConversation = _conversations.value.any { it.id == cid } ||
+      summarySnapshots[cid]?.exists() == true ||
+      runCatching { cref.get(Source.CACHE).await().exists() }.getOrDefault(false)
+    if (!knownConversation) ensureConversationDirect(cid, otherUid)
+
     val mref = db.document("conversations/$cid/messages/$id")
     val now = System.currentTimeMillis()
     val type = (data["type"] as? String) ?: "TEXT"
