@@ -87,6 +87,18 @@ fun liquidRoundedShape(
 }
 
 @Composable
+fun liquidBottomRoundedShape(
+  baseDp: Float = 24f,
+  minDp: Float = 8f,
+  maxDp: Float = 72f
+): RoundedCornerShape {
+  val config = LocalLiquidGlass.current
+  val scale = (config.cornerRadiusDp / 30f).coerceIn(0.6f, 1.8f)
+  val radius = (baseDp * scale).coerceIn(minDp, maxDp).dp
+  return RoundedCornerShape(bottomStart = radius, bottomEnd = radius)
+}
+
+@Composable
 fun GlassCard(
   modifier: Modifier = Modifier,
   shape: Shape? = null,
@@ -355,7 +367,7 @@ fun GlassBadge(count: Int, modifier: Modifier = Modifier, color: Color? = null) 
   Box(
     modifier = modifier
       .defaultMinSize(minWidth = 20.dp, minHeight = 20.dp)
-      .shadow(elevation = 3.dp, shape = RoundedCornerShape(10.dp), ambientColor = badgeColor.copy(alpha = 0.45f), spotColor = color)
+      .shadow(elevation = 3.dp, shape = RoundedCornerShape(10.dp), ambientColor = badgeColor.copy(alpha = 0.45f), spotColor = badgeColor)
       .clip(RoundedCornerShape(10.dp))
       .background(badgeColor.copy(alpha = 0.90f))
       .border(
