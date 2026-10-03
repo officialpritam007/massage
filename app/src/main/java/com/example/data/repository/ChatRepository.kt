@@ -537,9 +537,20 @@ class ChatRepository(
         val account = uid
         require(account.isNotBlank()) { "You are already logged out." }
         stopSync()
+        val installId = installationId()
         runCatching {
-          db.document("users/$account/devices/${installationId()}").delete().await()
+          db.document("users/$account/devices/$installId").delete().await()
         }
+        installPrefs.edit().remove("registeredFcm:$account:$installId").apply()
+
+        if (!dbTerminated) {
+          db.terminate().await()
+          dbTerminated = true
+        }
+        db.clearPersistence().await()
+        db = FirebaseFirestore.getInstance()
+        dbTerminated = false
+
         finishLocalLogout()
       }
       onResult(result)
