@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.liquidchat.vwnxkp"
     minSdk = 24
     targetSdk = 36
-    versionCode = 427
-    versionName = "4.2.7"
+    versionCode = 428
+    versionName = "4.2.8"
 
     fun config(name: String, fallback: String = "") = providers.gradleProperty(name).orElse(providers.environmentVariable(name)).getOrElse(fallback)
     buildConfigField("String", "CLOUDINARY_CLOUD_NAME", "\"${config("CLOUDINARY_CLOUD_NAME", "mthzgqhv")}\"")
