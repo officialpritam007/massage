@@ -11,6 +11,7 @@ import com.example.data.network.LiquidApi
 import com.example.ui.screens.ChatsHomeScreen
 import com.example.ui.screens.ConversationScreenV2
 import com.example.ui.screens.SettingsScreen
+import com.example.ui.screens.ConversationScreenV2
 import com.example.ui.theme.LiquidChatTheme
 import com.example.ui.theme.LiquidGlassConfig
 import com.example.ui.viewmodel.LiquidChatViewModel
@@ -110,4 +111,25 @@ class MainScreensSmokeTest {
     compose.waitForIdle()
     compose.onNodeWithTag("settings_screen_host", useUnmergedTree = true).fetchSemanticsNode()
   }
+
+  @Test
+  fun `conversation screen renders its primary surface`() {
+    compose.setContent {
+      LiquidChatTheme(
+        glassConfig = LiquidGlassConfig(isGlassEnabled = false, isReducedMotion = true)
+      ) {
+        ConversationScreenV2(
+          conversationId = "alice_bob",
+          viewModel = viewModel,
+          onBackClick = {},
+          onNavigateToProfile = {},
+          onNavigateToCamera = {}
+        )
+      }
+    }
+
+    compose.waitForIdle()
+    compose.onRoot(useUnmergedTree = true).fetchSemanticsNode()
+  }
+
 }
