@@ -16,14 +16,14 @@ The video corrections in `VIDEO_FIXES_2026-10-03.md` are included in this branch
 
 ## Deletion
 
-New owner-only rules require recent authentication for queuing a job. Queued accounts cannot recreate their profile or send new data, and other participants cannot append new messages/conversations involving a queued account. The privileged cleanup worker derives scope, validates media ownership before destructive work, verifies cloud destruction and recursively deletes nested data. Android persists pending/verified state so a relaunch does not restore old chats, and wipes local state after acknowledgement. Deletion unavailable/pending/blocked states are visible and never report success.
+New owner-only rules require recent authentication for queuing a job. Queued accounts cannot recreate their profile or send new data, and other participants cannot append new messages/conversations involving a queued account. The privileged cleanup worker derives scope, validates media ownership before destructive work, verifies cloud destruction and recursively deletes nested data. A worker-only UID gate remains for 70 minutes after Auth deletion, preventing other devices' still-valid ID tokens from recreating data. Completion is published atomically with gate deletion as a random proof containing no UID. Android persists that capability and checks it without Auth after restart, then acknowledges it and wipes local state. Deletion unavailable/pending/blocked states are visible and never report success. Startup recovery cannot bypass permanent logout with a session-only action.
 
 See [PERMANENT_DELETION_SETUP.md](PERMANENT_DELETION_SETUP.md). The worker remains disabled by default; administrator credentials, rules deployment, media inventory/backups and killed-app push setup still require activation/acceptance testing. Android uninstall alone cannot trigger cloud deletion.
 
 ## Validation
 
-- Cleanup-worker ownership/failure/resume suite: **11 tests passed locally**, including a valid-signed-response attack against another account's media namespace and refusal to claim complete erasure without an orphan-media inventory review.
-- Firestore suite adds authenticated-envelope matching, monotonic receipts, private token/proof rules, recent-auth deletion, and frozen-account/peer-write checks.
+- Cleanup-worker ownership/failure/resume suite: **15 tests passed locally**, covering foreign-asset ownership, orphan inventory, old-session expiry, atomic UID-gate removal and failure before completion publication.
+- Firestore suite includes 19 tests, adding authenticated-envelope matching, monotonic receipts, private tokens/receipts, recent-auth deletion, frozen-account/peer-write checks and anonymous proof acknowledgement without forgery/list access.
 - Android suite adds preview privacy, decrypted text/media fallback and encrypted-edit cache invalidation tests.
 - GitHub Actions runs all three suites and builds a 4.2.2 / 422 debug APK. The final CI results are recorded in the PR.
 - Physical two-device notification/Google/password/deletion testing and real provider backup/inventory verification remain required. Already lost private keys and missing legacy media cannot be reconstructed.

@@ -25,7 +25,6 @@ import androidx.lifecycle.ViewModelProvider
 import com.example.data.network.LiquidApi
 import com.example.ui.LiquidChatApp
 import com.example.ui.viewmodel.LiquidChatViewModel
-import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
@@ -63,12 +62,6 @@ class MainActivity : ComponentActivity() {
             StartupCrashStore.clearCrash(this)
             recreate()
           },
-          onSignOutAndRetry = {
-            runCatching { FirebaseAuth.getInstance().signOut() }
-            getSharedPreferences("liquid-private", Context.MODE_PRIVATE).edit().clear().apply()
-            StartupCrashStore.clearCrash(this)
-            recreate()
-          },
           onCopy = { text ->
             val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             clipboard.setPrimaryClip(ClipData.newPlainText("Liquid Chat startup diagnostics", text))
@@ -103,12 +96,6 @@ class MainActivity : ComponentActivity() {
             StartupCrashStore.clearCrash(this)
             recreate()
           },
-          onSignOutAndRetry = {
-            runCatching { FirebaseAuth.getInstance().signOut() }
-            getSharedPreferences("liquid-private", Context.MODE_PRIVATE).edit().clear().apply()
-            StartupCrashStore.clearCrash(this)
-            recreate()
-          },
           onCopy = { text ->
             val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             clipboard.setPrimaryClip(ClipData.newPlainText("Liquid Chat startup diagnostics", text))
@@ -129,7 +116,6 @@ class MainActivity : ComponentActivity() {
 private fun StartupRecoveryScreen(
   crash: StartupCrashStore.CrashInfo,
   onRetry: () -> Unit,
-  onSignOutAndRetry: () -> Unit,
   onCopy: (String) -> Unit
 ) {
   val diagnostics = remember(crash) {
@@ -168,9 +154,7 @@ private fun StartupRecoveryScreen(
         Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
           Text("Try normal startup")
         }
-        OutlinedButton(onClick = onSignOutAndRetry, modifier = Modifier.fillMaxWidth()) {
-          Text("Clear cached session and retry")
-        }
+        Text("Permanent account deletion is available in Settings after startup succeeds.")
         TextButton(onClick = { onCopy(diagnostics) }, modifier = Modifier.fillMaxWidth()) {
           Text("Copy diagnostics")
         }

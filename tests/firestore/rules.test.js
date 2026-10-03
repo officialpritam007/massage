@@ -394,7 +394,8 @@ test('only a recently authenticated owner can queue deletion and cannot forge co
   const owner = env.authenticatedContext('purge-owner', {auth_time: recent}).firestore();
   const stale = env.authenticatedContext('stale-owner', {auth_time: recent - 600}).firestore();
   const bob = env.authenticatedContext('bob', {auth_time: recent}).firestore();
-  const pending = uid => ({uid, status: 'pending', requestedAt: serverTimestamp()});
+  const pending = uid => ({uid, status: 'pending', requestedAt: serverTimestamp(), proofId: 'a'.repeat(64)});
+  await assertFails(setDoc(doc(owner, 'accountDeletionRequests/purge-owner'), {...pending('purge-owner'), proofId: 'guessable'}));
   await assertFails(setDoc(doc(stale, 'accountDeletionRequests/stale-owner'), pending('stale-owner')));
   await assertFails(setDoc(doc(bob, 'accountDeletionRequests/purge-owner'), pending('purge-owner')));
   await assertFails(setDoc(doc(owner, 'accountDeletionRequests/purge-owner'), {...pending('purge-owner'), conversationIds: ['pair']}));
@@ -415,7 +416,7 @@ test('queued deletion freezes both participants and closes profile, username and
     await setDoc(doc(db, 'users/purge-freeze'), {uid: 'purge-freeze', displayName: 'Old user'});
     await setDoc(doc(db, `conversations/${cid}`), {...conversation, participantIds: ['purge-freeze', 'bob']});
   });
-  await setDoc(doc(owner, 'accountDeletionRequests/purge-freeze'), {uid: 'purge-freeze', status: 'pending', requestedAt: serverTimestamp()});
+  await setDoc(doc(owner, 'accountDeletionRequests/purge-freeze'), {uid: 'purge-freeze', status: 'pending', requestedAt: serverTimestamp(), proofId: 'b'.repeat(64)});
   await assertFails(getDoc(doc(owner, 'users/purge-freeze')));
   await assertFails(updateDoc(doc(owner, 'users/purge-freeze'), {displayName: 'Restored'}));
   await assertFails(setDoc(doc(owner, 'usernames/purge_freeze'), {uid: 'purge-freeze'}));
@@ -425,5 +426,37 @@ test('queued deletion freezes both participants and closes profile, username and
   await env.withSecurityRulesDisabled(c => updateDoc(doc(c.firestore(), 'accountDeletionRequests/purge-freeze'), {status: 'failed', error: 'Provider unavailable'}));
   await assertSucceeds(updateDoc(doc(owner, 'accountDeletionRequests/purge-freeze'), {status: 'pending'}));
   await env.withSecurityRulesDisabled(c => setDoc(doc(c.firestore(), 'accountDeletionRequests/purge-freeze'), {uid: 'purge-freeze', status: 'complete'}));
-  await assertSucceeds(deleteDoc(doc(owner, 'accountDeletionRequests/purge-freeze')));
+  await assertFails(deleteDoc(doc(owner, 'accountDeletionRequests/purge-freeze')));
+});
+
+test('deleted owners with still-valid tokens cannot remove the gate or recreate data', async () => {
+  const stale = env.authenticatedContext('deleted-owner').firestore();
+  await env.withSecurityRulesDisabled(c => setDoc(doc(c.firestore(), 'accountDeletionRequests/deleted-owner'), {
+    uid: 'deleted-owner', status: 'revoking', proofId: 'c'.repeat(64), readyAt: Date.now() + 4200000
+  }));
+  await assertFails(deleteDoc(doc(stale, 'accountDeletionRequests/deleted-owner')));
+  await assertFails(setDoc(doc(stale, 'users/deleted-owner'), {uid: 'deleted-owner', displayName: 'Restored'}));
+  await assertFails(setDoc(doc(stale, 'directory/deleted-owner'), {uid: 'deleted-owner', displayName: 'Restored'}));
+});
+
+test('random deletion proof is readable after Auth deletion but cannot be listed or forged', async () => {
+  const anonymous = env.unauthenticatedContext().firestore();
+  const owner = env.authenticatedContext('proof-owner', {auth_time: Math.floor(Date.now() / 1000)}).firestore();
+  const proofId = 'd'.repeat(64);
+  await env.withSecurityRulesDisabled(c => setDoc(doc(c.firestore(), `deletionProofs/${proofId}`), {status: 'revoking', readyAt: Date.now() + 4200000}));
+  await assertSucceeds(getDoc(doc(anonymous, `deletionProofs/${proofId}`)));
+  await assertFails(getDocs(collection(anonymous, 'deletionProofs')));
+  await assertFails(getDoc(doc(anonymous, 'deletionProofs/guessable')));
+  await assertFails(setDoc(doc(anonymous, `deletionProofs/${'e'.repeat(64)}`), {status: 'complete'}));
+  await assertFails(updateDoc(doc(anonymous, `deletionProofs/${proofId}`), {status: 'complete'}));
+  await assertFails(deleteDoc(doc(anonymous, `deletionProofs/${proofId}`)));
+  await assertFails(setDoc(doc(owner, 'accountDeletionRequests/proof-owner'), {uid: 'proof-owner', status: 'pending', proofId, requestedAt: serverTimestamp()}));
+  await env.withSecurityRulesDisabled(c => setDoc(doc(c.firestore(), `deletionProofs/${proofId}`), {status: 'complete', completedAt: serverTimestamp()}));
+  await assertSucceeds(deleteDoc(doc(anonymous, `deletionProofs/${proofId}`)));
+});
+
+test('a peer cannot recreate conversations or reports referring to a deleted directory', async () => {
+  const bob = env.authenticatedContext('bob').firestore();
+  await assertFails(setDoc(doc(bob, 'conversations/deleted-peer'), {...conversation, participantIds: ['bob', 'gone-owner']}));
+  await assertFails(setDoc(doc(bob, 'reports/deleted-peer'), {reporterId: 'bob', reportedUid: 'gone-owner', reason: 'Gone user', createdAt: Date.now()}));
 });

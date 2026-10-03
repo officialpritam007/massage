@@ -187,6 +187,8 @@ service cloud.firestore {
 
       allow create: if activeAccount()
         && membersActive(request.resource.data)
+        && exists(/databases/$(database)/documents/directory/$(request.resource.data.participantIds[0]))
+        && exists(/databases/$(database)/documents/directory/$(request.resource.data.participantIds[1]))
         && request.resource.data.participantIds is list
         && request.resource.data.participantIds.size() == 2
         && request.auth.uid in request.resource.data.participantIds
@@ -333,16 +335,28 @@ service cloud.firestore {
       allow list: if false;
       allow create: if signedIn() && request.auth.uid == uid
         && request.auth.token.auth_time >= request.time.toMillis() / 1000 - 300
-        && request.resource.data.keys().hasOnly(['uid', 'status', 'requestedAt'])
+        && request.resource.data.keys().hasOnly(['uid', 'status', 'requestedAt', 'proofId'])
         && request.resource.data.uid == uid
         && request.resource.data.status == 'pending'
+        && request.resource.data.proofId is string
+        && request.resource.data.proofId.matches('^[0-9a-f]{64}$')
+        && !exists(/databases/$(database)/documents/deletionProofs/$(request.resource.data.proofId))
         && request.resource.data.requestedAt == request.time;
       allow update: if signedIn() && request.auth.uid == uid
         && request.auth.token.auth_time >= request.time.toMillis() / 1000 - 300
         && resource.data.status == 'failed'
         && request.resource.data.status == 'pending'
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
-      allow delete: if signedIn() && request.auth.uid == uid && resource.data.status == 'complete';
+      // Only the worker removes this gate, after every old ID token expires.
+      allow delete: if false;
+    }
+
+    match /deletionProofs/{proofId} {
+      // A 256-bit random capability survives deleted/expired Auth. The worker
+      // stores status/timestamps only, never a UID, profile or deletion targets.
+      allow get: if proofId.matches('^[0-9a-f]{64}$');
+      allow list, create, update: if false;
+      allow delete: if proofId.matches('^[0-9a-f]{64}$') && resource.data.status == 'complete';
     }
 
     match /runtime/cleanup {
@@ -358,6 +372,7 @@ service cloud.firestore {
         && request.resource.data.reporterId == request.auth.uid
         && request.resource.data.reportedUid is string
         && request.resource.data.reportedUid != request.auth.uid
+        && exists(/databases/$(database)/documents/directory/$(request.resource.data.reportedUid))
         && request.resource.data.reason is string
         && request.resource.data.reason.size() >= 4
         && request.resource.data.reason.size() <= 500

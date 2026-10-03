@@ -307,7 +307,7 @@ class ChatRepository(
     if (account.isBlank()) return
     val pending = withTimeout(10_000L) { db.document("accountDeletionRequests/$account").get(Source.SERVER).await() }
     if (pending.exists()) {
-      enterDeletionPending(account)
+      enterDeletionPending(account, pending.safeString("proofId"), accepted = true)
       scope.launch { deleteAccount() }
       return
     }
@@ -2107,8 +2107,14 @@ class ChatRepository(
 
   fun hasGoogleProvider() = auth.currentUser?.providerData?.any { it.providerId == "google.com" } == true
 
-  private fun enterDeletionPending(account: String) {
-    check(deletionPrefs.edit().putString("account", account).commit()) { "Unable to remember pending deletion" }
+  private fun enterDeletionPending(account: String, proofId: String? = null, accepted: Boolean = false) {
+    val editor = deletionPrefs.edit().putString("account", account)
+    if (proofId != null) {
+      check(proofId.matches(Regex("[0-9a-f]{64}"))) { "Deletion proof is missing. Contact support to finish cloud cleanup." }
+      editor.putString("proofId", proofId)
+    }
+    if (accepted) editor.putBoolean("requestAccepted", true)
+    check(editor.commit()) { "Unable to remember pending deletion" }
     cleanupQueued = true
     _deletionPending.value = true
     stopSync()
@@ -2126,9 +2132,15 @@ class ChatRepository(
     // must not require a Firebase user that the trusted worker already deleted.
     check(deletionPrefs.edit().putBoolean("remoteVerified", true).commit()) { "Unable to save deletion verification" }
     if (!deletionPrefs.getBoolean("receiptAcknowledged", false)) {
-      val request = db.document("accountDeletionRequests/$account")
-      val receipt = withTimeout(20_000L) { request.get(Source.SERVER).await() }
-      if (receipt.exists()) withTimeout(20_000L) { request.delete().await() }
+      val proofId = deletionPrefs.getString("proofId", null)
+      check(proofId != null && proofId.matches(Regex("[0-9a-f]{64}"))) { "Deletion proof is missing" }
+      auth.signOut()
+      val proof = db.document("deletionProofs/$proofId")
+      val receipt = withTimeout(20_000L) { proof.get(Source.SERVER).await() }
+      if (receipt.exists()) {
+        check(receipt.safeString("status") == "complete") { "Cloud deletion has not completed" }
+        withTimeout(20_000L) { proof.delete().await() }
+      }
       check(deletionPrefs.edit().putBoolean("receiptAcknowledged", true).commit()) { "Unable to save deletion acknowledgement" }
     }
     auth.signOut()
@@ -2157,56 +2169,77 @@ class ChatRepository(
         finishVerifiedDeletion(savedAccount)
         return@runCatching
       }
-      val user = auth.currentUser ?: error("Sign in with the same account to check pending cloud deletion.")
-      val account = user.uid
-      check(savedAccount == null || savedAccount == account) { "Resume deletion with the original account first." }
-      val request = db.document("accountDeletionRequests/$account")
-      val previous = withTimeout(20_000L) { request.get(Source.SERVER).await() }
-      if (previous.safeString("status") == "complete") {
-        enterDeletionPending(account)
-        finishVerifiedDeletion(account)
-        return@runCatching
+      val account = savedAccount ?: auth.currentUser?.uid ?: error("Sign in to delete your account.")
+      var proofId = deletionPrefs.getString("proofId", null)
+      if (!deletionPrefs.getBoolean("requestAccepted", false) && auth.currentUser != null) {
+        val user = auth.currentUser ?: error("Sign in to confirm deletion.")
+        check(user.uid == account) { "Resume deletion with the original account first." }
+        val request = db.document("accountDeletionRequests/$account")
+        val previous = withTimeout(20_000L) { request.get(Source.SERVER).await() }
+        if (previous.exists()) {
+          proofId = previous.safeString("proofId")
+          enterDeletionPending(account, proofId, accepted = true)
+        } else {
+          val runtime = withTimeout(20_000L) { db.document("runtime/cleanup").get(Source.SERVER).await() }
+          check(runtime.safeBoolean("enabled") && System.currentTimeMillis() - runtime.safeLong("updatedAt") in 0..3_600_000L) {
+            "Cloud deletion is not active yet. Nothing has been deleted or logged out. Please contact support."
+          }
+          if (!googleIdToken.isNullOrBlank()) {
+            user.reauthenticate(GoogleAuthProvider.getCredential(googleIdToken, null)).await()
+          } else if (password.isNotBlank()) {
+            user.reauthenticate(EmailAuthProvider.getCredential(user.email ?: error("Email unavailable"), password)).await()
+          }
+          val token = user.getIdToken(true).await()
+          val authAge = System.currentTimeMillis() - token.authTimestamp * 1000L
+          if (authAge !in 0..300_000L) {
+            // A server-confirmed missing request is safe to unlock for another
+            // authentication attempt; uncertain network failures stay locked.
+            if (savedAccount != null) {
+              check(deletionPrefs.edit().clear().commit()) { "Unable to reset unaccepted deletion" }
+              cleanupQueued = false
+              _deletionPending.value = false
+            }
+            error("Confirm your password or verify with Google, then retry permanent deletion.")
+          }
+          _deletionStatus.value = "Preparing permanent deletion…"
+          stopSync()
+          appearanceJob?.cancelAndJoin()
+          uploadJob?.cancelAndJoin()
+          mutationJobs.toList().forEach { it.cancelAndJoin() }
+          LiquidApi.flushUploadReceipts(account)
+          if (proofId == null) proofId = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
+            .joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
+          // Persist the capability before submitting: a timeout may happen
+          // after acceptance. The next attempt checks server truth first.
+          enterDeletionPending(account, proofId)
+          withTimeout(20_000L) {
+            request.set(mapOf("uid" to account, "status" to "pending", "proofId" to proofId,
+              "requestedAt" to FieldValue.serverTimestamp())).await()
+          }
+          enterDeletionPending(account, proofId, accepted = true)
+        }
       }
-      if (!previous.exists() || previous.safeString("status") == "failed") {
-        val runtime = withTimeout(20_000L) { db.document("runtime/cleanup").get(Source.SERVER).await() }
-        check(runtime.safeBoolean("enabled") && System.currentTimeMillis() - runtime.safeLong("updatedAt") in 0..3_600_000L) {
-          "Cloud deletion is not active yet. Nothing has been deleted or logged out. Please contact support."
-        }
-        if (!googleIdToken.isNullOrBlank()) {
-          user.reauthenticate(GoogleAuthProvider.getCredential(googleIdToken, null)).await()
-        } else if (password.isNotBlank()) {
-          user.reauthenticate(EmailAuthProvider.getCredential(user.email ?: error("Email unavailable"), password)).await()
-        }
-        val token = user.getIdToken(true).await()
-        val authAge = System.currentTimeMillis() - token.authTimestamp * 1000L
-        require(authAge in 0..300_000L) { "Confirm your password or verify with Google, then retry permanent deletion." }
-        _deletionStatus.value = "Preparing permanent deletion…"
-        stopSync()
-        appearanceJob?.cancelAndJoin()
-        uploadJob?.cancelAndJoin()
-        mutationJobs.toList().forEach { it.cancelAndJoin() }
-        if (!previous.exists()) LiquidApi.flushUploadReceipts(account)
-        // Mark locally before sending the request, since a network timeout can
-        // happen after the server accepts it. Retrying reads server truth first.
-        enterDeletionPending(account)
-        withTimeout(20_000L) {
-          if (!previous.exists()) request.set(mapOf("uid" to account, "status" to "pending", "requestedAt" to FieldValue.serverTimestamp())).await()
-          else request.update("status", "pending").await()
-        }
-      } else enterDeletionPending(account)
-      _deletionStatus.value = "Cloud deletion queued. Waiting for verified cleanup…"
+      val confirmedProofId = proofId ?: error("Deletion proof is missing. Contact support.")
+      check(confirmedProofId.matches(Regex("[0-9a-f]{64}"))) { "Deletion proof is missing. Contact support." }
+      // Proof reads remain authorized after Auth deletion/token expiry. Never
+      // let the deleting user's expired token block device cleanup on restart.
+      auth.signOut()
+      enterDeletionPending(account)
+      val proof = db.document("deletionProofs/$confirmedProofId")
+      _deletionStatus.value = "Cloud deletion queued. Checking cleanup and old session expiry…"
       val outcome = withTimeoutOrNull(90_000L) {
         callbackFlow<DocumentSnapshot> {
-          val registration = request.addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
+          val registration = proof.addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
             if (error != null) close(error)
             else if (snapshot != null && !snapshot.metadata.isFromCache && !snapshot.metadata.hasPendingWrites()) trySend(snapshot)
           }
           awaitClose { registration.remove() }
         }.onEach {
           if (it.safeString("status") == "working") _deletionStatus.value = "Deleting cloud data and media…"
+          if (it.safeString("status") == "revoking") _deletionStatus.value = "Cloud data erased. Blocking old sessions for 70 minutes before final verification. Check again later."
         }.first { it.safeString("status") in setOf("complete", "failed") }
       }
-      check(outcome != null) { "Cloud deletion is pending. Keep the app installed and check again in a few minutes. Logout has not completed." }
+      check(outcome != null) { "Deletion is pending. Cloud cleanup includes 70 minutes for old sessions to expire, plus worker scheduling. Keep the app installed and check again later." }
       check(outcome.safeString("status") == "complete") { outcome.safeString("error", "Cloud cleanup failed. Contact support, then retry.") }
       finishVerifiedDeletion(account)
     }

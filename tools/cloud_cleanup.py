@@ -22,6 +22,11 @@ class CleanupBlocked(RuntimeError):
     pass
 
 
+# Firebase ID tokens remain valid for up to one hour after Auth deletion. Keep
+# the rules gate until that lifetime has elapsed, with a ten-minute margin.
+TOKEN_EXPIRY_GRACE_MS = 70 * 60 * 1000
+
+
 def media_identity(url: str, cloud: str):
     parsed = urlsplit(url)
     if parsed.scheme != "https" or parsed.hostname != "res.cloudinary.com" or parsed.query or parsed.fragment:
@@ -109,8 +114,24 @@ def cleanup_request(db, auth, request, cleaner, approvals):
 
     account = request.id
     data = request.to_dict()
-    if data.get("uid") != account or data.get("status") not in {"pending", "working"}:
+    proof_id = data.get("proofId", "")
+    if data.get("uid") != account or data.get("status") not in {"pending", "working", "failed", "revoking"} or not re.fullmatch(r"[0-9a-f]{64}", proof_id):
         raise CleanupBlocked("Invalid deletion request.")
+    proof = db.document(f"deletionProofs/{proof_id}")
+    now = int(time.time() * 1000)
+    if "readyAt" in data:
+        if not isinstance(data["readyAt"], int) or isinstance(data["readyAt"], bool):
+            raise CleanupBlocked("Invalid session expiry deadline.")
+        if now < data["readyAt"]:
+            proof.set({"status": "revoking", "readyAt": data["readyAt"]})
+            return False
+        # Completion and removal of the last UID-bearing gate are atomic. The
+        # random proof has no UID and can be acknowledged without deleted Auth.
+        batch = db.batch()
+        batch.set(proof, {"status": "complete", "completedAt": SERVER_TIMESTAMP})
+        batch.delete(request.reference)
+        batch.commit()
+        return True
     profile = db.document(f"users/{account}")
     # Store a server-derived manifest before deleting parent documents, so a
     # process crash cannot lose the paths of orphaned message subcollections.
@@ -119,6 +140,7 @@ def cleanup_request(db, auth, request, cleaner, approvals):
     if any(not isinstance(cid, str) or "/" in cid for cid in ids):
         raise CleanupBlocked("Invalid deletion manifest.")
     request.reference.update({"status": "working", "conversationIds": sorted(ids), "updatedAt": SERVER_TIMESTAMP})
+    proof.set({"status": "working"})
     for cid in ids:
         ref = db.document(f"conversations/{cid}")
         snap = ref.get()
@@ -190,7 +212,10 @@ def cleanup_request(db, auth, request, cleaner, approvals):
         auth.delete_user(account)
     except auth.UserNotFoundError:
         pass # Resume after a crash between Auth deletion and receipt publication.
-    request.reference.set({"uid": account, "status": "complete", "completedAt": SERVER_TIMESTAMP})
+    ready_at = int(time.time() * 1000) + TOKEN_EXPIRY_GRACE_MS
+    request.reference.set({"uid": account, "status": "revoking", "proofId": proof_id, "readyAt": ready_at})
+    proof.set({"status": "revoking", "readyAt": ready_at})
+    return False
 
 
 def main():
@@ -216,16 +241,22 @@ def main():
         return
     db.document("runtime/cleanup").set({"enabled": os.environ.get("CLEANUP_AUTOMATION_ENABLED") == "true", "updatedAt": int(time.time() * 1000)})
     approvals = json.loads(os.environ.get("LEGACY_MEDIA_APPROVALS_JSON") or "{}")
-    completed = blocked = 0
-    for request in db.collection("accountDeletionRequests").where(filter=FieldFilter("status", "in", ["pending", "working"])).limit(20).stream():
+    completed = blocked = waiting = 0
+    for request in db.collection("accountDeletionRequests").where(filter=FieldFilter("status", "in", ["pending", "working", "failed", "revoking"])).limit(20).stream():
         try:
-            cleanup_request(db, auth, request, cleaner, approvals)
-            completed += 1
+            if cleanup_request(db, auth, request, cleaner, approvals):
+                completed += 1
+            else:
+                waiting += 1
         except Exception as error:
             reason = str(error) if isinstance(error, CleanupBlocked) else "Cloud cleanup failed. Check the worker configuration and retry."
-            request.reference.update({"status": "failed", "error": reason})
+            current = request.reference.get().to_dict() or {}
+            request.reference.update({"status": "revoking" if "readyAt" in current else "failed", "error": reason})
+            proof_id = current.get("proofId", "")
+            if isinstance(proof_id, str) and re.fullmatch(r"[0-9a-f]{64}", proof_id):
+                db.document(f"deletionProofs/{proof_id}").set({"status": "failed", "error": reason})
             blocked += 1
-    print(f"Account cleanup: {completed} completed, {blocked} require attention. No user content is logged.")
+    print(f"Account cleanup: {completed} completed, {waiting} waiting for session expiry, {blocked} require attention. No user content is logged.")
     if blocked:
         raise SystemExit(1)
 

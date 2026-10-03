@@ -10,7 +10,7 @@ Version 4.2.2 treats **Log out** and **Delete account** as irreversible account 
 4. Set the repository Actions variable `ENABLE_CLOUD_ACCOUNT_CLEANUP` to `true`, then run the workflow with `check_only = false`. This publishes the worker heartbeat and enables queuing in the app. The scheduled worker checks pending jobs every 15 minutes. Delays are possible; it is not an immediate HTTP endpoint.
 5. Test with dedicated disposable accounts and uploaded assets before rolling out 4.2.2. Keep administrator secrets limited to the trusted main-branch workflow. The workflow does not process jobs from PR/fork branches.
 
-If the heartbeat is absent or over an hour old, the app refuses a new deletion and keeps the current session intact. A queued deletion is irreversible and freezes both participants' writes to affected conversations. On timeout/error the app shows the remaining status and allows checking/retrying; it never says that logout completed.
+If the heartbeat is absent or over an hour old, the app refuses a new deletion and keeps the current session intact. A queued deletion is irreversible and freezes both participants' writes to affected conversations. After acceptance the app signs out of Firebase and checks a saved random deletion proof without requiring the deleted Auth account. On timeout/error it shows the remaining status and allows checking again; it never reports completed data erasure early. Failed jobs are retried by the worker after configuration/ownership review is corrected.
 
 ## Media ownership and backups
 
@@ -32,13 +32,18 @@ Existing Cloudinary backups/version records block completion. Remove them with t
 
 The server derives conversation IDs from membership; clients cannot submit deletion targets. A server manifest is saved before recursive deletion so orphaned subcollections remain discoverable after a crash. Cleanup removes the account's private profile/device/asset trees, public directory, usernames, reports involving that account, blocked-list references, whole one-to-one conversation trees and Firebase Auth user. Unrelated conversations/accounts are retained.
 
-A temporary owner-only `accountDeletionRequests` receipt contains status and a UID until the app acknowledges completion, then the app deletes it. If the Auth session token expires before acknowledgement, an operator must remove this completed receipt; do not recreate the old profile to restore access. When local deletion has already been verified/acknowledged, it can resume without the deleted Firebase account. Android local cleanup also resets FCM/installations, removes encryption/cache keys, closes/clears Firestore and Room, cancels/prunes work, dismisses notifications and clears app-owned preferences/files. The deletion marker is cleared last, allowing local cleanup to resume after process death.
+A temporary owner-only `accountDeletionRequests` gate retains the UID while cleanup is pending. After deleting Firebase Auth, the worker keeps this gate for **70 minutes**, covering the one-hour lifetime of ID tokens on other devices plus a ten-minute margin. Clients can never delete the gate; their old tokens therefore cannot recreate profiles, directory entries or chats during that interval. After expiry, the worker atomically removes the gate and publishes completion in `deletionProofs/<256-bit random ID>`. Final completion takes at least 70 minutes after cloud cleanup, plus scheduled-worker delay. New conversations/reports also require a live peer directory entry, preventing peers from recreating records for the deleted account later.
+
+The random proof contains only status/timestamps or a generic cleanup error, **no UID, profile, message or deletion targets**. Rules permit getting one known random proof but deny listing, client creation and updates. The app persists its random ID before requesting deletion, reads it without Auth after relaunch, and deletes it only once completion is verified. No operator intervention or recreation of the deleted Auth user is needed to resume. The completion flag is stored before acknowledgement, so a crash during device cleanup can also resume after the proof has been removed.
+
+Android local cleanup resets FCM/installations, removes encryption/cache keys, closes/clears Firestore and Room, cancels/prunes work, dismisses notifications and clears app-owned preferences/files. The deletion marker is cleared last, allowing local cleanup to resume after process death. Startup recovery does not offer a session-only logout that would bypass this behavior.
 
 The app disables OS backup/transfer. **Uninstall has no remote cleanup callback**: complete deletion in the app first. Administrator credentials, a heartbeat, deployed rules and backup/inventory review have not been configured or verified by these source changes alone.
 
 ## Reference documentation
 
 - [Android package removal behavior](https://developer.android.com/reference/android/content/Intent#ACTION_PACKAGE_REMOVED)
+- [Firebase ID-token lifetime and session revocation](https://firebase.google.com/docs/auth/admin/manage-sessions)
 - [Cloudinary response signatures](https://cloudinary.com/documentation/signatures)
 - [Cloudinary deletion and backup APIs](https://cloudinary.com/documentation/admin_api)
 - [Firestore recursive deletion](https://cloud.google.com/python/docs/reference/firestore/latest/google.cloud.firestore_v1.client.Client#google_cloud_firestore_v1_client_Client_recursive_delete)

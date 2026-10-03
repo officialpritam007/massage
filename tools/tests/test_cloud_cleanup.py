@@ -2,17 +2,18 @@ import hashlib
 import sys
 import types
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from cloud_cleanup import CleanupBlocked, CloudinaryCleaner, cleanup_request, media_identity, verify_upload_receipt
+from cloud_cleanup import CleanupBlocked, CloudinaryCleaner, TOKEN_EXPIRY_GRACE_MS, cleanup_request, media_identity, verify_upload_receipt
 
 
 SECRET = "test-secret-never-used-outside-tests"
 CLOUD = "mthzgqhv"
 PUBLIC_ID = "liquid-chat/accounts/alice/" + "a" * 32
 URL = f"https://res.cloudinary.com/{CLOUD}/image/upload/v123/{PUBLIC_ID}.jpg"
+PROOF_ID = "c" * 64
 
 
 def receipt():
@@ -70,10 +71,34 @@ class Query:
             yield self.db.document(path).get()
 
 
+class Batch:
+    def __init__(self, db):
+        self.db, self.operations = db, []
+
+    def set(self, ref, fields):
+        self.operations.append(("set", ref, fields))
+
+    def delete(self, ref):
+        self.operations.append(("delete", ref, None))
+
+    def commit(self):
+        if self.db.fail_batch:
+            raise RuntimeError("Transient batch failure")
+        for action, ref, fields in self.operations:
+            if action == "set":
+                ref.set(fields)
+            else:
+                ref.delete()
+
+
 class DB:
     def __init__(self, data):
         self.data = data
         self.deleted = []
+        self.fail_batch = False
+
+    def batch(self):
+        return Batch(self)
 
     def document(self, path):
         return Ref(self, path)
@@ -127,7 +152,7 @@ class CleanupTests(unittest.TestCase):
 
     def fixture(self):
         db = DB({
-            "accountDeletionRequests/alice": {"uid": "alice", "status": "pending"},
+            "accountDeletionRequests/alice": {"uid": "alice", "status": "pending", "proofId": PROOF_ID},
             "users/alice": {"photoUrl": URL},
             "users/alice/mediaUploads/asset-one": receipt(),
             "users/alice/devices/phone": {"token": "private"},
@@ -149,7 +174,7 @@ class CleanupTests(unittest.TestCase):
     def run_cleanup(self, db, auth, cleaner, approvals=None):
         if approvals is None:
             approvals = {"alice": {"inventoryReviewed": True, "urls": []}}
-        cleanup_request(db, auth, db.document("accountDeletionRequests/alice").get(), cleaner, approvals)
+        return cleanup_request(db, auth, db.document("accountDeletionRequests/alice").get(), cleaner, approvals)
 
     def test_unreviewed_orphan_inventory_never_claims_complete_erasure(self):
         db, auth, cleaner = self.fixture()
@@ -210,7 +235,8 @@ class CleanupTests(unittest.TestCase):
     def test_success_deletes_nested_data_but_preserves_other_accounts(self):
         db, auth, cleaner = self.fixture()
         self.run_cleanup(db, auth, cleaner)
-        self.assertEqual({"uid": "alice", "status": "complete", "completedAt": "server-time"}, db.data["accountDeletionRequests/alice"])
+        self.assertEqual("revoking", db.data["accountDeletionRequests/alice"]["status"])
+        self.assertEqual({"status", "readyAt"}, set(db.data[f"deletionProofs/{PROOF_ID}"]))
         self.assertFalse(any(p.startswith(("users/alice", "directory/alice", "conversations/pair", "reports/", "usernames/alice")) for p in db.data))
         self.assertIn("users/bob", db.data)
         self.assertIn("conversations/unrelated/messages/two", db.data)
@@ -241,6 +267,51 @@ class CleanupTests(unittest.TestCase):
             "signature": hashlib.sha1(f"public_id={foreign_id}&version=123{SECRET}".encode()).hexdigest()}
         db.data["users/alice/mediaUploads/asset-one"] = forged_owner_receipt
         db.data["users/alice"]["photoUrl"] = foreign_url
+        with self.assertRaises(CleanupBlocked):
+            self.run_cleanup(db, auth, cleaner)
+        self.assertEqual([], cleaner.deleted)
+        self.assertEqual([], db.deleted)
+        auth.delete_user.assert_not_called()
+
+    def test_old_session_gate_survives_until_the_full_token_lifetime_expires(self):
+        db, auth, cleaner = self.fixture()
+        with patch("cloud_cleanup.time.time", return_value=1000):
+            self.assertFalse(self.run_cleanup(db, auth, cleaner))
+        ready_at = 1000000 + TOKEN_EXPIRY_GRACE_MS
+        self.assertEqual(ready_at, db.data["accountDeletionRequests/alice"]["readyAt"])
+        with patch("cloud_cleanup.time.time", return_value=(ready_at - 1) / 1000):
+            self.assertFalse(self.run_cleanup(db, auth, cleaner))
+        self.assertEqual("revoking", db.data["accountDeletionRequests/alice"]["status"])
+        self.assertEqual("revoking", db.data[f"deletionProofs/{PROOF_ID}"]["status"])
+        auth.delete_user.assert_called_once_with("alice")
+
+    def test_final_completion_atomically_removes_uid_and_keeps_only_anonymous_proof(self):
+        db, auth, cleaner = self.fixture()
+        self.run_cleanup(db, auth, cleaner)
+        ready_at = db.data["accountDeletionRequests/alice"]["readyAt"]
+        with patch("cloud_cleanup.time.time", return_value=ready_at / 1000):
+            self.assertTrue(self.run_cleanup(db, auth, cleaner))
+        self.assertNotIn("accountDeletionRequests/alice", db.data)
+        self.assertEqual({"status": "complete", "completedAt": "server-time"}, db.data[f"deletionProofs/{PROOF_ID}"])
+        auth.delete_user.assert_called_once_with("alice")
+
+    def test_batch_failure_cannot_publish_completion_or_remove_the_session_gate(self):
+        db, auth, cleaner = self.fixture()
+        self.run_cleanup(db, auth, cleaner)
+        ready_at = db.data["accountDeletionRequests/alice"]["readyAt"]
+        db.fail_batch = True
+        with patch("cloud_cleanup.time.time", return_value=ready_at / 1000):
+            with self.assertRaises(RuntimeError):
+                self.run_cleanup(db, auth, cleaner)
+        self.assertEqual("revoking", db.data["accountDeletionRequests/alice"]["status"])
+        self.assertEqual("revoking", db.data[f"deletionProofs/{PROOF_ID}"]["status"])
+        db.fail_batch = False
+        with patch("cloud_cleanup.time.time", return_value=ready_at / 1000):
+            self.assertTrue(self.run_cleanup(db, auth, cleaner))
+
+    def test_invalid_capability_cannot_begin_destructive_cleanup(self):
+        db, auth, cleaner = self.fixture()
+        db.data["accountDeletionRequests/alice"]["proofId"] = "guessable"
         with self.assertRaises(CleanupBlocked):
             self.run_cleanup(db, auth, cleaner)
         self.assertEqual([], cleaner.deleted)

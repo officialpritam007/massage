@@ -99,7 +99,7 @@ fun SettingsScreen(
     deletionError = null
     scope.launch {
       try {
-        val googleToken = if (googleProvider) {
+        val googleToken = if (googleProvider && !deletionPending) {
           val option = GetGoogleIdOption.Builder()
             .setFilterByAuthorizedAccounts(false)
             .setServerClientId(context.getString(R.string.default_web_client_id))
@@ -463,14 +463,15 @@ fun SettingsScreen(
           "Log out", "Delete account" -> {
             Text("Logging out permanently deletes your account, profile, chats on both sides, and uploaded media. It also erases this device’s keys, downloads and cached data. You cannot undo this or restore your old chats by signing in again.")
             Text("Keep the app installed until deletion is confirmed. Uninstalling alone cannot erase cloud data.")
-            if (!googleProvider) GlassTextField(
+            Text("Final verification waits 70 minutes after cloud cleanup for old sessions to expire, plus worker scheduling. Check again later if it is pending.")
+            if (!googleProvider && !deletionPending) GlassTextField(
               deletionPassword, { deletionPassword = it }, placeholder = "Confirm password",
               visualTransformation = PasswordVisualTransformation()
             )
             deletionStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             deletionError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             GlassButton(
-              text = if (googleProvider) "Verify with Google and delete" else if (deletionPending) "Check / retry deletion" else "Delete all data and log out",
+              text = if (deletionPending) "Check deletion" else if (googleProvider) "Verify with Google and delete" else "Delete all data and log out",
               onClick = { beginPermanentDeletion() },
               modifier = Modifier.fillMaxWidth(),
               isLoading = busy || deletionRunning,

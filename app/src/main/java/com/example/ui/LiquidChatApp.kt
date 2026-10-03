@@ -162,7 +162,7 @@ fun LiquidChatApp(
         AuthScreen(
           viewModel = chatViewModel,
           onAuthenticated = {
-            navController.navigate(Screen.Chats.route) {
+            navController.navigate(if (chatViewModel.deletionPending.value) Screen.Settings.route else Screen.Chats.route) {
               popUpTo(Screen.Auth.route) { inclusive = true }
             }
           }

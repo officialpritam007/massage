@@ -55,6 +55,8 @@ Firestore rules deploy independently; Firebase Functions are not part of this ar
 
 Both actions now permanently erase the account, its one-to-one conversation trees and owned uploads, then erase this device's databases, keys, preferences, work and notifications. They require recent authentication and a configured trusted cleanup worker; an unavailable worker or unverified media fails visibly instead of reporting successful deletion. Pending deletion survives process death and blocks old chat restoration.
 
+Final verification includes a **70-minute wait after Auth deletion**, plus worker scheduling, so tokens on other devices expire before the UID gate is removed. A random status proof without a UID allows the app to resume without the deleted Auth account. Keep the app installed until the local wipe is confirmed.
+
 This repository adds an **optional, disabled-by-default GitHub Actions cleanup worker**. No administrator credentials are shipped in Android. Deploy the accompanying rules and follow [PERMANENT_DELETION_SETUP.md](PERMANENT_DELETION_SETUP.md) before enabling destructive logout. Existing unsigned uploads without ownership receipts, backups and unavailable legacy providers require an operator review.
 
 Android does not run the removed application on uninstall. Uninstall clears its local sandbox, but cannot by itself trigger remote deletion. Complete the in-app permanent deletion before uninstalling. OS backup/transfer is disabled for this application.
