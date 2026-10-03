@@ -26,3 +26,21 @@ internal class PresenceWriteGate(private val intervalMs: Long = 60_000L) {
   }
   fun reset() { lastValue = null; lastWriteAt = 0L }
 }
+
+
+/** Transient transport failures must stay queued instead of becoming permanently failed. */
+internal fun shouldAutoRetryOutbox(
+  firestoreCodeName: String?,
+  isIoFailure: Boolean = false,
+  timedOut: Boolean = false
+): Boolean {
+  if (isIoFailure || timedOut) return true
+  return firestoreCodeName in setOf(
+    "UNAVAILABLE",
+    "DEADLINE_EXCEEDED",
+    "ABORTED",
+    "INTERNAL",
+    "UNKNOWN",
+    "CANCELLED"
+  )
+}
