@@ -122,6 +122,7 @@ import com.example.ui.components.GlassIconButton
 import com.example.ui.components.GlassTextField
 import com.example.ui.components.LiquidBackground
 import com.example.ui.components.VoiceWaveformPlayer
+import com.example.ui.components.liquidRoundedShape
 import com.example.ui.theme.EmeraldOnline
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
@@ -658,7 +659,7 @@ fun ConversationScreenV2(
                         )
                         GlassCard(
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(24.dp),
+                            shape = liquidRoundedShape(24f),
                             backgroundColor = if (config.isDark) {
                                 Color(0xFF142A31).copy(alpha = .74f)
                             } else {
@@ -725,14 +726,14 @@ fun ConversationScreenV2(
                         )
                     }
                     AnimatedVisibility(search) {
-                        GlassTextField(query, { query = it }, placeholder = "Search messages", modifier = Modifier.padding(top = 7.dp), shape = RoundedCornerShape(24.dp), keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None))
+                        GlassTextField(query, { query = it }, placeholder = "Search messages", modifier = Modifier.padding(top = 7.dp), shape = liquidRoundedShape(24f), keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None))
                     }
                     AnimatedVisibility(!e2eeReady && other.uid.isNotBlank()) {
                         GlassCard(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(top = 6.dp),
-                            shape = RoundedCornerShape(18.dp),
+                            shape = liquidRoundedShape(18f),
                             backgroundColor = MaterialTheme.colorScheme.error.copy(alpha = .08f),
                             elevation = 0.dp
                         ) {
@@ -767,7 +768,7 @@ fun ConversationScreenV2(
                 ) {
                     voiceDraft?.let { draft ->
                         DustDeleteContainerV2(active = voiceDraftDeleting, reduced = config.isReducedMotion, modifier = Modifier.fillMaxWidth()) {
-                            GlassCard(shape = RoundedCornerShape(22.dp), backgroundColor = if (draft.failed || voiceDraftDeleteFailed) MaterialTheme.colorScheme.error.copy(alpha = .09f) else config.accentColor.copy(alpha = .08f), elevation = 1.dp) {
+                            GlassCard(shape = liquidRoundedShape(22f), backgroundColor = if (draft.failed || voiceDraftDeleteFailed) MaterialTheme.colorScheme.error.copy(alpha = .09f) else config.accentColor.copy(alpha = .08f), elevation = 1.dp) {
                                 Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
@@ -842,7 +843,7 @@ fun ConversationScreenV2(
 
                     upload?.let { progress ->
                         if (voiceDraft?.uploading != true) {
-                            GlassCard(shape = RoundedCornerShape(18.dp), backgroundColor = config.accentColor.copy(alpha = .07f), elevation = 0.dp) {
+                            GlassCard(shape = liquidRoundedShape(18f), backgroundColor = config.accentColor.copy(alpha = .07f), elevation = 0.dp) {
                                 Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 7.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text("Uploading ${(progress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
@@ -856,7 +857,7 @@ fun ConversationScreenV2(
 
                     GlassCard(
                         Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(27.dp),
+                        shape = liquidRoundedShape(27f),
                         backgroundColor = if (config.isDark) {
                             Color(0xFF12262D).copy(alpha = .84f)
                         } else {
@@ -941,7 +942,7 @@ fun ConversationScreenV2(
                                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
                                     singleLine = false,
                                     maxLines = 5,
-                                    shape = RoundedCornerShape(22.dp),
+                                    shape = liquidRoundedShape(22f),
                                     minHeight = 40.dp,
                                     horizontalPadding = 11.dp,
                                     verticalPadding = 7.dp
