@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.ui.components.GlassCard
 import com.example.ui.components.GlassIconButton
+import com.example.ui.components.liquidRoundedShape
 import com.example.ui.theme.LocalLiquidGlass
 
 @Composable
@@ -77,7 +78,7 @@ fun VoiceRecorderPanelV3(
 
     GlassCard(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
+        shape = liquidRoundedShape(28f),
         backgroundColor = if (glass.isDark) {
             Color(0xFF101820).copy(alpha = .82f)
         } else {
