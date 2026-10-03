@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/cloud-account-cleanup.yml'
       - 'tools/cloud_cleanup.py'
+      - 'tools/cleanup_readiness.py'
   workflow_dispatch:
     inputs:
       check_only:
@@ -31,6 +32,7 @@ jobs:
     env:
       FIREBASE_PROJECT_ID: liquid-chat-v2
       CLOUDINARY_CLOUD_NAME: ${{ vars.CLOUDINARY_CLOUD_NAME || 'mthzgqhv' }}
+      CLOUDINARY_UPLOAD_PRESET: ${{ vars.CLOUDINARY_UPLOAD_PRESET || 'liquid_chat_unsigned' }}
       CLEANUP_AUTOMATION_ENABLED: ${{ vars.ENABLE_CLOUD_ACCOUNT_CLEANUP }}
     steps:
       - uses: actions/checkout@v4
@@ -68,7 +70,7 @@ jobs:
         shell: bash
         run: |
           if [[ "$CHECK_ONLY" == 'true' ]]; then
-            python tools/cloud_cleanup.py --check-only
+            python tools/cloud_cleanup.py --audit-only
           else
             python tools/cloud_cleanup.py
           fi

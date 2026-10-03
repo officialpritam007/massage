@@ -221,6 +221,7 @@ def cleanup_request(db, auth, request, cleaner, approvals):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--check-only", action="store_true")
+    parser.add_argument("--audit-only", action="store_true")
     args = parser.parse_args()
     import firebase_admin
     from firebase_admin import auth, credentials, firestore
@@ -235,9 +236,15 @@ def main():
     db = firestore.client()
     cleaner = CloudinaryCleaner(os.environ["CLOUDINARY_CLOUD_NAME"], os.environ["CLOUDINARY_API_KEY"], os.environ["CLOUDINARY_API_SECRET"], requests.Session())
     cleaner.check_access()
-    if args.check_only:
+    if args.check_only or args.audit_only:
         db.document("runtime/cleanup").get()
         print("Cleanup credentials validated; no accounts were deleted.")
+        if args.audit_only:
+            from cleanup_readiness import audit_readiness
+            audit_readiness(db, auth, cleaner, firebase_admin.get_app().credential,
+                            os.environ["FIREBASE_PROJECT_ID"], json.loads(os.environ.get("LEGACY_MEDIA_APPROVALS_JSON") or "{}"),
+                            os.environ.get("CLEANUP_AUTOMATION_ENABLED") == "true",
+                            os.environ.get("CLOUDINARY_UPLOAD_PRESET", "liquid_chat_unsigned"))
         return
     db.document("runtime/cleanup").set({"enabled": os.environ.get("CLEANUP_AUTOMATION_ENABLED") == "true", "updatedAt": int(time.time() * 1000)})
     approvals = json.loads(os.environ.get("LEGACY_MEDIA_APPROVALS_JSON") or "{}")
