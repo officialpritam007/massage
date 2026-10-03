@@ -127,11 +127,22 @@ def cleanup_request(db, auth, request, cleaner, approvals):
                 raise CleanupBlocked("A conversation is outside the account deletion scope.")
             ref.update({"purging": True})
 
+    approval = approvals.get(account, {})
+    if not isinstance(approval, dict) or approval.get("inventoryReviewed") is not True:
+        raise CleanupBlocked("An operator must review legacy/orphaned media and backups before all-data deletion can be confirmed.")
     receipts = [doc.to_dict() for doc in profile.collection("mediaUploads").stream()]
     assets = {}
-    approved = set(approvals.get(account, []))
+    approved = set(approval.get("urls", []))
     for receipt in receipts:
         identity = verify_upload_receipt(receipt, cleaner.secret, cleaner.cloud)
+        prefix = f"liquid-chat/accounts/{account}/"
+        # Unsigned duplicate uploads can return an existing asset's signed
+        # response. A signature alone therefore does not bind an asset to its
+        # Firebase owner. Require the owner's exact namespace and random leaf;
+        # any earlier/misconfigured upload still needs explicit operator review.
+        scoped = identity[1].startswith(prefix) and re.fullmatch(r"[0-9a-f]{32}(\.[A-Za-z0-9]{1,12})?", identity[1][len(prefix):])
+        if not scoped and receipt["secureUrl"] not in approved:
+            raise CleanupBlocked("Legacy media ownership must be reviewed before cloud deletion can finish.")
         resource = cleaner.resource(identity)
         if resource is not None and resource.get("asset_id") != receipt["assetId"]:
             raise CleanupBlocked("An upload asset identity changed.")

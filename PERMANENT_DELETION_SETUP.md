@@ -14,15 +14,17 @@ If the heartbeat is absent or over an hour old, the app refuses a new deletion a
 
 ## Media ownership and backups
 
-New uploads save Cloudinary's response signature, asset ID, public ID, version and URL in a private owner-only Firestore registry. The worker verifies the signature and checks the provider's asset identity before destroying media. The registry includes uploads whose chat/photo references were later removed. Retried writes cannot change the ownership proof.
+New uploads request a random public ID under `liquid-chat/accounts/<Firebase UID>/<32 hex characters>` and save Cloudinary's response signature, asset ID, public ID, version and URL in a private owner-only Firestore registry. The worker verifies the signature, exact owner namespace and provider asset identity before destroying media. A response signature by itself is insufficient: unsigned duplicate uploads can return an existing asset's response. The registry includes uploads whose chat/photo references were later removed. Retried writes cannot change the ownership proof.
 
-Old unsigned uploads did not save these receipts. The worker blocks deletion when an old referenced upload cannot be verified. An operator must establish ownership independently in Cloudinary before adding its original versioned URL to the optional `LEGACY_MEDIA_APPROVALS_JSON` Actions secret:
+The unsigned upload preset must preserve the supplied public ID: disable **Disallow public ID**, filename-based IDs and automatic public-ID prefixes/fixed-mode folders that rewrite this path. An asset folder in dynamic folder mode may remain `liquid-chat`; it must not alter the delivery public ID. Test image/video/raw uploads and their returned IDs. A misconfigured upload is recorded privately for operator cleanup but is not attached to a chat or profile; the app displays an error.
+
+Old unsigned uploads did not save these receipts, and removed references can leave undiscoverable old uploads. To avoid claiming complete erasure after deleting only today's references, **each account requires an operator inventory/backup review** in `LEGACY_MEDIA_APPROVALS_JSON` before cleanup can finish. Establish ownership independently, erase/review unreferenced legacy assets and backups, and include any still-referenced legacy original URLs that the worker is authorized to destroy:
 
 ```json
-{"account-uid": ["https://res.cloudinary.com/mthzgqhv/image/upload/v123/verified-owned-asset.jpg"]}
+{"account-uid": {"inventoryReviewed": true, "urls": ["https://res.cloudinary.com/mthzgqhv/image/upload/v123/verified-owned-asset.jpg"]}}
 ```
 
-Never approve a URL merely because the client put it in a profile or message. Unreferenced old uploads cannot be discovered reliably from Firestore alone and require an inventory review in Cloudinary. If an old provider is involved, erase its owned objects and backups there as well. This worker supports the configured Cloudinary environment only.
+Never approve a URL merely because the client put it in a profile or message. Do not set `inventoryReviewed` until unreferenced old uploads and all provider/database backups have been reviewed and erased as needed. An account with no legacy data still needs this trusted approval; the client cannot assert it. If an old provider is involved, erase its owned objects and backups there as well. This worker supports the configured Cloudinary environment only. Fully automatic erasure without this review requires migrating away from untracked unsigned legacy uploads; it is not guaranteed by this build.
 
 Existing Cloudinary backups/version records block completion. Remove them with the provider's administrator tools and retry. The worker checks deleted-asset records too; a missing original URL is not proof that a restorable backup is gone. CDN invalidation is requested during destruction, but provider caches can take time to expire. Firestore exports, managed backups/PITR and any operator-managed backups require their own retention review; a live-database delete cannot erase an independent export. External copies downloaded by another person or an offline device cannot be remotely guaranteed erased.
 

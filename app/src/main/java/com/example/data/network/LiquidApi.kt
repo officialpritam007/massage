@@ -22,6 +22,7 @@ import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.ConcurrentHashMap
+import java.util.UUID
 
 /**
  * Zero-backend media client.
@@ -203,6 +204,7 @@ object LiquidApi {
       val body = MultipartBody.Builder()
         .setType(MultipartBody.FORM)
         .addFormDataPart("upload_preset", preset)
+        .addFormDataPart("public_id", "liquid-chat/accounts/$owner/${UUID.randomUUID().toString().replace("-", "")}")
         .addFormDataPart("file", filename, file.asRequestBody(mime.toMediaType()))
         .build()
 
@@ -234,6 +236,11 @@ object LiquidApi {
       // Even a cancelled upload must register its ownership before account cleanup
       // can proceed, otherwise an unreferenced upload could be left in the cloud.
       withContext(NonCancellable) { flushUploadReceipts(owner) }
+      val returnedId = receipt.getString("publicId")
+      check(returnedId.startsWith("liquid-chat/accounts/$owner/") &&
+        Regex("^[0-9a-f]{32}(\\.[A-Za-z0-9]{1,12})?$").matches(returnedId.substringAfterLast('/'))) {
+        "Media upload configuration needs an update. Contact support before retrying."
+      }
       progress(1f)
       secureUrl
     } finally {

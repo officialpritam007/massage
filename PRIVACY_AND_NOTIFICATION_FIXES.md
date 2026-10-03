@@ -22,7 +22,7 @@ See [PERMANENT_DELETION_SETUP.md](PERMANENT_DELETION_SETUP.md). The worker remai
 
 ## Validation
 
-- Cleanup-worker ownership/failure/resume suite: **9 tests passed locally**.
+- Cleanup-worker ownership/failure/resume suite: **11 tests passed locally**, including a valid-signed-response attack against another account's media namespace and refusal to claim complete erasure without an orphan-media inventory review.
 - Firestore suite adds authenticated-envelope matching, monotonic receipts, private token/proof rules, recent-auth deletion, and frozen-account/peer-write checks.
 - Android suite adds preview privacy, decrypted text/media fallback and encrypted-edit cache invalidation tests.
 - GitHub Actions runs all three suites and builds a 4.2.2 / 422 debug APK. The final CI results are recorded in the PR.

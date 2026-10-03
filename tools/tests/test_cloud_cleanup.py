@@ -11,13 +11,14 @@ from cloud_cleanup import CleanupBlocked, CloudinaryCleaner, cleanup_request, me
 
 SECRET = "test-secret-never-used-outside-tests"
 CLOUD = "mthzgqhv"
-URL = f"https://res.cloudinary.com/{CLOUD}/image/upload/v123/liquid-chat/one.jpg"
+PUBLIC_ID = "liquid-chat/accounts/alice/" + "a" * 32
+URL = f"https://res.cloudinary.com/{CLOUD}/image/upload/v123/{PUBLIC_ID}.jpg"
 
 
 def receipt():
-    return {"assetId": "asset-one", "publicId": "liquid-chat/one", "version": 123,
+    return {"assetId": "asset-one", "publicId": PUBLIC_ID, "version": 123,
             "resourceType": "image", "secureUrl": URL,
-            "signature": hashlib.sha1(f"public_id=liquid-chat/one&version=123{SECRET}".encode()).hexdigest()}
+            "signature": hashlib.sha1(f"public_id={PUBLIC_ID}&version=123{SECRET}".encode()).hexdigest()}
 
 
 class Snapshot:
@@ -91,7 +92,7 @@ class Cleaner:
     cloud, secret = CLOUD, SECRET
 
     def __init__(self):
-        self.assets = {("image", "liquid-chat/one", 123): {"asset_id": "asset-one", "version": 123}}
+        self.assets = {("image", PUBLIC_ID, 123): {"asset_id": "asset-one", "version": 123}}
         self.deleted = []
 
     def resource(self, identity):
@@ -146,17 +147,27 @@ class CleanupTests(unittest.TestCase):
         return db, auth, Cleaner()
 
     def run_cleanup(self, db, auth, cleaner, approvals=None):
-        cleanup_request(db, auth, db.document("accountDeletionRequests/alice").get(), cleaner, approvals or {})
+        if approvals is None:
+            approvals = {"alice": {"inventoryReviewed": True, "urls": []}}
+        cleanup_request(db, auth, db.document("accountDeletionRequests/alice").get(), cleaner, approvals)
+
+    def test_unreviewed_orphan_inventory_never_claims_complete_erasure(self):
+        db, auth, cleaner = self.fixture()
+        with self.assertRaises(CleanupBlocked):
+            self.run_cleanup(db, auth, cleaner, {})
+        self.assertEqual([], cleaner.deleted)
+        self.assertEqual([], db.deleted)
+        auth.delete_user.assert_not_called()
 
     def test_original_media_identity_preserves_raw_extensions(self):
-        self.assertEqual(("image", "liquid-chat/one", 123), media_identity(URL, CLOUD))
+        self.assertEqual(("image", PUBLIC_ID, 123), media_identity(URL, CLOUD))
         self.assertEqual(("raw", "folder/doc.pdf", 1), media_identity(f"https://res.cloudinary.com/{CLOUD}/raw/upload/v1/folder/doc.pdf", CLOUD))
-        for bad in (URL.replace(CLOUD, "foreign"), URL.replace("v123/", "w_200/v123/"), URL + "?token=x", URL.replace("https:", "http:"), URL.replace("one", "../one")):
+        for bad in (URL.replace(CLOUD, "foreign"), URL.replace("v123/", "w_200/v123/"), URL + "?token=x", URL.replace("https:", "http:"), URL.replace("accounts", "../accounts")):
             with self.assertRaises(CleanupBlocked):
                 media_identity(bad, CLOUD)
 
     def test_signature_url_version_and_resource_type_must_all_match(self):
-        self.assertEqual(("image", "liquid-chat/one", 123), verify_upload_receipt(receipt(), SECRET, CLOUD))
+        self.assertEqual(("image", PUBLIC_ID, 123), verify_upload_receipt(receipt(), SECRET, CLOUD))
         for field, value in (("publicId", "someone-else"), ("version", 124), ("version", True), ("resourceType", "video"), ("signature", "0" * 40)):
             with self.assertRaises(CleanupBlocked):
                 verify_upload_receipt({**receipt(), field: value}, SECRET, CLOUD)
@@ -168,7 +179,7 @@ class CleanupTests(unittest.TestCase):
         deleted.json.return_value = {"resources": [{"asset_id": "asset-one", "status": "deleted"}]}
         session.get.side_effect = [missing, deleted]
         with self.assertRaises(CleanupBlocked):
-            CloudinaryCleaner(CLOUD, "key", SECRET, session).resource(("image", "liquid-chat/one", 123))
+            CloudinaryCleaner(CLOUD, "key", SECRET, session).resource(("image", PUBLIC_ID, 123))
         session.post.assert_not_called()
 
     def test_unverified_legacy_media_blocks_bytes_and_document_deletion(self):
@@ -191,7 +202,7 @@ class CleanupTests(unittest.TestCase):
 
     def test_provider_asset_id_mismatch_blocks_cleanup(self):
         db, auth, cleaner = self.fixture()
-        cleaner.assets[("image", "liquid-chat/one", 123)]["asset_id"] = "different-owner"
+        cleaner.assets[("image", PUBLIC_ID, 123)]["asset_id"] = "different-owner"
         with self.assertRaises(CleanupBlocked):
             self.run_cleanup(db, auth, cleaner)
         self.assertEqual([], cleaner.deleted)
@@ -216,11 +227,25 @@ class CleanupTests(unittest.TestCase):
 
     def test_backups_block_success_until_operator_erases_them(self):
         db, auth, cleaner = self.fixture()
-        cleaner.assets[("image", "liquid-chat/one", 123)]["versions"] = [{"version_id": "backup"}]
+        cleaner.assets[("image", PUBLIC_ID, 123)]["versions"] = [{"version_id": "backup"}]
         with self.assertRaises(CleanupBlocked):
             self.run_cleanup(db, auth, cleaner)
         self.assertEqual([], db.deleted)
         self.assertEqual([], cleaner.deleted)
+
+    def test_even_a_valid_signed_receipt_cannot_claim_another_accounts_namespace(self):
+        db, auth, cleaner = self.fixture()
+        foreign_id = PUBLIC_ID.replace("/alice/", "/bob/")
+        foreign_url = URL.replace("/alice/", "/bob/")
+        forged_owner_receipt = {**receipt(), "publicId": foreign_id, "secureUrl": foreign_url,
+            "signature": hashlib.sha1(f"public_id={foreign_id}&version=123{SECRET}".encode()).hexdigest()}
+        db.data["users/alice/mediaUploads/asset-one"] = forged_owner_receipt
+        db.data["users/alice"]["photoUrl"] = foreign_url
+        with self.assertRaises(CleanupBlocked):
+            self.run_cleanup(db, auth, cleaner)
+        self.assertEqual([], cleaner.deleted)
+        self.assertEqual([], db.deleted)
+        auth.delete_user.assert_not_called()
 
 
 if __name__ == "__main__":
