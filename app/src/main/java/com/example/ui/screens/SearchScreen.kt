@@ -58,6 +58,7 @@ import com.example.ui.components.GlassCard
 import com.example.ui.components.GlassTextField
 import com.example.ui.components.LiquidBackground
 import com.example.ui.components.liquidRoundedShape
+import com.example.ui.components.liquidBottomRoundedShape
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
 
@@ -84,7 +85,7 @@ fun SearchScreen(
       topBar = {
         GlassCard(
           modifier = Modifier.fillMaxWidth().statusBarsPadding(),
-          shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
+          shape = liquidBottomRoundedShape(24f),
           elevation = 8.dp
         ) {
           Row(
