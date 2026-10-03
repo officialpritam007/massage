@@ -9,7 +9,6 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.network.LiquidApi
 import com.example.ui.screens.ChatsHomeScreen
-import com.example.ui.screens.ConversationScreenV2
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.ConversationScreenV2
 import com.example.ui.screens.ConversationScreenV2
