@@ -47,7 +47,10 @@ class SyncPolicyTest {
     assertTrue(shouldAutoRetryOutbox("ABORTED"))
     assertTrue(shouldAutoRetryOutbox(null, isIoFailure = true))
     assertTrue(shouldAutoRetryOutbox(null, timedOut = true))
-    assertFalse(shouldAutoRetryOutbox("PERMISSION_DENIED"))
+    assertTrue(shouldAutoRetryOutbox(null, message = "Failed to get document because the client is offline."))
+    assertTrue(shouldAutoRetryOutbox(null, message = "Unable to resolve host firestore.googleapis.com"))
+    assertTrue(shouldAutoRetryOutbox(null, message = "Connection unavailable"))
+    assertFalse(shouldAutoRetryOutbox("PERMISSION_DENIED", message = "Missing or insufficient permissions"))
     assertFalse(shouldAutoRetryOutbox("FAILED_PRECONDITION"))
   }
 
