@@ -1451,42 +1451,54 @@ class ChatRepository(
       }
     }
 
-    val created = db.runTransaction { tx ->
-      val existing = tx.get(mref)
-      val conversationSnap = tx.get(cref)
-      // A timed-out send may already have succeeded. Retrying its stable ID is
-      // success, and must not erase the bubble or increment unread a second time.
-      if (existing.exists()) return@runTransaction true
-      val disappearingSeconds = conversationSnap.safeLong("disappearingSeconds")
-      val finalMessage = message.toMutableMap()
-      if (disappearingSeconds > 0L) finalMessage["expiresAt"] = now + disappearingSeconds * 1000L
+    // Transactions require a live Firestore connection and fail immediately when
+    // the SDK briefly reports offline. A WriteBatch is persisted by Firestore and
+    // can wait for connectivity while keeping the optimistic local bubble intact.
+    //
+    // Stable message IDs make retries idempotent. If a previous batch was already
+    // accepted into Firestore's local queue, its message document is visible from
+    // CACHE; wait for that queued batch instead of incrementing unread a second time.
+    val cachedExisting = runCatching { mref.get(Source.CACHE).await() }.getOrNull()
+    if (cachedExisting?.exists() == true) {
+      db.waitForPendingWrites().await()
+      val confirmed = runCatching { mref.get(Source.CACHE).await() }.getOrNull()
+      if (confirmed?.exists() == true) return true
+    }
 
-      tx.set(mref, finalMessage)
-      tx.update(
-        cref,
-        mapOf(
-          "lastMessageId" to id,
-          "lastMessageText" to when (type) {
-            "TEXT" -> if (encryptedText) "Encrypted message" else text.take(500)
-            "IMAGE" -> "Photo"
-            "VIDEO" -> "Video"
-            "VOICE", "AUDIO" -> "Voice message"
-            else -> "Document"
-          },
-          "lastMessageTime" to now,
-          "lastMessageRevision" to now,
-          "lastMessageType" to type,
-          "lastMessageE2ee" to (message["e2ee"] ?: emptyMap<String, Any>()),
-          "lastMessageSenderId" to uid,
-          "unreadCounts.$otherUid" to FieldValue.increment(1),
-          "deletedFor" to FieldValue.arrayRemove(uid, otherUid),
-          "hiddenLastFor.$uid" to FieldValue.delete(),
-          "hiddenLastFor.$otherUid" to FieldValue.delete()
-        )
+    val disappearingSeconds = _conversations.value
+      .firstOrNull { it.id == cid }
+      ?.disappearingSeconds
+      ?: runCatching { cref.get(Source.CACHE).await().safeLong("disappearingSeconds") }.getOrDefault(0L)
+
+    val finalMessage = message.toMutableMap()
+    if (disappearingSeconds > 0L) finalMessage["expiresAt"] = now + disappearingSeconds * 1000L
+
+    val batch = db.batch()
+    batch.set(mref, finalMessage)
+    batch.update(
+      cref,
+      mapOf(
+        "lastMessageId" to id,
+        "lastMessageText" to when (type) {
+          "TEXT" -> if (encryptedText) "Encrypted message" else text.take(500)
+          "IMAGE" -> "Photo"
+          "VIDEO" -> "Video"
+          "VOICE", "AUDIO" -> "Voice message"
+          else -> "Document"
+        },
+        "lastMessageTime" to now,
+        "lastMessageRevision" to now,
+        "lastMessageType" to type,
+        "lastMessageE2ee" to (message["e2ee"] ?: emptyMap<String, Any>()),
+        "lastMessageSenderId" to uid,
+        "unreadCounts.$otherUid" to FieldValue.increment(1),
+        "deletedFor" to FieldValue.arrayRemove(uid, otherUid),
+        "hiddenLastFor.$uid" to FieldValue.delete(),
+        "hiddenLastFor.$otherUid" to FieldValue.delete()
       )
-      true
-    }.await()
-    return created
+    )
+    batch.commit().await()
+    return true
   }
 
   private suspend fun hideMessageDirect(cid: String, id: String) {
