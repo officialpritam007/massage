@@ -12,10 +12,10 @@ import androidx.compose.ui.graphics.luminance
 
 /** Shared design tokens for the app-wide Liquid Glass material. */
 data class LiquidGlassConfig(
-  val glassIntensity: Float = 0.90f,
-  val blurAlpha: Float = 0.82f,
+  val glassIntensity: Float = 0.75f,
+  val blurAlpha: Float = 0.35f,
   val cornerRadiusDp: Float = 30f,
-  val borderStrength: Float = 0.78f,
+  val borderStrength: Float = 0.70f,
   val accentColor: Color = CyanAccent,
   val isGlassEnabled: Boolean = true,
   val isReducedMotion: Boolean = false,
