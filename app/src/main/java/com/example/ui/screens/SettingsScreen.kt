@@ -6,6 +6,9 @@ import com.example.R
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.DeveloperMode
+import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
@@ -63,6 +66,7 @@ fun SettingsScreen(
   val me by viewModel.currentUser.collectAsState()
   val privacy by viewModel.privacy.collectAsState()
   val notifications by viewModel.notifications.collectAsState()
+  val appearance by viewModel.appearance.collectAsState()
   val blocked by viewModel.blockedUserIds.collectAsState()
   val users by viewModel.users.collectAsState()
   val messages by viewModel.messages.collectAsState()
@@ -92,7 +96,7 @@ fun SettingsScreen(
   var showOwnPhoto by remember { mutableStateOf(false) }
   val credentialManager = remember(context) { CredentialManager.create(context) }
   val googleProvider = viewModel.hasGoogleProvider()
-  LaunchedEffect(deletionPending) { if (deletionPending) dialog = "Delete account" }
+  LaunchedEffect(deletionPending) { if (deletionPending) dialog = "Confirm deletion" }
 
   fun beginPermanentDeletion() {
     if (busy || deletionRunning) return
@@ -121,6 +125,21 @@ fun SettingsScreen(
         if (t is kotlinx.coroutines.CancellationException) throw t
         busy = false
         deletionError = t.message ?: "Could not verify your account"
+      }
+    }
+  }
+
+  fun beginSessionLogout() {
+    if (busy) return
+    busy = true
+    deletionError = null
+    viewModel.logout { ok, message ->
+      busy = false
+      if (ok) {
+        dialog = ""
+        onLogout()
+      } else {
+        deletionError = message ?: "Could not log out"
       }
     }
   }
