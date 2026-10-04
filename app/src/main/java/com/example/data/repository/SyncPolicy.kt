@@ -61,3 +61,15 @@ internal fun shouldAutoRetryOutbox(
     "timed out"
   ).any(normalized::contains)
 }
+
+
+/** Presence is optional realtime metadata and must never write from cache-only chat state. */
+internal fun shouldAttemptPresenceWrite(
+  serverConfirmed: Boolean,
+  hasPeer: Boolean,
+  locallyBlocked: Boolean
+): Boolean = serverConfirmed && hasPeer && !locallyBlocked
+
+/** A blocked/deleted peer can legitimately make the optional presence path unavailable. */
+internal fun shouldSilencePresenceFailure(firestoreCodeName: String?): Boolean =
+  firestoreCodeName in setOf("PERMISSION_DENIED", "NOT_FOUND")

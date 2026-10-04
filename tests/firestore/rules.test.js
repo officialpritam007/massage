@@ -528,6 +528,16 @@ test('block is enforced server-side for messages, typing and new conversations',
     {until: Date.now() + 6000}
   ));
   await assertFails(setDoc(
+    doc(bob, 'conversations/pair/presence/bob'),
+    {
+      isOnline: true,
+      onlineVisible: true,
+      lastSeenVisible: true,
+      heartbeatAt: Date.now(),
+      lastSeen: Date.now()
+    }
+  ));
+  await assertFails(setDoc(
     doc(bob, 'conversations/blocked-new'),
     {...conversation, participantIds: ['alice', 'bob']}
   ));
