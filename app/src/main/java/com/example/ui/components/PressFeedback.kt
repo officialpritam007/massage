@@ -11,6 +11,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 
 fun Modifier.liquidPressFeedback(
   pressedScale: Float = .95f,
@@ -27,23 +29,30 @@ fun Modifier.liquidPressFeedback(
         scale.snapTo(1f)
         return@pointerInput
       }
-      awaitEachGesture {
-        awaitFirstDown(requireUnconsumed = false)
-        scale.animateTo(
-          pressedScale.coerceIn(.85f, 1f),
-          spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessHigh
-          )
-        )
-        waitForUpOrCancellation()
-        scale.animateTo(
-          1f,
-          spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-          )
-        )
+      coroutineScope {
+        val animationScope = this
+        awaitEachGesture {
+          awaitFirstDown(requireUnconsumed = false)
+          animationScope.launch {
+            scale.animateTo(
+              pressedScale.coerceIn(.85f, 1f),
+              spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = Spring.StiffnessHigh
+              )
+            )
+          }
+          waitForUpOrCancellation()
+          animationScope.launch {
+            scale.animateTo(
+              1f,
+              spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMedium
+              )
+            )
+          }
+        }
       }
     }
 }
