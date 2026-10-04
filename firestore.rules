@@ -284,6 +284,7 @@ service cloud.firestore {
             || (
               request.resource.data.expiresAt is int
               && request.resource.data.expiresAt > request.resource.data.createdAt
+              && request.resource.data.expiresAt > request.time.toMillis()
               && request.resource.data.expiresAt <= request.resource.data.createdAt + 7776000000
             )
           );
