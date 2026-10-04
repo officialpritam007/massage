@@ -260,26 +260,18 @@ fun ContactProfileScreen(
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
-                            "End-to-end encryption",
+                            "Chat privacy",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            if (user.e2eeKeyId.isBlank()) {
-                                "Encryption key unavailable — contact must update Liquid Chat."
-                            } else {
-                                "Security key • " + user.e2eeKeyId.chunked(4).joinToString(" ")
-                            },
+                            "Messages are available only to conversation participants through Firebase security rules.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (user.e2eeKeyId.isBlank()) {
-                                MaterialTheme.colorScheme.error
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            "Messages use device-bound encryption keys. A reinstall changes this key.",
+                            "Recent chats are cached locally so reopening a conversation is instant.",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
