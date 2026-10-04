@@ -82,7 +82,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -229,11 +229,11 @@ fun ConversationScreen(
     onNavigateToCamera: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val conversations by viewModel.conversations.collectAsState()
-    val messageMap by viewModel.messages.collectAsState()
-    val me by viewModel.currentUser.collectAsState()
-    val upload by viewModel.upload.collectAsState()
-    val blocked by viewModel.blockedUserIds.collectAsState()
+    val conversations by viewModel.conversations.collectAsStateWithLifecycle()
+    val messageMap by viewModel.messages.collectAsStateWithLifecycle()
+    val me by viewModel.currentUser.collectAsStateWithLifecycle()
+    val upload by viewModel.upload.collectAsStateWithLifecycle()
+    val blocked by viewModel.blockedUserIds.collectAsStateWithLifecycle()
 
     val repo = viewModel.repository
     val conversation = conversations.find { it.id == conversationId }

@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -33,7 +35,7 @@ fun DiagnosticsScreen(
   onBackClick: () -> Unit
 ) {
   val clipboard = LocalClipboardManager.current
-  val appError by viewModel.error.collectAsState()
+  val appError by viewModel.error.collectAsStateWithLifecycle()
   var running by remember { mutableStateOf(true) }
   var items by remember { mutableStateOf<List<DiagnosticItem>>(emptyList()) }
   var runKey by remember { mutableIntStateOf(0) }

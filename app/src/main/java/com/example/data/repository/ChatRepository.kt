@@ -142,19 +142,25 @@ class ChatRepository(
   val historyHasOlder = _historyHasOlder.asStateFlow()
   private val _historyLoading = MutableStateFlow<Map<String, Boolean>>(emptyMap())
   val historyLoading = _historyLoading.asStateFlow()
+  private val _themeReady = MutableStateFlow(false)
+  val themeReady = _themeReady.asStateFlow()
 
   init {
     val pendingAccount = deletionPrefs.getString("account", null)
     if (!pendingAccount.isNullOrBlank()) {
+      _themeReady.value = true
       enterDeletionPending(pendingAccount)
       scope.launch { deleteAccount() }
     } else if (isUserLoggedIn()) {
+      restoreAppearance(uid)
+      _themeReady.value = true
       scope.launch {
         runCatching { enforceInstallationPrivacy() }
           .onFailure { reportSnapshotFailure("Session metadata", it) }
         if (!cleanupQueued) startSync()
       }
     } else {
+      _themeReady.value = true
       _loading.value = false
     }
   }
@@ -792,6 +798,33 @@ class ChatRepository(
     prefs.edit().putString("visibleConversation", if (visible) cid else null).apply()
     if (visible) visibleConversation = cid
     else if (visibleConversation == cid) visibleConversation = null
+  }
+
+  suspend fun refreshMessageFromPush(cid: String, messageId: String) {
+    val account = uid
+    if (account.isBlank() || cid.isBlank() || messageId.isBlank() || '/' in cid || '/' in messageId) return
+    try {
+      val snapshot = db.document("conversations/$cid/messages/$messageId").get(Source.SERVER).await()
+      if (uid != account || !snapshot.exists()) return
+      val decoded = withContext(Dispatchers.Default) { toMessage(cid, snapshot, account) } ?: return
+      _messages.update { map ->
+        val merged = (map[cid].orEmpty().filterNot { it.id == decoded.id } + decoded)
+          .associateBy { it.id }
+          .values
+          .sortedBy { it.createdAt }
+        map + (cid to merged)
+      }
+      if (decoded.senderId != account && decoded.status == MessageDeliveryStatus.SENT) {
+        receipt(
+          cid,
+          decoded.id,
+          if (visibleConversation == cid && _privacy.value.readReceipts) "READ" else "DELIVERED"
+        )
+      }
+    } catch (t: Throwable) {
+      if (t is CancellationException) throw t
+      scheduleSyncRecovery("Foreground message", t)
+    }
   }
 
   fun stopOpenConversationObservers() {

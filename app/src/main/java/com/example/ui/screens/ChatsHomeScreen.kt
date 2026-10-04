@@ -40,7 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -86,9 +86,9 @@ fun ChatsHomeScreen(
     onHomeTabSelected: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val conversations by viewModel.conversations.collectAsState()
-    val loading by viewModel.loading.collectAsState()
-    val current by viewModel.currentUser.collectAsState()
+    val conversations by viewModel.conversations.collectAsStateWithLifecycle()
+    val loading by viewModel.loading.collectAsStateWithLifecycle()
+    val current by viewModel.currentUser.collectAsStateWithLifecycle()
     val glass = LocalLiquidGlass.current
     val scope = rememberCoroutineScope()
 

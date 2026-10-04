@@ -33,6 +33,7 @@ class LiquidChatViewModel(
     .stateIn(viewModelScope, SharingStarted.Eagerly, repository.messages.value)
 
   val appearance: StateFlow<AppearanceSettings> = repository.appearance
+  val themeReady: StateFlow<Boolean> = repository.themeReady
   val privacy: StateFlow<PrivacySettings> = repository.privacy
   val notifications: StateFlow<NotificationSettings> = repository.notifications
   val searchHistory: StateFlow<List<String>> = repository.searchHistory

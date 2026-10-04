@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import android.widget.Toast
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -22,6 +23,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.data.model.MessageType
+import com.example.notifications.ChatNotificationState
 import com.example.ui.components.GlassDialog
 import com.example.ui.components.GlassCard
 import com.example.ui.components.NetworkStatusBanner
@@ -37,15 +39,21 @@ fun LiquidChatApp(
   onNotificationHandled: () -> Unit = {},
   chatViewModel: LiquidChatViewModel = viewModel()
 ) {
-  val appearance by chatViewModel.appearance.collectAsState()
+  val appearance by chatViewModel.appearance.collectAsStateWithLifecycle()
   var homeTab by rememberSaveable { mutableStateOf("All") }
   val lifecycleOwner = LocalLifecycleOwner.current
 
   DisposableEffect(lifecycleOwner) {
     val observer = LifecycleEventObserver { _, event ->
       when (event) {
-        Lifecycle.Event.ON_START -> chatViewModel.setPresence(true)
-        Lifecycle.Event.ON_STOP -> chatViewModel.setPresence(false)
+        Lifecycle.Event.ON_START -> {
+          ChatNotificationState.setAppForeground(true)
+          chatViewModel.setPresence(true)
+        }
+        Lifecycle.Event.ON_STOP -> {
+          ChatNotificationState.setAppForeground(false)
+          chatViewModel.setPresence(false)
+        }
         else -> Unit
       }
     }
@@ -95,8 +103,8 @@ fun LiquidChatApp(
       navController.navigate(route) { launchSingleTop = true }
     }
     val startDestination = if (chatViewModel.isUserLoggedIn()) Screen.Chats.route else Screen.Auth.route
-    val deletionPending by chatViewModel.deletionPending.collectAsState()
-    val deletionComplete by chatViewModel.deletionComplete.collectAsState()
+    val deletionPending by chatViewModel.deletionPending.collectAsStateWithLifecycle()
+    val deletionComplete by chatViewModel.deletionComplete.collectAsStateWithLifecycle()
     LaunchedEffect(deletionPending, deletionComplete) {
       if (deletionComplete) navController.navigate(Screen.Auth.route) {
         popUpTo(0) { inclusive = true }
@@ -111,8 +119,8 @@ fun LiquidChatApp(
       }
     }
 
-    val error by chatViewModel.error.collectAsState()
-    val syncWarning by chatViewModel.repository.syncWarning.collectAsState()
+    val error by chatViewModel.error.collectAsStateWithLifecycle()
+    val syncWarning by chatViewModel.repository.syncWarning.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
     val blockingPrivacyError = error?.let { message ->
       message.startsWith("Secure logout", ignoreCase = true) ||
@@ -151,12 +159,22 @@ fun LiquidChatApp(
       NavHost(
         navController = navController,
         startDestination = startDestination,
-        // Glass screens are translucent. Crossfades exposed the previous
-        // screen's text through the new page during every navigation.
-        enterTransition = { EnterTransition.None },
-        exitTransition = { ExitTransition.None },
-        popEnterTransition = { EnterTransition.None },
-        popExitTransition = { ExitTransition.None }
+        enterTransition = {
+          if (appearance.isReducedMotion) EnterTransition.None
+          else slideInHorizontally(tween(220)) { it / 7 } + fadeIn(tween(150))
+        },
+        exitTransition = {
+          if (appearance.isReducedMotion) ExitTransition.None
+          else slideOutHorizontally(tween(180)) { -it / 10 } + fadeOut(tween(120))
+        },
+        popEnterTransition = {
+          if (appearance.isReducedMotion) EnterTransition.None
+          else slideInHorizontally(tween(220)) { -it / 7 } + fadeIn(tween(150))
+        },
+        popExitTransition = {
+          if (appearance.isReducedMotion) ExitTransition.None
+          else slideOutHorizontally(tween(180)) { it / 10 } + fadeOut(tween(120))
+        }
     ) {
       composable(Screen.Auth.route) {
         AuthScreen(

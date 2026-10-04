@@ -37,7 +37,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -79,11 +79,11 @@ fun ContactProfileScreen(
     onNavigateToConversation: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val users by viewModel.users.collectAsState()
-    val me by viewModel.currentUser.collectAsState()
-    val conversations by viewModel.conversations.collectAsState()
-    val messages by viewModel.messages.collectAsState()
-    val blocked by viewModel.blockedUserIds.collectAsState()
+    val users by viewModel.users.collectAsStateWithLifecycle()
+    val me by viewModel.currentUser.collectAsStateWithLifecycle()
+    val conversations by viewModel.conversations.collectAsStateWithLifecycle()
+    val messages by viewModel.messages.collectAsStateWithLifecycle()
+    val blocked by viewModel.blockedUserIds.collectAsStateWithLifecycle()
     val glass = LocalLiquidGlass.current
     val context = LocalContext.current
 

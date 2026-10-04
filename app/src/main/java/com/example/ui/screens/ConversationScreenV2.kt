@@ -30,6 +30,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -76,7 +77,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -113,6 +114,7 @@ import com.example.data.model.Message
 import com.example.data.model.MessageType
 import com.example.data.model.User
 import com.example.data.repository.deleteMessageForEveryoneAwait
+import com.example.notifications.ChatNotificationState
 import com.example.data.repository.deleteMessageForMeAwait
 import com.example.ui.components.GlassAvatar
 import com.example.ui.components.GlassButton
@@ -122,12 +124,15 @@ import com.example.ui.components.GlassIconButton
 import com.example.ui.components.GlassTextField
 import com.example.ui.components.LiquidBackground
 import com.example.ui.components.VoiceWaveformPlayer
+import com.example.ui.components.liquidPressFeedback
 import com.example.ui.components.liquidRoundedShape
 import com.example.ui.theme.EmeraldOnline
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
@@ -175,23 +180,31 @@ fun ConversationScreenV2(
     onNavigateToCamera: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val conversations by viewModel.conversations.collectAsState()
-    val messageMap by viewModel.messages.collectAsState()
-    val me by viewModel.currentUser.collectAsState()
-    val upload by viewModel.upload.collectAsState()
-    val blocked by viewModel.blockedUserIds.collectAsState()
-    val messageJump by viewModel.messageJump.collectAsState()
+    val conversationFlow = remember(viewModel, conversationId) {
+        viewModel.conversations.map { items -> items.firstOrNull { it.id == conversationId } }.distinctUntilChanged()
+    }
+    val messageFlow = remember(viewModel, conversationId) {
+        viewModel.messages.map { it[conversationId].orEmpty() }.distinctUntilChanged()
+    }
+    val conversation by conversationFlow.collectAsStateWithLifecycle(
+        initialValue = viewModel.conversations.value.firstOrNull { it.id == conversationId }
+    )
+    val messages by messageFlow.collectAsStateWithLifecycle(
+        initialValue = viewModel.messages.value[conversationId].orEmpty()
+    )
+    val me by viewModel.currentUser.collectAsStateWithLifecycle()
+    val upload by viewModel.upload.collectAsStateWithLifecycle()
+    val blocked by viewModel.blockedUserIds.collectAsStateWithLifecycle()
+    val messageJump by viewModel.messageJump.collectAsStateWithLifecycle()
     val config = LocalLiquidGlass.current
     val repo = viewModel.repository
-    val historyHasOlder by repo.historyHasOlder.collectAsState()
-    val historyLoading by repo.historyLoading.collectAsState()
+    val historyHasOlder by repo.historyHasOlder.collectAsStateWithLifecycle()
+    val historyLoading by repo.historyLoading.collectAsStateWithLifecycle()
     val canLoadOlder = historyHasOlder[conversationId] == true
     val loadingOlder = historyLoading[conversationId] == true
 
-    val conversation = conversations.firstOrNull { it.id == conversationId }
     val other = conversation?.otherUser ?: repo.peerForConversation(conversationId) ?: User(displayName = "Contact")
     val e2eeReady = other.e2eePublicKey.isNotBlank() && other.e2eeKeyId.isNotBlank()
-    val messages = messageMap[conversationId].orEmpty()
 
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -365,7 +378,15 @@ fun ConversationScreenV2(
     val recordingCurrent by rememberUpdatedState(recording)
     val lockedCurrent by rememberUpdatedState(locked)
 
+    var recordPermissionGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val micPermissionInteraction = remember { MutableInteractionSource() }
     val recordPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        recordPermissionGranted = granted
         val message = if (granted) "Microphone ready — hold the mic to record" else "Microphone permission is required for voice messages"
         android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
     }
@@ -379,8 +400,7 @@ fun ConversationScreenV2(
             ).show()
             return
         }
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startRecording()
-        else recordPermission.launch(Manifest.permission.RECORD_AUDIO)
+        if (recordPermissionGranted) startRecording()
     }
     val requestCurrent by rememberUpdatedState<() -> Unit> { requestRecording() }
 
@@ -426,6 +446,15 @@ fun ConversationScreenV2(
         }
     }
 
+    DisposableEffect(conversationId, other.uid) {
+        ChatNotificationState.setActiveChat(conversationId, other.uid)
+        onDispose { ChatNotificationState.clearActiveChat(conversationId) }
+    }
+    LaunchedEffect(conversationId) {
+        ChatNotificationState.foregroundMessages
+            .filter { it.conversationId == conversationId }
+            .collect { event -> repo.refreshMessageFromPush(event.conversationId, event.messageId) }
+    }
     LaunchedEffect(conversationId) { viewModel.observeConversation(conversationId) }
     LaunchedEffect(recording, paused) {
         while (recording) {
@@ -794,7 +823,13 @@ fun ConversationScreenV2(
                         }
                     }
 
-                    if (recording) {
+                    AnimatedVisibility(
+                        visible = recording,
+                        enter = fadeIn(tween(if (config.isReducedMotion) 0 else 140)) +
+                            expandVertically(animationSpec = tween(if (config.isReducedMotion) 0 else 180)),
+                        exit = fadeOut(tween(if (config.isReducedMotion) 0 else 110)) +
+                            shrinkVertically(animationSpec = tween(if (config.isReducedMotion) 0 else 150))
+                    ) {
                         VoiceRecorderPanelV3(
                             elapsedSeconds = elapsed,
                             locked = locked,
@@ -982,53 +1017,61 @@ fun ConversationScreenV2(
                                                 Modifier
                                                     .size(36.dp)
                                                     .offset { IntOffset(micX.roundToInt(), micY.roundToInt()) }
+                                                    .liquidPressFeedback(pressedScale = .95f, enabled = !config.isReducedMotion)
                                                     .clip(CircleShape)
                                                     .background(
                                                         if (config.isDark) Color.White.copy(alpha = .08f)
                                                         else Color.White.copy(alpha = .50f)
                                                     )
-                                                    .pointerInput(other.uid, blocked) {
-                                                        detectDragGesturesAfterLongPress(
-                                                            onDragStart = {
-                                                                dx = 0f
-                                                                dy = 0f
-                                                                locked = false
-                                                                keyboard?.hide()
-                                                                focus.clearFocus()
-                                                                requestCurrent()
-                                                            },
-                                                            onDragEnd = {
-                                                                if (recordingCurrent && !lockedCurrent) {
-                                                                    finishCurrent(true, true)
-                                                                }
-                                                                dx = 0f
-                                                                dy = 0f
-                                                            },
-                                                            onDragCancel = {
-                                                                if (recordingCurrent && !lockedCurrent) {
-                                                                    finishCurrent(false, false)
-                                                                }
-                                                                dx = 0f
-                                                                dy = 0f
-                                                            },
-                                                            onDrag = { change, amount ->
-                                                                change.consume()
-                                                                dx += amount.x
-                                                                dy += amount.y
-                                                                if (dx < -100f && recordingCurrent) {
-                                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                                    finishCurrent(false, false)
-                                                                    dx = 0f
-                                                                    dy = 0f
-                                                                } else if (dy < -100f && recordingCurrent && !lockedCurrent) {
-                                                                    locked = true
-                                                                    dx = 0f
-                                                                    dy = 0f
-                                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                                }
+                                                    .then(
+                                                        if (recordPermissionGranted) {
+                                                            Modifier.pointerInput(other.uid, blocked, recordPermissionGranted) {
+                                                                detectDragGesturesAfterLongPress(
+                                                                    onDragStart = {
+                                                                        dx = 0f
+                                                                        dy = 0f
+                                                                        locked = false
+                                                                        keyboard?.hide()
+                                                                        focus.clearFocus()
+                                                                        requestCurrent()
+                                                                    },
+                                                                    onDragEnd = {
+                                                                        if (recordingCurrent && !lockedCurrent) finishCurrent(true, true)
+                                                                        dx = 0f
+                                                                        dy = 0f
+                                                                    },
+                                                                    onDragCancel = {
+                                                                        if (recordingCurrent && !lockedCurrent) finishCurrent(false, false)
+                                                                        dx = 0f
+                                                                        dy = 0f
+                                                                    },
+                                                                    onDrag = { change, amount ->
+                                                                        change.consume()
+                                                                        dx += amount.x
+                                                                        dy += amount.y
+                                                                        if (dx < -100f && recordingCurrent) {
+                                                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                                            finishCurrent(false, false)
+                                                                            dx = 0f
+                                                                            dy = 0f
+                                                                        } else if (dy < -100f && recordingCurrent && !lockedCurrent) {
+                                                                            locked = true
+                                                                            dx = 0f
+                                                                            dy = 0f
+                                                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                                        }
+                                                                    }
+                                                                )
                                                             }
-                                                        )
-                                                    },
+                                                        } else {
+                                                            Modifier.clickable(
+                                                                interactionSource = micPermissionInteraction,
+                                                                indication = null
+                                                            ) {
+                                                                recordPermission.launch(Manifest.permission.RECORD_AUDIO)
+                                                            }
+                                                        }
+                                                    ),
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 Icon(

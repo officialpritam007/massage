@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
@@ -54,7 +56,7 @@ private val cornerPresets = listOf(
 
 @Composable
 fun AppearanceScreen(viewModel: LiquidChatViewModel, onBackClick: () -> Unit) {
-  val appearance by viewModel.appearance.collectAsState()
+  val appearance by viewModel.appearance.collectAsStateWithLifecycle()
   val accents = listOf("#00E39C", "#32ADE6", "#007AFF", "#AF52DE", "#34C759")
 
   BackHandler(onBack = onBackClick)

@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Liquid Chat</string>
+    <string name="no_contacts_found">No contacts found</string>
 </resources>

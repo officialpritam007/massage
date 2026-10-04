@@ -42,7 +42,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,9 +71,9 @@ fun SearchScreen(
   onBackClick: () -> Unit,
   modifier: Modifier = Modifier
 ) {
-  val searchQuery by viewModel.searchQuery.collectAsState()
-  val searchResults by viewModel.searchResults.collectAsState()
-  val searchHistory by viewModel.searchHistory.collectAsState()
+  val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+  val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
+  val searchHistory by viewModel.searchHistory.collectAsStateWithLifecycle()
   val focus = remember { FocusRequester() }
   val keyboard = LocalSoftwareKeyboardController.current
   LaunchedEffect(Unit) { withFrameNanos { }; focus.requestFocus(); keyboard?.show() }

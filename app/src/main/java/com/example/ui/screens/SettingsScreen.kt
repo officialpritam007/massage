@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import com.example.BuildConfig
 import com.example.R
 
@@ -62,18 +64,18 @@ fun SettingsScreen(
   onNavigateToContacts: () -> Unit,
   onLogout: () -> Unit
 ) {
-  val upload by viewModel.upload.collectAsState()
-  val me by viewModel.currentUser.collectAsState()
-  val privacy by viewModel.privacy.collectAsState()
-  val notifications by viewModel.notifications.collectAsState()
-  val appearance by viewModel.appearance.collectAsState()
-  val blocked by viewModel.blockedUserIds.collectAsState()
-  val users by viewModel.users.collectAsState()
-  val messages by viewModel.messages.collectAsState()
-  val conversations by viewModel.conversations.collectAsState()
-  val deletionStatus by viewModel.deletionStatus.collectAsState()
-  val deletionPending by viewModel.deletionPending.collectAsState()
-  val deletionRunning by viewModel.deletionRunning.collectAsState()
+  val upload by viewModel.upload.collectAsStateWithLifecycle()
+  val me by viewModel.currentUser.collectAsStateWithLifecycle()
+  val privacy by viewModel.privacy.collectAsStateWithLifecycle()
+  val notifications by viewModel.notifications.collectAsStateWithLifecycle()
+  val appearance by viewModel.appearance.collectAsStateWithLifecycle()
+  val blocked by viewModel.blockedUserIds.collectAsStateWithLifecycle()
+  val users by viewModel.users.collectAsStateWithLifecycle()
+  val messages by viewModel.messages.collectAsStateWithLifecycle()
+  val conversations by viewModel.conversations.collectAsStateWithLifecycle()
+  val deletionStatus by viewModel.deletionStatus.collectAsStateWithLifecycle()
+  val deletionPending by viewModel.deletionPending.collectAsStateWithLifecycle()
+  val deletionRunning by viewModel.deletionRunning.collectAsStateWithLifecycle()
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
   val glass = LocalLiquidGlass.current

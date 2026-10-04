@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.installSplashScreen
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.ViewModelProvider
 import com.example.data.network.LiquidApi
@@ -32,7 +33,10 @@ class MainActivity : ComponentActivity() {
   private var notificationConversation by mutableStateOf<String?>(null)
 
   override fun onCreate(savedInstanceState: Bundle?) {
+    val splashScreen = installSplashScreen()
     super.onCreate(savedInstanceState)
+    var themeReadyCheck: () -> Boolean = { false }
+    splashScreen.setKeepOnScreenCondition { !themeReadyCheck() }
     LiquidApi.context = applicationContext
     StartupCrashStore.markStage(this, "activity_onCreate")
     enableEdgeToEdge()
@@ -49,6 +53,9 @@ class MainActivity : ComponentActivity() {
     val startupCrash = existingCrash ?: viewModelResult?.exceptionOrNull()?.let {
       StartupCrashStore.recentCrash(this)
     }
+    themeReadyCheck = viewModelResult?.getOrNull()?.let { viewModel ->
+      { viewModel.themeReady.value }
+    } ?: { true }
 
     if (startupCrash == null && Build.VERSION.SDK_INT >= 33 &&
       ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED

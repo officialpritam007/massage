@@ -15,7 +15,16 @@ class LiquidMessagingService : FirebaseMessagingService() {
     if (message.data["recipient_id"] != account) return
     val cid = message.data["conversation_id"].orEmpty()
     val id = message.data["message_id"].orEmpty()
+    val senderId = message.data["senderId"]
+      ?: message.data["sender_id"]
+      ?: ""
     if (cid.isBlank() || id.isBlank() || cid.contains('/') || id.contains('/')) return
+
+    if (ChatNotificationState.shouldSuppressSystemNotification(senderId, cid)) {
+      ChatNotificationState.dispatchForegroundMessage(senderId, cid, id)
+      return
+    }
+
     MessageNotificationWorker.enqueue(applicationContext, account, cid, id)
   }
 

@@ -26,7 +26,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,9 +35,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.R
 import com.example.data.model.User
 import com.example.ui.components.GlassAvatar
 import com.example.ui.components.GlassBottomBar
@@ -60,9 +62,9 @@ fun ContactsScreen(
   modifier: Modifier = Modifier
 ) {
   LaunchedEffect(Unit) { viewModel.repository.refreshContacts() }
-  val users by viewModel.users.collectAsState()
-  val conversations by viewModel.conversations.collectAsState()
-  val me by viewModel.currentUser.collectAsState()
+  val users by viewModel.users.collectAsStateWithLifecycle()
+  val conversations by viewModel.conversations.collectAsStateWithLifecycle()
+  val me by viewModel.currentUser.collectAsStateWithLifecycle()
   val glass = LocalLiquidGlass.current
   var query by rememberSaveable { mutableStateOf("") }
 
@@ -216,7 +218,7 @@ fun ContactsScreen(
                   .padding(vertical = 36.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
               ) {
-                Text("No contacts found", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.no_contacts_found), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
                 Text("Search by name or username to start chatting", color = MaterialTheme.colorScheme.onSurfaceVariant)
               }

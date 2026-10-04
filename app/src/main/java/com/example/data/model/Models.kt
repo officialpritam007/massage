@@ -1,5 +1,7 @@
 package com.example.data.model
 
+import androidx.compose.runtime.Immutable
+
 enum class MessageType {
   TEXT, IMAGE, VIDEO, AUDIO, VOICE, FILE, LOCATION
 }
@@ -8,6 +10,7 @@ enum class MessageDeliveryStatus {
   SENDING, SENT, DELIVERED, READ, FAILED
 }
 
+@Immutable
 data class User(
   val uid: String = "",
   val displayName: String = "",
@@ -29,11 +32,13 @@ data class User(
   val e2eeKeyId: String = ""
 )
 
+@Immutable
 data class MessageReaction(
   val emoji: String = "",
   val userIds: List<String> = emptyList()
 )
 
+@Immutable
 data class Message(
   val id: String = "",
   val conversationId: String = "",
