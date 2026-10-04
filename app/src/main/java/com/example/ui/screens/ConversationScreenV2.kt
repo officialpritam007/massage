@@ -204,7 +204,6 @@ fun ConversationScreenV2(
     val loadingOlder = historyLoading[conversationId] == true
 
     val other = conversation?.otherUser ?: repo.peerForConversation(conversationId) ?: User(displayName = "Contact")
-    val e2eeReady = other.e2eePublicKey.isNotBlank() && other.e2eeKeyId.isNotBlank()
 
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -392,27 +391,11 @@ fun ConversationScreenV2(
     }
 
     fun requestRecording() {
-        if (!e2eeReady) {
-            android.widget.Toast.makeText(
-                context,
-                "Encryption setup pending. Ask this contact to open Liquid Chat 4.1.0.",
-                android.widget.Toast.LENGTH_LONG
-            ).show()
-            return
-        }
         if (recordPermissionGranted) startRecording()
     }
     val requestCurrent by rememberUpdatedState<() -> Unit> { requestRecording() }
 
     fun uploadAttachment(uri: Uri, type: MessageType, caption: String = "") {
-        if (!e2eeReady) {
-            android.widget.Toast.makeText(
-                context,
-                "Encryption setup pending. Ask this contact to open Liquid Chat 4.1.0.",
-                android.widget.Toast.LENGTH_LONG
-            ).show()
-            return
-        }
         repo.uploadChatMedia(conversationId, uri, type) { result ->
             result.onSuccess { url ->
                 val fallback = when (type) {
@@ -722,31 +705,14 @@ fun ConversationScreenV2(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     val label = compactPresenceLabelV3(other)
-                                    if (label.isNotBlank() || other.e2eeKeyId.isNotBlank()) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(3.dp)
-                                        ) {
-                                            if (other.e2eeKeyId.isNotBlank()) {
-                                                Icon(
-                                                    Icons.Default.Lock,
-                                                    "End-to-end encrypted",
-                                                    modifier = Modifier.size(10.dp),
-                                                    tint = config.accentColor
-                                                )
-                                            }
-                                            Text(
-                                                if (label.isNotBlank()) label else "End-to-end encrypted",
-                                                fontSize = 10.sp,
-                                                color = if (other.isOnline) {
-                                                    EmeraldOnline
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                                },
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
+                                    if (label.isNotBlank()) {
+                                        Text(
+                                            label,
+                                            fontSize = 10.sp,
+                                            color = if (other.isOnline) EmeraldOnline else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
                                     }
                                 }
                             }
@@ -760,37 +726,6 @@ fun ConversationScreenV2(
                     }
                     AnimatedVisibility(search) {
                         GlassTextField(query, { query = it }, placeholder = "Search messages", modifier = Modifier.padding(top = 7.dp), shape = liquidRoundedShape(24f), keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None))
-                    }
-                    AnimatedVisibility(!e2eeReady && other.uid.isNotBlank()) {
-                        GlassCard(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 6.dp),
-                            shape = liquidRoundedShape(18f),
-                            backgroundColor = MaterialTheme.colorScheme.error.copy(alpha = .08f),
-                            elevation = 0.dp
-                        ) {
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 7.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.Lock,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(14.dp),
-                                    tint = MaterialTheme.colorScheme.error
-                                )
-                                Text(
-                                    "Encryption setup pending — this contact must open Liquid Chat 4.1.0",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
                     }
                 }
             },
@@ -959,17 +894,7 @@ fun ConversationScreenV2(
                                 GlassIconButton(
                                     Icons.Default.Add,
                                     "Attach",
-                                    {
-                                        if (e2eeReady) {
-                                            attachmentSheet = true
-                                        } else {
-                                            android.widget.Toast.makeText(
-                                                context,
-                                                "Encryption setup pending. Ask this contact to open Liquid Chat 4.1.0.",
-                                                android.widget.Toast.LENGTH_LONG
-                                            ).show()
-                                        }
-                                    },
+                                    { attachmentSheet = true },
                                     size = 36.dp
                                 )
                                 Spacer(Modifier.width(3.dp))
@@ -1000,17 +925,7 @@ fun ConversationScreenV2(
                                             GlassIconButton(
                                                 Icons.Default.PhotoCamera,
                                                 "Camera",
-                                                {
-                                                    if (e2eeReady) {
-                                                        onNavigateToCamera()
-                                                    } else {
-                                                        android.widget.Toast.makeText(
-                                                            context,
-                                                            "Encryption setup pending. Ask this contact to open Liquid Chat 4.1.0.",
-                                                            android.widget.Toast.LENGTH_LONG
-                                                        ).show()
-                                                    }
-                                                },
+                                                { onNavigateToCamera() },
                                                 size = 36.dp
                                             )
                                             var dx by remember { mutableFloatStateOf(0f) }
@@ -1092,14 +1007,6 @@ fun ConversationScreenV2(
                                             "Send",
                                             {
                                                 if (text.isNotBlank() && other.uid !in blocked) {
-                                                    if (!e2eeReady) {
-                                                        android.widget.Toast.makeText(
-                                                            context,
-                                                            "Encryption setup pending. Ask this contact to open Liquid Chat 4.1.0.",
-                                                            android.widget.Toast.LENGTH_LONG
-                                                        ).show()
-                                                        return@GlassIconButton
-                                                    }
                                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                                     viewModel.sendMessage(
                                                         conversationId,
