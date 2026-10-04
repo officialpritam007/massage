@@ -804,7 +804,8 @@ class ChatRepository(
             cornerRadiusDp = (a["cornerRadiusDp"] as? Number)?.toFloat() ?: 30f,
             borderStrength = (a["borderStrength"] as? Number)?.toFloat() ?: 0.70f,
             accentColorHex = a["accentColorHex"] as? String ?: "#00E39C",
-            isReducedMotion = anyBoolean(a["isReducedMotion"], false)
+            isReducedMotion = anyBoolean(a["isReducedMotion"], false),
+            isReducedTransparency = anyBoolean(a["isReducedTransparency"], false)
           )
           if (pendingAppearance.accept(remoteAppearance, committed = !snapshot.metadata.hasPendingWrites())) {
             _appearance.value = remoteAppearance
@@ -2511,7 +2512,8 @@ class ChatRepository(
         "cornerRadiusDp" to settings.cornerRadiusDp,
         "borderStrength" to settings.borderStrength,
         "accentColorHex" to settings.accentColorHex,
-        "isReducedMotion" to settings.isReducedMotion
+        "isReducedMotion" to settings.isReducedMotion,
+        "isReducedTransparency" to settings.isReducedTransparency
       )
 
   private fun storeAppearance(account: String, settings: AppearanceSettings) {
@@ -2527,7 +2529,8 @@ class ChatRepository(
         j.optBoolean("isDarkMode", true), j.optDouble("glassIntensity", .75).toFloat(),
         j.optDouble("blurAlpha", .35).toFloat(), j.optDouble("cornerRadiusDp", 30.0).toFloat(),
         j.optDouble("borderStrength", .70).toFloat(), j.optString("accentColorHex", "#00E39C"),
-        j.optBoolean("isReducedMotion", false)
+        j.optBoolean("isReducedMotion", false),
+        j.optBoolean("isReducedTransparency", false)
       )
       _appearance.value = a
       appearanceDirty = prefs.getBoolean("appearancePending:$account", false)
