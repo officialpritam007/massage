@@ -69,15 +69,11 @@ half4 main(float2 fragCoord) {
 }
 """
 
+
 @Composable
-fun LiquidBackground(
-  modifier: Modifier = Modifier,
-  crystal: Boolean = false,
-  content: @Composable () -> Unit
-) {
-  val config = LocalLiquidGlass.current
-  val dark = config.isDark
-  val state = remember { HazeState() }
+private fun rememberLiquidMotion(enabled: Boolean): Triple<Float, Float, Float> {
+  if (!enabled) return Triple(0.20f, 0f, 0f)
+
   val motion = rememberInfiniteTransition(label = "liquid_background")
   val phase by motion.animateFloat(
     initialValue = 0f,
@@ -97,6 +93,19 @@ fun LiquidBackground(
     animationSpec = infiniteRepeatable(tween(14_000), RepeatMode.Reverse),
     label = "glass_drift_y"
   )
+  return Triple(phase, driftX, driftY)
+}
+
+@Composable
+fun LiquidBackground(
+  modifier: Modifier = Modifier,
+  crystal: Boolean = false,
+  content: @Composable () -> Unit
+) {
+  val config = LocalLiquidGlass.current
+  val dark = config.isDark
+  val state = remember { HazeState() }
+  val (phase, driftX, driftY) = rememberLiquidMotion(enabled = !config.isReducedMotion)
 
   val runtimeShader = remember {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -110,15 +119,20 @@ fun LiquidBackground(
   }
 
   val base = if (dark) Color(0xFF020508) else Color(0xFFF0F7F7)
-  CompositionLocalProvider(LocalGlassBackdrop provides if (config.isGlassEnabled) state else null) {
+  CompositionLocalProvider(
+    LocalGlassBackdrop provides if (config.isGlassEnabled && !config.isReducedTransparency) state else null
+  ) {
     Box(modifier.fillMaxSize().background(base)) {
       Canvas(
         Modifier
           .fillMaxSize()
-          .then(if (config.isGlassEnabled) Modifier.hazeSource(state) else Modifier)
+          .then(
+            if (config.isGlassEnabled && !config.isReducedTransparency) Modifier.hazeSource(state)
+            else Modifier
+          )
       ) {
-        val dx = if (config.isReducedMotion) 0f else driftX
-        val dy = if (config.isReducedMotion) 0f else driftY
+        val dx = driftX
+        val dy = driftY
         val shader = runtimeShader
         val paint = runtimePaint
 
@@ -128,7 +142,7 @@ fun LiquidBackground(
           paint != null
         ) {
           shader.setFloatUniform("iResolution", size.width, size.height)
-          shader.setFloatUniform("iTime", if (config.isReducedMotion) 0.20f else phase)
+          shader.setFloatUniform("iTime", phase)
           shader.setFloatUniform("iDark", if (dark) 1f else 0f)
           drawIntoCanvas { canvas ->
             canvas.nativeCanvas.drawRect(0f, 0f, size.width, size.height, paint)
