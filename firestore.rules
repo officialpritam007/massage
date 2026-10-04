@@ -48,29 +48,6 @@ service cloud.firestore {
       return !data.keys().hasAny(['photoUrl']) || validCloudinaryUrl(data.photoUrl);
     }
 
-    function validE2eePayload(data) {
-      return data is map
-        && data.keys().hasOnly([
-          'e2eeVersion', 'e2eeEphemeralKey', 'e2eeCiphertext', 'e2eeContentIv',
-          'e2eeSenderWrappedKey', 'e2eeSenderWrapIv',
-          'e2eeRecipientWrappedKey', 'e2eeRecipientWrapIv',
-          'e2eeSenderKeyId', 'e2eeRecipientKeyId',
-          'e2eeSenderPublicKey', 'e2eeSignature'
-        ])
-        && data.e2eeVersion == 1
-        && data.e2eeEphemeralKey is string
-        && data.e2eeCiphertext is string
-        && data.e2eeContentIv is string
-        && data.e2eeSenderWrappedKey is string
-        && data.e2eeSenderWrapIv is string
-        && data.e2eeRecipientWrappedKey is string
-        && data.e2eeRecipientWrapIv is string
-        && data.e2eeSenderKeyId is string
-        && data.e2eeRecipientKeyId is string
-        && data.e2eeSenderPublicKey is string
-        && data.e2eeSignature is string;
-    }
-
     function validPresence() {
       return request.resource.data.isOnline is bool
         && request.resource.data.onlineVisible is bool
@@ -88,7 +65,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly([
           'uid', 'displayName', 'username', 'bio', 'email', 'phoneNumber', 'photoUrl',
           'createdAt', 'appearance', 'privacy', 'notifications', 'blockedUserIds', 'tokens',
-          'installationId', 'dataEpoch', 'e2eePublicKey', 'e2eeKeyId'
+          'installationId', 'dataEpoch'
         ])
         && (!request.resource.data.keys().hasAny(['uid']) || request.resource.data.uid == uid)
         && validOptionalCloudinaryPhoto(request.resource.data);
@@ -97,7 +74,7 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'displayName', 'username', 'bio', 'email', 'phoneNumber', 'photoUrl',
           'appearance', 'privacy', 'notifications', 'blockedUserIds', 'tokens',
-          'installationId', 'dataEpoch', 'e2eePublicKey', 'e2eeKeyId'
+          'installationId', 'dataEpoch'
         ])
         && (
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['photoUrl'])
@@ -142,7 +119,6 @@ service cloud.firestore {
       allow create: if owner(uid)
         && request.resource.data.keys().hasOnly([
           'uid', 'displayName', 'username', 'bio', 'photoUrl', 'createdAt',
-          'e2eePublicKey', 'e2eeKeyId',
           'isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'
         ])
         && (!request.resource.data.keys().hasAny(['uid']) || request.resource.data.uid == uid)
@@ -156,7 +132,7 @@ service cloud.firestore {
 
       allow update: if owner(uid)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'displayName', 'username', 'bio', 'photoUrl', 'e2eePublicKey', 'e2eeKeyId',
+          'displayName', 'username', 'bio', 'photoUrl',
           'isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'
         ])
         && (
@@ -201,7 +177,7 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/directory/$(otherParticipant(request.resource.data)))
         && request.resource.data.keys().hasOnly([
           'participantIds', 'lastMessageId', 'lastMessageTime', 'lastMessageText',
-          'lastMessageSenderId', 'lastMessageE2ee', 'lastMessageRevision', 'lastMessageType', 'unreadCounts', 'deletedFor', 'deletedBefore',
+          'lastMessageSenderId', 'lastMessageRevision', 'lastMessageType', 'unreadCounts', 'deletedFor', 'deletedBefore',
           'hiddenLastFor', 'archivedFor', 'mutedFor', 'favoriteFor',
           'disappearingSeconds'
         ]);
