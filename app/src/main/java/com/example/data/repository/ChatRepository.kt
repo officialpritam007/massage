@@ -877,7 +877,10 @@ class ChatRepository(
             serverConfirmedConversations.addAll(confirmed)
             visibleConversation
               ?.takeIf { resumed && it in confirmed }
-              ?.let { writePresenceForConversation(it, true, force = true) }
+              ?.let {
+                observePresence(it)
+                writePresenceForConversation(it, true, force = true)
+              }
           }
           val previousById = _conversations.value.associateBy { it.id }
           if (!resumed) next.filter { current ->
@@ -1141,11 +1144,18 @@ class ChatRepository(
   }
 
   private fun observePresence(cid: String) {
+    if (cid !in serverConfirmedConversations) return
     val other = _conversations.value.find { it.id == cid }?.otherUser?.uid ?: pendingPeers[cid]?.uid ?: return
+    if (other in _blockedUserIds.value) return
 
     if (!presenceListeners.containsKey(cid)) {
       presenceListeners[cid] = db.collection("conversations/$cid/typing").addSnapshotListener { snapshot, error ->
-        if (error != null) return@addSnapshotListener
+        if (error != null) {
+          if (shouldSilencePresenceFailure(firestoreCode(error)?.name)) {
+            presenceListeners.remove(cid)?.remove()
+          }
+          return@addSnapshotListener
+        }
         guardSnapshot("Typing") {
           val until = snapshot?.documents?.firstOrNull { it.id == other }?.safeLong("until") ?: 0L
           _conversations.update { conversations ->
@@ -1160,7 +1170,17 @@ class ChatRepository(
     if (!peerPresenceListeners.containsKey(cid)) {
       peerPresenceListeners[cid] = db.document("conversations/$cid/presence/$other")
         .addSnapshotListener { snapshot, error ->
-          if (error != null) return@addSnapshotListener
+          if (error != null) {
+            if (shouldSilencePresenceFailure(firestoreCode(error)?.name)) {
+              peerPresenceListeners.remove(cid)?.remove()
+              _conversations.update { conversations ->
+                conversations.map { conversation ->
+                  if (conversation.id == cid) conversation.copy(isOnline = false) else conversation
+                }
+              }
+            }
+            return@addSnapshotListener
+          }
           guardSnapshot("Presence") {
             val now = System.currentTimeMillis()
             val onlineVisible = snapshot?.safeBoolean("onlineVisible") == true
