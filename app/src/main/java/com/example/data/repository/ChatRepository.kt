@@ -82,6 +82,7 @@ class ChatRepository(
   private val quotaPaused get() = System.currentTimeMillis() < quotaPausedUntil
   private val legacyDeleteMigrations = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
   private val deleteTombstones = mutableSetOf<String>()
+  private val expiryDeletes = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
   // Keeps enough peer identity to compose a fresh message without putting a
   // server-deleted conversation back into the chats list before a new send.
   private val pendingPeers = mutableMapOf<String, User>()
@@ -1082,6 +1083,8 @@ class ChatRepository(
     if ((snapshot.get("hiddenLastFor") as? Map<*, *>)?.get(account) == id && id.isNotBlank()) return ""
     val cutoff = anyLong((snapshot.get("deletedBefore") as? Map<*, *>)?.get(account))
     if (cutoff > 0 && snapshot.safeLong("lastMessageTime") <= cutoff) return ""
+    val previewExpiresAt = snapshot.safeLong("lastMessageExpiresAt")
+    if (previewExpiresAt > 0L && previewExpiresAt <= System.currentTimeMillis()) return ""
 
     val serverText = snapshot.safeString("lastMessageText")
     if (serverText.isNotBlank() && serverText != "Encrypted message") return serverText
@@ -1462,10 +1465,15 @@ class ChatRepository(
   private fun expireMessages() {
     val now = System.currentTimeMillis()
     val changed = mutableMapOf<String, List<Message>>()
+    val expired = mutableListOf<Pair<String, Message>>()
     _messages.update { map ->
       var anyChanged = false
       val next = map.mapValues { (cid, messages) ->
-        val filtered = messages.filter { it.expiresAt == null || it.expiresAt > now }
+        val filtered = messages.filter { message ->
+          val keep = message.expiresAt == null || message.expiresAt > now
+          if (!keep) expired += cid to message
+          keep
+        }
         if (filtered.size != messages.size) {
           anyChanged = true
           changed[cid] = filtered
@@ -1477,6 +1485,27 @@ class ChatRepository(
       if (anyChanged) next else map
     }
     changed.forEach { (cid, messages) -> cacheMessages(cid, messages) }
+
+    expired.forEach { (cid, message) ->
+      val key = "$cid:${message.id}"
+      if (!expiryDeletes.add(key)) return@forEach
+      scope.launch {
+        try {
+          val ref = db.document("conversations/$cid/messages/${message.id}")
+          val snapshot = ref.get(Source.SERVER).await()
+          val expiresAt = snapshot.get("expiresAt")?.let { anyLong(it, 0L) } ?: 0L
+          if (snapshot.exists() && expiresAt > 0L && expiresAt <= System.currentTimeMillis()) {
+            ref.delete().await()
+            removeCachedMessage(message.id)
+            if (lastMessageIds[cid] == message.id) refreshConversationSummaryDirect(cid)
+          }
+        } catch (t: Throwable) {
+          if (t is CancellationException) throw t
+        } finally {
+          expiryDeletes.remove(key)
+        }
+      }
+    }
   }
 
   private suspend fun ensureOwnDirectoryReady(account: String) {
@@ -1643,6 +1672,7 @@ class ChatRepository(
           "lastMessageTime" to now,
           "lastMessageRevision" to now,
           "lastMessageType" to type,
+          "lastMessageExpiresAt" to (message["expiresAt"] ?: 0L),
           "lastMessageE2ee" to FieldValue.delete(),
           "lastMessageSenderId" to uid,
           "unreadCounts.$otherUid" to FieldValue.increment(1),
@@ -1690,13 +1720,13 @@ class ChatRepository(
 
   private suspend fun refreshConversationSummaryDirect(cid: String) {
     val cref = db.document("conversations/$cid")
-    val latest = db.collection("conversations/$cid/messages")
+    val candidates = db.collection("conversations/$cid/messages")
       .orderBy("createdAt", Query.Direction.DESCENDING)
-      .limit(1)
+      .limit(25)
       .get()
       .await()
       .documents
-      .firstOrNull()
+    val latest = candidates.firstOrNull { toMessage(cid, it) != null }
 
     if (latest == null) {
       cref.update(
@@ -1707,6 +1737,7 @@ class ChatRepository(
           "lastMessageSenderId" to "",
           "lastMessageRevision" to System.currentTimeMillis(),
           "lastMessageType" to "TEXT",
+          "lastMessageExpiresAt" to 0L,
           "lastMessageE2ee" to FieldValue.delete()
         )
       ).await()
@@ -1731,6 +1762,7 @@ class ChatRepository(
         "lastMessageSenderId" to latest.safeString("senderId"),
         "lastMessageRevision" to System.currentTimeMillis(),
         "lastMessageType" to type,
+        "lastMessageExpiresAt" to anyLong(latest.get("expiresAt"), 0L),
         "lastMessageE2ee" to FieldValue.delete()
       )
     ).await()
