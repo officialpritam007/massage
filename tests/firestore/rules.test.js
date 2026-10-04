@@ -165,7 +165,7 @@ test('profile photo accepts only the configured Cloudinary environment', async (
   await assertFails(updateDoc(doc(alice, 'users/alice'), {photoUrl: 'https://example.com/avatar.jpg'}));
 });
 
-test('legacy photo URL does not block unrelated session or presence updates', async () => {
+test('legacy public presence can be stripped while private presence remains usable', async () => {
   await env.withSecurityRulesDisabled(async c => {
     const db = c.firestore();
     await updateDoc(doc(db, 'users/alice'), {
@@ -183,9 +183,20 @@ test('legacy photo URL does not block unrelated session or presence updates', as
     {installationId: 'install-123'}
   ));
 
-  const now = Date.now();
   await assertSucceeds(updateDoc(
     doc(alice, 'directory/alice'),
+    {
+      isOnline: deleteField(),
+      onlineVisible: deleteField(),
+      lastSeenVisible: deleteField(),
+      heartbeatAt: deleteField(),
+      lastSeen: deleteField()
+    }
+  ));
+
+  const now = Date.now();
+  await assertSucceeds(setDoc(
+    doc(alice, 'conversations/pair/presence/alice'),
     {
       isOnline: true,
       onlineVisible: true,
@@ -217,12 +228,7 @@ test('legacy owner without a public directory can repair it and start a conversa
     uid: 'legacy',
     displayName: 'Legacy',
     username: 'legacy',
-    bio: '',
-    isOnline: false,
-    onlineVisible: true,
-    lastSeenVisible: true,
-    heartbeatAt: 0,
-    lastSeen: 0
+    bio: ''
   }));
 
   await assertSucceeds(setDoc(doc(legacy, 'conversations/legacy-bob'), {
@@ -446,6 +452,59 @@ test('typing remains owner and participant constrained', async () => {
   await assertFails(setDoc(
     doc(alice, 'conversations/pair/typing/alice'),
     {until: Date.now() + 60000}
+  ));
+});
+
+test('block is enforced server-side for messages, typing and new conversations', async () => {
+  await env.withSecurityRulesDisabled(async c => {
+    const db = c.firestore();
+    await updateDoc(doc(db, 'users/alice'), {blockedUserIds: ['bob']});
+  });
+
+  const bob = env.authenticatedContext('bob').firestore();
+  await assertFails(setDoc(
+    doc(bob, 'conversations/pair/messages/blocked-send'),
+    baseMessage({senderId: 'bob', senderName: 'Bob'})
+  ));
+  await assertFails(setDoc(
+    doc(bob, 'conversations/pair/typing/bob'),
+    {until: Date.now() + 6000}
+  ));
+  await assertFails(setDoc(
+    doc(bob, 'conversations/blocked-new'),
+    {...conversation, participantIds: ['alice', 'bob']}
+  ));
+
+  await env.withSecurityRulesDisabled(async c => {
+    await updateDoc(doc(c.firestore(), 'users/alice'), {blockedUserIds: []});
+  });
+});
+
+test('private presence hides heartbeat and last-seen when visibility is disabled', async () => {
+  const alice = env.authenticatedContext('alice').firestore();
+  const bob = env.authenticatedContext('bob').firestore();
+
+  await assertSucceeds(setDoc(
+    doc(alice, 'conversations/pair/presence/alice'),
+    {
+      isOnline: false,
+      onlineVisible: false,
+      lastSeenVisible: false,
+      heartbeatAt: 0,
+      lastSeen: 0
+    }
+  ));
+  await assertSucceeds(getDoc(doc(bob, 'conversations/pair/presence/alice')));
+
+  await assertFails(setDoc(
+    doc(alice, 'conversations/pair/presence/alice'),
+    {
+      isOnline: false,
+      onlineVisible: false,
+      lastSeenVisible: false,
+      heartbeatAt: Date.now(),
+      lastSeen: Date.now()
+    }
   ));
 });
 
