@@ -327,7 +327,7 @@ fun SettingsScreen(
         SettingsSection("SUPPORT") {
           ProfessionalSettingItem(Icons.Default.HelpOutline, "Help & Support", "FAQ and direct developer contact", Color(0xFFFF9500)) { dialog = "About & Support" }
           SettingDivider()
-          ProfessionalSettingItem(Icons.Default.DeveloperMode, "Developer Diagnostics", "E2EE status, cloud sync and quotas", Color(0xFF5856D6)) { onNavigateToDiagnostics() }
+          ProfessionalSettingItem(Icons.Default.DeveloperMode, "Developer Diagnostics", "Realtime sync, cache and quotas", Color(0xFF5856D6)) { onNavigateToDiagnostics() }
         }
 
         SettingsSection("ACCOUNT ACTIONS") {
@@ -352,7 +352,7 @@ fun SettingsScreen(
             style = MaterialTheme.typography.labelSmall
           )
           Text(
-            "Text messages use device-bound end-to-end encryption",
+            "Messages sync through Firebase with a persistent local cache",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.labelSmall
           )
@@ -481,8 +481,8 @@ fun SettingsScreen(
           "Data & Storage" -> {
             Text("Temporary cache: ${cacheSize / 1024 / 1024} MB")
             Text("Chat attachments upload directly to Cloudinary; the returned secure URL is saved in Firestore. Maximum attachment size: 9 MB.")
-            Text("Liquid Chat does not back up app data or E2EE private keys.")
-            Text("Uninstalling clears this device's local cache and encryption identity; Firestore chat data is not automatically erased.")
+            Text("Liquid Chat keeps a local message cache for fast reopening and offline viewing.")
+            Text("Uninstalling clears this device's local cache; Firestore chat data is not automatically erased.")
             Text("Clear cache removes temporary downloads from this device. To permanently erase your account and cloud data, use Delete account or Log out and wait for deletion to finish.")
             if (upload != null) {
               Text("Wait for the current upload to finish before clearing cache.")
@@ -519,7 +519,7 @@ fun SettingsScreen(
             Text("Developed by Pritam Pal")
             Text("© 2026 Pritam Pal")
             Text("Firebase Auth + Cloud Firestore realtime data + direct Cloudinary media hosting.")
-            Text("Text messages keep device-bound E2EE. Direct Cloudinary media uses public secure URLs and is not end-to-end encrypted in the free backendless mode.")
+            Text("Messages use Firebase Auth + participant-restricted Firestore access. Cloudinary media uses secure HTTPS delivery URLs.")
             TextButton(
               onClick = {
                 context.startActivity(
@@ -534,7 +534,7 @@ fun SettingsScreen(
 
           "Log out" -> {
             Text("Log out removes this device session, local message cache and notifications. Your Firebase account, conversations and uploaded media remain in the cloud.")
-            Text("Your device-bound E2EE identity is preserved so encrypted chats can be read again after signing back in on this device.")
+            Text("Signing in again restores your cloud conversations and rebuilds the local cache.")
             deletionError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             GlassButton(
               text = "Log out",
