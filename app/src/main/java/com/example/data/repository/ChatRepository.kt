@@ -1059,19 +1059,34 @@ class ChatRepository(
   }
 
   private fun refreshUsers() {
+    val now = System.currentTimeMillis()
     _users.update { users ->
-      users.map { user -> user.copy(isOnline = user.isOnline && System.currentTimeMillis() - user.lastActiveAt < 90_000) }
-    }
-    _conversations.update { conversations ->
-      conversations.map { conversation ->
-        val user = _users.value.find { it.uid == conversation.otherUser.uid } ?: conversation.otherUser
-        val online = user.isOnline && System.currentTimeMillis() - user.lastActiveAt < 90_000
-        conversation.copy(otherUser = user.copy(isOnline = online), isOnline = online,
-          lastMessageText = summarySnapshots[conversation.id]?.let { summary ->
-            val hidden = (summary.get("hiddenLastFor") as? Map<*, *>)?.get(uid)
-            if (hidden == summary.safeString("lastMessageId")) "" else conversationPreview(summary)
-          } ?: conversation.lastMessageText)
+      var changed = false
+      val next = users.map { user ->
+        val online = user.isOnline && now - user.lastActiveAt < 90_000
+        if (user.isOnline == online) user else {
+          changed = true
+          user.copy(isOnline = online)
+        }
       }
+      if (changed) next else users
+    }
+
+    val usersById = _users.value.associateBy { it.uid }
+    _conversations.update { conversations ->
+      var changed = false
+      val next = conversations.map { conversation ->
+        val source = usersById[conversation.otherUser.uid] ?: conversation.otherUser
+        val online = source.isOnline && now - source.lastActiveAt < 90_000
+        val user = if (source.isOnline == online) source else source.copy(isOnline = online)
+        if (conversation.otherUser == user && conversation.isOnline == online) {
+          conversation
+        } else {
+          changed = true
+          conversation.copy(otherUser = user, isOnline = online)
+        }
+      }
+      if (changed) next else conversations
     }
   }
 
@@ -1092,7 +1107,18 @@ class ChatRepository(
   }
 
   private fun refreshTyping() {
-    _conversations.update { conversations -> conversations.map { it.copy(isTyping = it.typingUntil > System.currentTimeMillis()) } }
+    val now = System.currentTimeMillis()
+    _conversations.update { conversations ->
+      var changed = false
+      val next = conversations.map { conversation ->
+        val typing = conversation.typingUntil > now
+        if (conversation.isTyping == typing) conversation else {
+          changed = true
+          conversation.copy(isTyping = typing)
+        }
+      }
+      if (changed) next else conversations
+    }
   }
 
   fun observeConversation(cid: String) {
@@ -1324,7 +1350,22 @@ class ChatRepository(
 
   private fun expireMessages() {
     val now = System.currentTimeMillis()
-    _messages.update { map -> map.mapValues { (_, messages) -> messages.filter { it.expiresAt == null || it.expiresAt > now } } }
+    val changed = mutableMapOf<String, List<Message>>()
+    _messages.update { map ->
+      var anyChanged = false
+      val next = map.mapValues { (cid, messages) ->
+        val filtered = messages.filter { it.expiresAt == null || it.expiresAt > now }
+        if (filtered.size != messages.size) {
+          anyChanged = true
+          changed[cid] = filtered
+          filtered
+        } else {
+          messages
+        }
+      }
+      if (anyChanged) next else map
+    }
+    changed.forEach { (cid, messages) -> cacheMessages(cid, messages) }
   }
 
   private suspend fun ensureOwnDirectoryReady(account: String) {
