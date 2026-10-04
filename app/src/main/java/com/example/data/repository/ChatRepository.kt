@@ -835,8 +835,15 @@ class ChatRepository(
         }
         if (snapshot != null) guardSnapshot("Chats") {
           if (snapshot.isEmpty && snapshot.metadata.isFromCache && _conversations.value.isNotEmpty()) return@guardSnapshot
-          val next = snapshot.documents.mapNotNull { runCatching { toConversation(it) }.getOrNull() }
-            .sortedByDescending { it.lastMessageTime }
+          val decoded = snapshot.documents.mapNotNull { runCatching { toConversation(it) }.getOrNull() }
+          val next = if (snapshot.metadata.isFromCache) {
+            (_conversations.value + decoded)
+              .associateBy { it.id }
+              .values
+              .sortedByDescending { it.lastMessageTime }
+          } else {
+            decoded.sortedByDescending { it.lastMessageTime }
+          }
           if (!snapshot.metadata.isFromCache) {
             val confirmed = snapshot.documents.map { it.id }.toSet()
             serverConfirmedConversations.retainAll(confirmed)
@@ -1018,7 +1025,10 @@ class ChatRepository(
     deletedBefore[snapshot.id] = anyLong(cutoffs?.get(uid), 0L)
     if ((snapshot.get("deletedFor") as? List<*>)?.contains(uid) == true) return null
     val other = ids.firstOrNull { it != uid } ?: return null
-    val user = _users.value.find { it.uid == other } ?: User(uid = other, displayName = "Contact")
+    val user = _users.value.find { it.uid == other }
+      ?: _conversations.value.find { it.id == snapshot.id }?.otherUser
+      ?: pendingPeers[snapshot.id]
+      ?: User(uid = other, displayName = "Contact")
     pendingPeers[snapshot.id] = user
     fun flag(name: String) = (snapshot.get(name) as? List<*>)?.contains(uid) == true
     val lastId = snapshot.safeString("lastMessageId")
@@ -1194,8 +1204,10 @@ class ChatRepository(
 
               // Preserve already-loaded older pages when the fixed recent window shifts because
               // a new realtime message arrived. This prevents old rows disappearing/reappearing.
+              val preserveCachedHistory =
+                snapshot.metadata.isFromCache || extraDocument != null || cid in historyPagingStarted
               val carriedOlder = existing.filter { message ->
-                extraDocument != null &&
+                preserveCachedHistory &&
                   message.status != MessageDeliveryStatus.SENDING &&
                   message.status != MessageDeliveryStatus.FAILED &&
                   message.id !in sourceIds &&
@@ -1359,7 +1371,6 @@ class ChatRepository(
       isPinned = snapshot.safeBoolean("isPinned"),
       isStarred = prefs.getBoolean("star:$account:${snapshot.id}", false),
       expiresAt = expires,
-      encryptionUnavailable = false,
       reactions = (snapshot.get("reactions") as? List<*>)?.mapNotNull {
         val reaction = it as? Map<*, *> ?: return@mapNotNull null
         MessageReaction(
