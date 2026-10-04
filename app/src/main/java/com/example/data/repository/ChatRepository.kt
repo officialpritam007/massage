@@ -769,6 +769,7 @@ class ChatRepository(
     restoreAppearance(account)
 
     scope.launch { runCatching { com.example.notifications.NotificationTokenStore.register(LiquidApi.context) } }
+    scope.launch { hydrateConversationListCache(account) }
 
     listeners += db.document("users/$account").addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
       if (error != null) {
@@ -848,6 +849,7 @@ class ChatRepository(
               lastMessageIds[current.id]?.isNotBlank() == true && current.lastMessageTime > prior.lastMessageTime
           }.forEach { com.example.notifications.MessageNotificationWorker.enqueue(LiquidApi.context, account, it.id, lastMessageIds[it.id].orEmpty()) }
           _conversations.value = next
+          cacheConversations(next)
           val active = next.map { it.id }.toSet()
           messageListeners.keys.filter { it !in active }.toList().forEach {
             messageListeners.remove(it)?.remove()
@@ -1144,6 +1146,10 @@ class ChatRepository(
 
   fun observeConversation(cid: String) {
     if (uid.isBlank()) return
+    val account = uid
+    if (_messages.value[cid].orEmpty().isEmpty()) {
+      scope.launch { hydrateMessageCache(cid, account) }
+    }
     if (_conversations.value.none { it.id == cid }) {
       val peer = pendingPeers[cid]?.uid ?: return
       if (conversationSetupJobs[cid]?.isActive == true) return
@@ -1205,22 +1211,10 @@ class ChatRepository(
               _historyLoading.update { it + (cid to false) }
 
               val existing = _messages.value[cid].orEmpty()
-              val existingById = existing.associateBy { it.id }
-              val decodedRecent = withContext(Dispatchers.Default) {
+              val recent = withContext(Dispatchers.Default) {
                 pageDocuments.mapNotNull { doc -> runCatching { toMessage(cid, doc, account) }.getOrNull() }
               }.filterNot { message -> (cid + ":" + message.id) in deleteTombstones }.sortedBy { it.createdAt }
               if (uid != account) return@launch
-
-              val recent = decodedRecent.mapNotNull { candidate ->
-                val peerKeyReady = candidate.senderId == account ||
-                  _users.value.firstOrNull { it.uid == candidate.senderId }?.e2eeKeyId.orEmpty().isNotBlank()
-                stabilizeDecodedMessage(
-                  candidate = candidate,
-                  previous = existingById[candidate.id],
-                  accountId = account,
-                  peerKeyReady = peerKeyReady
-                )
-              }
               val sourceIds = pageDocuments.map { it.id }.toSet()
               val recentIds = recent.asSequence().map { it.id }.toSet()
               val oldestRecentTime = recent.firstOrNull()?.createdAt ?: Long.MAX_VALUE
@@ -1247,6 +1241,7 @@ class ChatRepository(
                 .sortedBy { it.createdAt }
 
               _messages.update { it + (cid to merged) }
+              cacheMessages(cid, merged)
               recent.filter { it.senderId != uid && it.status == MessageDeliveryStatus.SENT }
                 .forEach { receipt(cid, it.id, if (visibleConversation == cid && _privacy.value.readReceipts) "READ" else "DELIVERED") }
               markSyncHealthy("Messages")
