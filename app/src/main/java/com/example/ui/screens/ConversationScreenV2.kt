@@ -573,9 +573,13 @@ fun ConversationScreenV2(
         }
     }
 
-    val filtered = messages.filter { query.isBlank() || it.text.contains(query, ignoreCase = true) }
-    val morphMessage = filtered.firstOrNull { it.id == morphId }
-    val rows = filtered.filterNot { it.id == morphId || it.id in locallyHiddenDeletes }
+    val filtered = remember(messages, query) {
+        messages.filter { query.isBlank() || it.text.contains(query, ignoreCase = true) }
+    }
+    val morphMessage = remember(filtered, morphId) { filtered.firstOrNull { it.id == morphId } }
+    val rows = remember(filtered, morphId, locallyHiddenDeletes) {
+        filtered.filterNot { it.id == morphId || it.id in locallyHiddenDeletes }
+    }
     val latestRemoteId = rows.lastOrNull { it.senderId != me.uid && !it.isDeleted }?.id
 
     LaunchedEffect(messages.map { it.id }, locallyHiddenDeletes) {
@@ -1140,7 +1144,11 @@ fun ConversationScreenV2(
                             }
                         }
                     }
-                    itemsIndexed(rows, key = { _, item -> item.id }) { _, message ->
+                    itemsIndexed(
+                        items = rows,
+                        key = { _, item -> item.id },
+                        contentType = { _, item -> item.type }
+                    ) { _, message ->
                         if (message.id == unreadAnchorId) UnreadSeparatorV2()
                         Box(
                             Modifier
