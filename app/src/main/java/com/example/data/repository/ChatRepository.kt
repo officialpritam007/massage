@@ -5,6 +5,7 @@ import com.example.data.local.AccountDataWiper
 import com.example.data.local.LiquidChatDatabase
 import com.example.data.local.entity.ConversationEntity
 import com.example.data.local.entity.MessageEntity
+import com.example.data.local.entity.OutboxMessageEntity
 import com.example.data.model.*
 import com.example.data.network.LiquidApi
 import com.google.firebase.Timestamp
@@ -259,7 +260,10 @@ class ChatRepository(
     val cached = withContext(Dispatchers.IO) {
       LiquidChatDatabase.getDatabase(LiquidApi.context).messageDao().getMessagesForConversationOnce(cid)
     }.map { it.toModel() }
-      .filter { it.expiresAt == null || it.expiresAt > System.currentTimeMillis() }
+      .filter {
+        val cutoff = deletedBefore[cid] ?: prefs.getLong("deletedBefore:$account:$cid", 0L)
+        it.createdAt > cutoff && (it.expiresAt == null || it.expiresAt > System.currentTimeMillis())
+      }
       .distinctBy { it.id }
       .sortedBy { it.createdAt }
 
@@ -884,7 +888,10 @@ class ChatRepository(
         }
       }
 
-    restoreOutbox()
+    scope.launch {
+      restoreOutbox()
+      flushOutbox()
+    }
     outboxJob = scope.launch {
       while (isActive && uid == account) {
         flushOutbox()
@@ -1026,7 +1033,9 @@ class ChatRepository(
     val ids = (snapshot.get("participantIds") as? List<*>)?.filterIsInstance<String>().orEmpty()
     if (ids.size != 2) return null
     val cutoffs = snapshot.get("deletedBefore") as? Map<*, *>
-    deletedBefore[snapshot.id] = anyLong(cutoffs?.get(uid), 0L)
+    val cutoff = anyLong(cutoffs?.get(uid), 0L)
+    deletedBefore[snapshot.id] = cutoff
+    if (cutoff > 0L) prefs.edit().putLong("deletedBefore:$uid:${snapshot.id}", cutoff).apply()
     if ((snapshot.get("deletedFor") as? List<*>)?.contains(uid) == true) return null
     val other = ids.firstOrNull { it != uid } ?: return null
     val user = _users.value.find { it.uid == other }
@@ -1714,7 +1723,6 @@ class ChatRepository(
     }
     cacheMessage(message)
     persist(message)
-    scope.launch { flushOutbox() }
     setTyping(conversationId, false)
   }
 
@@ -1738,14 +1746,61 @@ class ChatRepository(
   ))
 
   private fun persist(message: Message) {
-    prefs.edit().putString("outbox:$uid:${message.id}", json(message).toString()).apply()
+    val account = uid
+    if (account.isBlank()) return
+    val payload = json(message).toString()
+    scope.launch {
+      withContext(Dispatchers.IO) {
+        LiquidChatDatabase.getDatabase(LiquidApi.context).outboxDao().enqueue(
+          OutboxMessageEntity(
+            messageId = message.id,
+            accountId = account,
+            conversationId = message.conversationId,
+            payloadJson = payload,
+            createdAt = message.createdAt
+          )
+        )
+      }
+      if (uid == account) flushOutbox()
+    }
   }
 
-  private fun restoreOutbox() {
-    prefs.all.filterKeys { it.startsWith("outbox:$uid:") }.values.forEach { raw ->
+  private suspend fun restoreOutbox() {
+    val account = uid
+    if (account.isBlank()) return
+
+    // One-time migration from the older unordered SharedPreferences outbox.
+    val legacy = prefs.all.filterKeys { it.startsWith("outbox:$account:") }
+    if (legacy.isNotEmpty()) {
+      withContext(Dispatchers.IO) {
+        val dao = LiquidChatDatabase.getDatabase(LiquidApi.context).outboxDao()
+        legacy.values.forEach { raw ->
+          runCatching {
+            val json = JSONObject(raw as String)
+            dao.enqueue(
+              OutboxMessageEntity(
+                messageId = json.getString("id"),
+                accountId = account,
+                conversationId = json.getString("conversationId"),
+                payloadJson = json.toString(),
+                createdAt = json.optLong("createdAt", System.currentTimeMillis())
+              )
+            )
+          }
+        }
+      }
+      val editor = prefs.edit()
+      legacy.keys.forEach(editor::remove)
+      editor.apply()
+    }
+
+    val rows = withContext(Dispatchers.IO) {
+      LiquidChatDatabase.getDatabase(LiquidApi.context).outboxDao().getForAccount(account)
+    }
+    rows.forEach { row ->
       runCatching {
-        val j = JSONObject(raw as String)
-        val cid = j.getString("conversationId")
+        val j = JSONObject(row.payloadJson)
+        val cid = row.conversationId
         val otherUid = j.optString("otherUid").takeIf { it.isNotBlank() }
         if (_conversations.value.none { it.id == cid }) {
           if (otherUid == null) return@runCatching
@@ -1753,19 +1808,24 @@ class ChatRepository(
             ?: User(uid = otherUid, displayName = "Contact")
         }
         val message = Message(
-          id = j.getString("id"),
+          id = row.messageId,
           conversationId = cid,
-          senderId = uid,
-          text = j.getString("text"),
-          type = MessageType.valueOf(j.getString("type")),
+          senderId = account,
+          senderName = _currentUser.value.displayName,
+          text = j.optString("text"),
+          type = runCatching { MessageType.valueOf(j.optString("type", "TEXT")) }.getOrDefault(MessageType.TEXT),
           mediaUrl = j.optString("mediaUrl"),
           voiceDurationSeconds = j.optInt("voiceDurationSeconds"),
           waveform = jsonWaveform(j.optJSONArray("waveform")),
-          createdAt = j.optLong("createdAt"),
-          status = MessageDeliveryStatus.SENDING
+          createdAt = row.createdAt,
+          replyToId = j.optString("replyToId").takeIf { it.isNotBlank() },
+          replyToText = j.optString("replyToText").takeIf { it.isNotBlank() },
+          replyToSender = j.optString("replyToSender").takeIf { it.isNotBlank() },
+          status = if (row.state == "FAILED") MessageDeliveryStatus.FAILED else MessageDeliveryStatus.SENDING
         )
+        if (row.state == "FAILED") failed += row.messageId
         _messages.update {
-          it + (cid to (it[cid].orEmpty().filterNot { saved -> saved.id == message.id } + message))
+          it + (cid to (it[cid].orEmpty().filterNot { saved -> saved.id == message.id } + message).sortedBy { saved -> saved.createdAt })
         }
         cacheMessage(message)
       }
@@ -1782,7 +1842,10 @@ class ChatRepository(
         runCatching { db.enableNetwork().await() }
         delay(delayMs)
         flushOutbox()
-        val stillPending = prefs.all.keys.any { it.startsWith("outbox:$account:") }
+        val stillPending = withContext(Dispatchers.IO) {
+          LiquidChatDatabase.getDatabase(LiquidApi.context).outboxDao()
+            .getForAccount(account).any { it.state == "PENDING" }
+        }
         if (!stillPending) return@launch
         delayMs = (delayMs * 2).coerceAtMost(8_000L)
       }
@@ -1793,18 +1856,20 @@ class ChatRepository(
     if (uid.isBlank() || deletingAccount || cleanupQueued || quotaPaused || !sending.tryLock()) return
     val account = uid
     try {
-      for ((key, raw) in prefs.all.filterKeys { it.startsWith("outbox:$account:") }) {
+      val outboxDao = LiquidChatDatabase.getDatabase(LiquidApi.context).outboxDao()
+      val rows = withContext(Dispatchers.IO) { outboxDao.getForAccount(account) }
+      for (row in rows) {
         if (uid != account) break
-        val j = JSONObject(raw as String)
-        val id = j.getString("id")
-        if (id in failed) continue
-        val cid = j.getString("conversationId")
+        if (row.state == "FAILED") continue
+        val j = JSONObject(row.payloadJson)
+        val id = row.messageId
+        val cid = row.conversationId
         val knownConversation = _conversations.value.any { it.id == cid }
         val otherUid = j.optString("otherUid").takeIf { it.isNotBlank() }
           ?: pendingPeers[cid]?.uid?.takeIf { it.isNotBlank() }
         if (!knownConversation && otherUid == null) {
           // Corrupt/legacy outbox entry: there is no safe recipient to send to.
-          prefs.edit().remove(key).apply()
+          withContext(Dispatchers.IO) { outboxDao.deleteByMessageId(id) }
           continue
         }
         if (!knownConversation && otherUid != null) {
@@ -1815,7 +1880,7 @@ class ChatRepository(
         if (data["otherUid"] == null && otherUid != null) data["otherUid"] = otherUid
         try {
           if ((cid + ":" + id) in deleteTombstones) {
-            prefs.edit().remove(key).apply()
+            withContext(Dispatchers.IO) { outboxDao.deleteByMessageId(id) }
             removeLocalMessage(cid, id)
             continue
           }
@@ -1825,6 +1890,7 @@ class ChatRepository(
             }
           } catch (timeout: TimeoutCancellationException) {
             failed -= id
+            withContext(Dispatchers.IO) { outboxDao.updateState(id, "PENDING", "timeout") }
             updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.SENDING) }
             if (_syncWarning.value?.startsWith("Message:") == true ||
               _syncWarning.value?.startsWith("Message queued") == true
@@ -1834,7 +1900,7 @@ class ChatRepository(
             scheduleOutboxRetry(account)
             break
           }
-          prefs.edit().remove(key).apply()
+          withContext(Dispatchers.IO) { outboxDao.deleteByMessageId(id) }
           failed -= id
           if (!created) {
             removeLocalMessage(cid, id)
@@ -1848,6 +1914,7 @@ class ChatRepository(
           if (code == FirebaseFirestoreException.Code.RESOURCE_EXHAUSTED) {
             reportSnapshotFailure("Messages", e)
             failed -= id
+            withContext(Dispatchers.IO) { outboxDao.updateState(id, "PENDING", e.message.orEmpty().take(300)) }
             updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.SENDING) }
             break
           }
@@ -1858,6 +1925,7 @@ class ChatRepository(
             )
           ) {
             failed -= id
+            withContext(Dispatchers.IO) { outboxDao.updateState(id, "PENDING", e.message.orEmpty().take(300)) }
             updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.SENDING) }
             // The bubble status is enough feedback. A transient Firestore transport
             // failure is not surfaced as a permanent error banner.
@@ -1870,6 +1938,7 @@ class ChatRepository(
             break
           }
           failed += id
+          withContext(Dispatchers.IO) { outboxDao.updateState(id, "FAILED", e.message.orEmpty().take(300)) }
           updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.FAILED) }
           _syncWarning.value = "Message: " + friendlyError(e)
         }
@@ -1882,7 +1951,12 @@ class ChatRepository(
   fun retryMessage(cid: String, id: String) {
     failed -= id
     updateLocal(cid, id) { it.copy(status = MessageDeliveryStatus.SENDING) }
-    scope.launch { flushOutbox() }
+    scope.launch {
+      withContext(Dispatchers.IO) {
+        LiquidChatDatabase.getDatabase(LiquidApi.context).outboxDao().markPending(id)
+      }
+      flushOutbox()
+    }
   }
 
   private fun updateLocal(cid: String, id: String, transform: (Message) -> Message) {
@@ -1901,6 +1975,9 @@ class ChatRepository(
     // Keep hidden:<uid>:<id> when present. Delete-for-me uses it as a durable
     // local tombstone until the optional backend can migrate it cross-device.
     prefs.edit().remove("outbox:$uid:$id").remove("star:$uid:$id").apply()
+    scope.launch(Dispatchers.IO) {
+      runCatching { LiquidChatDatabase.getDatabase(LiquidApi.context).outboxDao().deleteByMessageId(id) }
+    }
     _messages.update { map -> map + (cid to map[cid].orEmpty().filterNot { it.id == id }) }
     removeCachedMessage(id)
   }
@@ -2206,9 +2283,18 @@ class ChatRepository(
     messageListeners.remove(cid)?.remove()
     presenceListeners.remove(cid)?.remove()
     deletedBefore[cid] = now
+    withContext(Dispatchers.IO) {
+      val localDb = LiquidChatDatabase.getDatabase(LiquidApi.context)
+      localDb.messageDao().clearConversation(cid)
+      localDb.conversationDao().deleteConversation(cid)
+      localDb.outboxDao().deleteForConversation(cid)
+    }
     _conversations.update { list -> list.filterNot { it.id == cid } }
     _messages.update { map -> map - cid }
-    val edit = prefs.edit().remove("draft:$uid:$cid").remove("wallpaper:$uid:$cid")
+    val edit = prefs.edit()
+      .putLong("deletedBefore:$uid:$cid", now)
+      .remove("draft:$uid:$cid")
+      .remove("wallpaper:$uid:$cid")
     messageIds.forEach { id -> edit.remove("star:$uid:$id").remove("outbox:$uid:$id").remove("hidden:$uid:$id") }
     prefs.all.filterKeys { it.startsWith("outbox:$uid:") }.forEach { (key, raw) ->
       runCatching {
