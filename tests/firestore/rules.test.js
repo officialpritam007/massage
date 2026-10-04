@@ -304,6 +304,20 @@ test('participants can create valid plaintext text messages', async () => {
   ));
 });
 
+test('new text writes reject empty bodies and encrypted envelopes', async () => {
+  const alice = env.authenticatedContext('alice').firestore();
+
+  await assertFails(setDoc(
+    doc(alice, 'conversations/pair/messages/empty-plaintext'),
+    baseMessage({text: ''})
+  ));
+
+  await assertFails(setDoc(
+    doc(alice, 'conversations/pair/messages/new-encrypted'),
+    {...baseMessage({text: ''}), e2ee}
+  ));
+});
+
 test('atomic message send batch can update plaintext preview and unread count', async () => {
   const alice = env.authenticatedContext('alice').firestore();
   const cid = 'atomic-send';
