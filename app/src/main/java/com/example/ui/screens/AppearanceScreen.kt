@@ -121,6 +121,12 @@ fun AppearanceScreen(viewModel: LiquidChatViewModel, onBackClick: () -> Unit) {
         onCheckedChange = { viewModel.updateAppearance(appearance.copy(isReducedMotion = it)) }
       )
 
+      AppearanceToggleCard(
+        title = "Reduce transparency",
+        checked = appearance.isReducedTransparency,
+        onCheckedChange = { viewModel.updateAppearance(appearance.copy(isReducedTransparency = it)) }
+      )
+
       GlassButton(
         "Restore balanced glass",
         {
@@ -132,7 +138,8 @@ fun AppearanceScreen(viewModel: LiquidChatViewModel, onBackClick: () -> Unit) {
               cornerRadiusDp = 30f,
               borderStrength = 0.70f,
               accentColorHex = "#00E39C",
-              isReducedMotion = appearance.isReducedMotion
+              isReducedMotion = appearance.isReducedMotion,
+              isReducedTransparency = appearance.isReducedTransparency
             )
           )
         },

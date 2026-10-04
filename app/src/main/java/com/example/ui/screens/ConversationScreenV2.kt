@@ -907,7 +907,7 @@ fun ConversationScreenV2(
                                     singleLine = false,
                                     maxLines = 5,
                                     shape = liquidRoundedShape(22f),
-                                    minHeight = 40.dp,
+                                    minHeight = 48.dp,
                                     horizontalPadding = 11.dp,
                                     verticalPadding = 7.dp
                                 )
@@ -934,7 +934,7 @@ fun ConversationScreenV2(
                                             val micY = if (recording && !locked) dy.coerceIn(-120f, 0f) else 0f
                                             Box(
                                                 Modifier
-                                                    .size(36.dp)
+                                                    .size(48.dp)
                                                     .offset { IntOffset(micX.roundToInt(), micY.roundToInt()) }
                                                     .liquidPressFeedback(pressedScale = .95f, enabled = !config.isReducedMotion)
                                                     .clip(CircleShape)
@@ -944,44 +944,54 @@ fun ConversationScreenV2(
                                                     )
                                                     .then(
                                                         if (recordPermissionGranted) {
-                                                            Modifier.pointerInput(other.uid, blocked, recordPermissionGranted) {
-                                                                detectDragGesturesAfterLongPress(
-                                                                    onDragStart = {
-                                                                        dx = 0f
-                                                                        dy = 0f
-                                                                        locked = false
-                                                                        keyboard?.hide()
-                                                                        focus.clearFocus()
-                                                                        requestCurrent()
-                                                                    },
-                                                                    onDragEnd = {
-                                                                        if (recordingCurrent && !lockedCurrent) finishCurrent(true, true)
-                                                                        dx = 0f
-                                                                        dy = 0f
-                                                                    },
-                                                                    onDragCancel = {
-                                                                        if (recordingCurrent && !lockedCurrent) finishCurrent(false, false)
-                                                                        dx = 0f
-                                                                        dy = 0f
-                                                                    },
-                                                                    onDrag = { change, amount ->
-                                                                        change.consume()
-                                                                        dx += amount.x
-                                                                        dy += amount.y
-                                                                        if (dx < -100f && recordingCurrent) {
-                                                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                                            finishCurrent(false, false)
+                                                            Modifier
+                                                                .pointerInput(other.uid, blocked, recordPermissionGranted) {
+                                                                    detectDragGesturesAfterLongPress(
+                                                                        onDragStart = {
                                                                             dx = 0f
                                                                             dy = 0f
-                                                                        } else if (dy < -100f && recordingCurrent && !lockedCurrent) {
-                                                                            locked = true
+                                                                            locked = false
+                                                                            keyboard?.hide()
+                                                                            focus.clearFocus()
+                                                                            requestCurrent()
+                                                                        },
+                                                                        onDragEnd = {
+                                                                            if (recordingCurrent && !lockedCurrent) finishCurrent(true, true)
                                                                             dx = 0f
                                                                             dy = 0f
-                                                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                                        },
+                                                                        onDragCancel = {
+                                                                            if (recordingCurrent && !lockedCurrent) finishCurrent(false, false)
+                                                                            dx = 0f
+                                                                            dy = 0f
+                                                                        },
+                                                                        onDrag = { change, amount ->
+                                                                            change.consume()
+                                                                            dx += amount.x
+                                                                            dy += amount.y
+                                                                            if (dx < -100f && recordingCurrent) {
+                                                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                                                finishCurrent(false, false)
+                                                                                dx = 0f
+                                                                                dy = 0f
+                                                                            } else if (dy < -100f && recordingCurrent && !lockedCurrent) {
+                                                                                locked = true
+                                                                                dx = 0f
+                                                                                dy = 0f
+                                                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                                            }
                                                                         }
-                                                                    }
-                                                                )
-                                                            }
+                                                                    )
+                                                                }
+                                                                .clickable(
+                                                                    interactionSource = micPermissionInteraction,
+                                                                    indication = null
+                                                                ) {
+                                                                    keyboard?.hide()
+                                                                    focus.clearFocus()
+                                                                    if (recordingCurrent) finishCurrent(true, false)
+                                                                    else requestCurrent()
+                                                                }
                                                         } else {
                                                             Modifier.clickable(
                                                                 interactionSource = micPermissionInteraction,
@@ -995,7 +1005,7 @@ fun ConversationScreenV2(
                                             ) {
                                                 Icon(
                                                     Icons.Default.Mic,
-                                                    "Press and hold to record",
+                                                    if (recording) "Stop recording" else "Start recording",
                                                     Modifier.size(20.dp),
                                                     tint = MaterialTheme.colorScheme.onSurface
                                                 )
@@ -1019,7 +1029,7 @@ fun ConversationScreenV2(
                                                     reply = null
                                                 }
                                             },
-                                            tint = Color.White,
+                                            tint = MaterialTheme.colorScheme.onPrimary,
                                             backgroundColor = config.accentColor.copy(alpha = .92f),
                                             size = 36.dp
                                         )
@@ -1105,7 +1115,7 @@ fun ConversationScreenV2(
                     SmallFloatingActionButton(onClick = {
                         stickToBottom = true
                         scope.launch { listState.animateScrollToItem((listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)) }
-                    }, modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp)) { Icon(Icons.Default.KeyboardArrowDown, "Jump to newest") }
+                    }, modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp).size(48.dp)) { Icon(Icons.Default.KeyboardArrowDown, "Jump to newest") }
                 }
             }
         }

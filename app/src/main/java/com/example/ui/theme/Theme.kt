@@ -19,6 +19,7 @@ data class LiquidGlassConfig(
   val accentColor: Color = CyanAccent,
   val isGlassEnabled: Boolean = true,
   val isReducedMotion: Boolean = false,
+  val isReducedTransparency: Boolean = false,
   val isDark: Boolean = true
 )
 

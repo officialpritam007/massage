@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -233,13 +234,13 @@ fun MessageBubbleV2(
             Box(
                 Modifier
                     .shadow(
-                        elevation = if (effectiveHighlighted) 7.dp else 2.dp,
+                        elevation = if (effectiveHighlighted) 6.dp else 0.dp,
                         shape = shape,
                         clip = false
                     )
                     .clip(shape)
                     .background(bg)
-                    .border(1.dp, borderColor, shape)
+                    .border(0.5.dp, borderColor.copy(alpha = borderColor.alpha * .72f), shape)
             ) {
                 Column(
                     Modifier
@@ -377,14 +378,21 @@ fun MessageBubbleV2(
                         .clip(reactionShape)
                         .background(if (config.isDark) Color(0xFF142A31).copy(alpha = .82f) else Color.White.copy(alpha = .76f))
                         .border(
-                            1.dp,
-                            if (config.isDark) Color.White.copy(alpha = .10f) else Color.White.copy(alpha = .62f),
+                            0.5.dp,
+                            if (config.isDark) Color.White.copy(alpha = .08f) else Color.White.copy(alpha = .42f),
                             reactionShape
                         )
                 ) {
                     Row(Modifier.padding(horizontal = 7.dp, vertical = 3.dp)) {
                         message.reactions.forEach { reaction ->
-                            Text("${reaction.emoji} ${reaction.userIds.size}", Modifier.clickable { onReaction(reaction.emoji) }.padding(horizontal = 3.dp), fontSize = 12.sp)
+                            Text(
+                                "${reaction.emoji} ${reaction.userIds.size}",
+                                Modifier
+                                    .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                                    .clickable { onReaction(reaction.emoji) }
+                                    .padding(horizontal = 8.dp, vertical = 12.dp),
+                                fontSize = 12.sp
+                            )
                         }
                     }
                 }
@@ -408,18 +416,18 @@ private fun MessageMetaV2(
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (message.isStarred) {
-            Text("★", fontSize = 9.sp, color = metaColor)
+            Text("★", fontSize = 11.sp, color = metaColor)
         }
         if (message.isEdited) {
             Text(
                 "edited",
-                fontSize = 9.sp,
+                fontSize = 11.sp,
                 color = metaColor.copy(alpha = .86f)
             )
         }
         Text(
             SimpleDateFormat("h:mm", Locale.getDefault()).format(Date(message.createdAt)),
-            fontSize = 9.sp,
+            fontSize = 12.sp,
             color = metaColor
         )
         if (isMe) {
@@ -447,7 +455,7 @@ private fun MessageMetaV2(
                 Icon(
                     icon,
                     status.name,
-                    Modifier.size(12.dp),
+                    Modifier.size(14.dp),
                     tint = if (status == MessageDeliveryStatus.READ) {
                         Color(0xFF73E4FF)
                     } else {

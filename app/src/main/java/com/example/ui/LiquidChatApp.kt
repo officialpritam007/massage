@@ -83,7 +83,9 @@ fun LiquidChatApp(
     } catch (_: Exception) {
       Color(0xFF00E39C)
     },
+    isGlassEnabled = !appearance.isReducedTransparency,
     isReducedMotion = appearance.isReducedMotion,
+    isReducedTransparency = appearance.isReducedTransparency,
     isDark = referenceDark
   )
 

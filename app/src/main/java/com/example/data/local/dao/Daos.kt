@@ -7,6 +7,7 @@ import androidx.room.Query
 import androidx.room.Transaction
 import com.example.data.local.entity.ConversationEntity
 import com.example.data.local.entity.MessageEntity
+import com.example.data.local.entity.OutboxMessageEntity
 import com.example.data.local.entity.UserEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -77,4 +78,29 @@ interface MessageDao {
 
   @Query("DELETE FROM messages WHERE id = :id")
   suspend fun deleteMessage(id: String)
+}
+
+
+@Dao
+interface OutboxDao {
+  @Insert(onConflict = OnConflictStrategy.IGNORE)
+  suspend fun enqueue(item: OutboxMessageEntity): Long
+
+  @Query("SELECT * FROM message_outbox WHERE accountId = :accountId ORDER BY queueId ASC")
+  suspend fun getForAccount(accountId: String): List<OutboxMessageEntity>
+
+  @Query("UPDATE message_outbox SET state = :state, attemptCount = attemptCount + 1, lastError = :lastError WHERE messageId = :messageId")
+  suspend fun updateState(messageId: String, state: String, lastError: String = "")
+
+  @Query("UPDATE message_outbox SET state = 'PENDING', lastError = '' WHERE messageId = :messageId")
+  suspend fun markPending(messageId: String)
+
+  @Query("DELETE FROM message_outbox WHERE messageId = :messageId")
+  suspend fun deleteByMessageId(messageId: String)
+
+  @Query("DELETE FROM message_outbox WHERE conversationId = :conversationId")
+  suspend fun deleteForConversation(conversationId: String)
+
+  @Query("DELETE FROM message_outbox WHERE accountId = :accountId")
+  suspend fun clearAccount(accountId: String)
 }
