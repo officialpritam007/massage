@@ -216,7 +216,7 @@ fun MessageBubbleV2(
                 .pointerInput(message.id, isMe) {
                     detectHorizontalDragGestures(
                         onDragEnd = {
-                            if (!message.encryptionUnavailable && ((isMe && drag < -58f) || (!isMe && drag > 58f))) onReply()
+                            if ((isMe && drag < -58f) || (!isMe && drag > 58f)) onReply()
                             drag = 0f
                         },
                         onDragCancel = { drag = 0f },

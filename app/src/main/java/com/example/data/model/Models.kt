@@ -27,9 +27,7 @@ data class User(
   val createdAt: Long = System.currentTimeMillis(),
   val isVerified: Boolean = false,
   val website: String = "",
-  val socialLinks: Map<String, String> = emptyMap(),
-  val e2eePublicKey: String = "",
-  val e2eeKeyId: String = ""
+  val socialLinks: Map<String, String> = emptyMap()
 )
 
 @Immutable
@@ -59,8 +57,7 @@ data class Message(
   val isDeleted: Boolean = false,
   val isPinned: Boolean = false,
   val isStarred: Boolean = false,
-  val expiresAt: Long? = null,
-  val encryptionUnavailable: Boolean = false
+  val expiresAt: Long? = null
 )
 
 @Immutable

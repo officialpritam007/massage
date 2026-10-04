@@ -19,9 +19,9 @@ A Kotlin/Jetpack Compose **1-to-1 realtime messaging app** using a zero-paid-bac
 - Sending → Sent → Delivered → Read state.
 - Reply, edit, pin, star, reactions, delete-for-me and sender-only delete-for-everyone.
 - Favorites, archive, mute, disappearing timer and chat wallpaper.
-- Text payloads retain the app's device-bound E2EE layer.
-- Chat-list previews and notifications decode locally using the same authenticated E2EE decoder as chat history. Only encrypted envelopes are stored in server summaries; notification push payloads contain message IDs.
-- Media uploads are **not E2EE** in direct unsigned mode; Cloudinary returns public delivery URLs.
+- Text messages are stored as plaintext Firestore fields and protected by Firebase Authentication plus participant-only Firestore rules.
+- Chat-list previews and notifications use the same plaintext message fields; FCM carries IDs and the app re-checks authenticated server state before displaying notifications.
+- Room provides a persistent local message cache for instant chat reopen/offline viewing. Cloudinary returns HTTPS delivery URLs for media.
 
 ## Cloudinary
 

@@ -3,7 +3,6 @@ package com.example.data.local
 import android.app.NotificationManager
 import android.content.Context
 import androidx.work.WorkManager
-import com.example.data.crypto.E2eeCrypto
 import com.example.data.network.LiquidApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -23,8 +22,6 @@ object AccountDataWiper {
     LiquidApi.clear()
     withTimeout(20_000L) { FirebaseMessaging.getInstance().deleteToken().await() }
     withTimeout(20_000L) { FirebaseInstallations.getInstance().delete().await() }
-    SecureMessageCache.clearDeviceCache(context)
-    E2eeCrypto.clearDeviceIdentities(context)
     LiquidChatDatabase.clearForLogout(context)
     for (store in listOf("liquid-private", "liquid-install", "liquid-cloudinary-assets", "liquid-startup-diagnostics")) {
       check(context.getSharedPreferences(store, 0).edit().clear().commit()) { "Local cleanup could not be saved" }

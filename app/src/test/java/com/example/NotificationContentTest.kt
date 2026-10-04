@@ -1,7 +1,6 @@
 package com.example
 
 import com.example.notifications.NotificationText
-import com.example.data.crypto.MessageContentDecoder
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -11,13 +10,13 @@ class NotificationContentTest {
     assertEquals("New message", NotificationText.body("IMAGE", "private caption", false))
   }
 
-  @Test fun decryptedTextIsShownEvenWhenItMentionsEncryption() {
+  @Test fun plaintextTextIsShownEvenWhenItMentionsEncryption() {
     assertEquals("My encrypted message arrived", NotificationText.body("TEXT", "My encrypted message arrived", true))
     assertEquals("Encrypted message", NotificationText.body("TEXT", "Encrypted message", true))
     assertEquals(240, NotificationText.body("TEXT", "x".repeat(500), true).length)
   }
 
-  @Test fun unavailableCiphertextFallsBackToUsefulMediaLabels() {
+  @Test fun missingTextFallsBackToUsefulMediaLabels() {
     assertEquals("New message", NotificationText.body("TEXT", null, true))
     assertEquals("Photo", NotificationText.body("IMAGE", null, true))
     assertEquals("Video", NotificationText.body("VIDEO", "", true))
@@ -25,11 +24,4 @@ class NotificationContentTest {
     assertEquals("Document", NotificationText.body("FILE", null, true))
   }
 
-  @Test fun editingAnyAuthenticatedEnvelopeFieldInvalidatesPreviewCache() {
-    val original = linkedMapOf<String, Any?>("e2eeCiphertext" to "old", "e2eeSignature" to "signature", "e2eeSenderKeyId" to "sender")
-    assertEquals(MessageContentDecoder.revision(original), MessageContentDecoder.revision(original.entries.reversed().associate { it.toPair() }))
-    original.keys.forEach { field ->
-      assertNotEquals(MessageContentDecoder.revision(original), MessageContentDecoder.revision(original + (field to "changed")))
-    }
-  }
 }

@@ -14,8 +14,8 @@
 - Cloudinary API secrets must never ship in Android or be committed to GitHub.
 - Direct uploads use an unsigned preset with narrow format/folder restrictions.
 - Firestore rules restrict media URLs to the configured Cloudinary environment.
-- Text messages retain the app's E2EE payload.
-- Media is not E2EE in free direct-upload mode.
+- Text messages use participant-restricted plaintext Firestore fields; no application-level E2EE layer is active.
+- Media uses Cloudinary HTTPS delivery URLs and Firestore stores only the returned URL/metadata.
 - Sender-only message deletion is enforced by Firestore rules.
 
 ## Reliability

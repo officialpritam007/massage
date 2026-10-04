@@ -1,6 +1,6 @@
 # Activating permanent account deletion
 
-Version 4.2.6 separates **Log out** from **Delete account**. Log out is a local session action that clears device caches, pending work, notifications and the device FCM registration while preserving cloud data and the device E2EE identity. Delete account remains irreversible: the app requests recent password/Google verification, queues trusted cloud cleanup, and does not report success until remote deletion is verified.
+Version 4.2.6 separates **Log out** from **Delete account**. Log out is a local session action that clears device caches, pending work, notifications and the device FCM registration while preserving cloud data. Delete account remains irreversible: the app requests recent password/Google verification, queues trusted cloud cleanup, and does not report success until remote deletion is verified.
 
 ## Configuration
 
