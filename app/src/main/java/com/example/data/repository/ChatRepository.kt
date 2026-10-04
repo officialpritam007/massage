@@ -42,6 +42,11 @@ class ChatRepository(
   private val listeners = mutableListOf<ListenerRegistration>()
   private val messageListeners = mutableMapOf<String, ListenerRegistration>()
   private val decodeJobs = mutableMapOf<String, Job>()
+  // A conversation's first realtime snapshot hydrates/reconciles the visible window once.
+  // After that, snapshots are applied as document deltas so one message/status change
+  // never rebuilds the entire chat list or rewrites the whole Room cache.
+  private val initializedMessageSnapshots = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+  private val messageSyncMutexes = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>()
   private val conversationSetupJobs = mutableMapOf<String, Job>()
   private val messageHydrationJobs = mutableMapOf<String, Job>()
   private val presenceListeners = mutableMapOf<String, ListenerRegistration>()
@@ -1319,10 +1324,13 @@ class ChatRepository(
           return@addSnapshotListener
         }
         if (snapshot != null) {
-          decodeJobs[cid]?.cancel()
           val account = uid
+          val syncMutex = messageSyncMutexes.getOrPut(cid) { kotlinx.coroutines.sync.Mutex() }
           decodeJobs[cid] = scope.launch {
+            syncMutex.lock()
             try {
+              if (uid != account) return@launch
+
               val pageDocuments = snapshot.documents.take(recentLimit.toInt())
               val extraDocument = snapshot.documents.getOrNull(recentLimit.toInt())
               if (cid !in historyPagingStarted) {
@@ -1342,47 +1350,119 @@ class ChatRepository(
               _historyLoading.update { it + (cid to false) }
 
               val existing = _messages.value[cid].orEmpty()
-              val recent = withContext(Dispatchers.Default) {
-                pageDocuments.mapNotNull { doc -> runCatching { toMessage(cid, doc, account) }.getOrNull() }
-              }.filterNot { message -> (cid + ":" + message.id) in deleteTombstones }.sortedBy { it.createdAt }
-              if (uid != account) return@launch
-              val sourceIds = pageDocuments.map { it.id }.toSet()
-              val recentIds = recent.asSequence().map { it.id }.toSet()
-              val oldestRecentTime = recent.firstOrNull()?.createdAt ?: Long.MAX_VALUE
+              val firstRealtimeSnapshot = initializedMessageSnapshots.add(cid)
+              val receiptCandidates = mutableListOf<Message>()
 
+              if (firstRealtimeSnapshot) {
+                // Decode the recent window once. Reuse equal cached Message instances so
+                // Compose keeps stable rows and does not visually "reload" the history.
+                val recent = withContext(Dispatchers.Default) {
+                  pageDocuments.mapNotNull { doc -> runCatching { toMessage(cid, doc, account) }.getOrNull() }
+                }.filterNot { message -> (cid + ":" + message.id) in deleteTombstones }
+                  .sortedBy { it.createdAt }
 
-              // Preserve already-loaded older pages when the fixed recent window shifts because
-              // a new realtime message arrived. This prevents old rows disappearing/reappearing.
-              val preserveCachedHistory =
-                snapshot.metadata.isFromCache || extraDocument != null || cid in historyPagingStarted
-              val carriedOlder = existing.filter { message ->
-                preserveCachedHistory &&
-                  message.status != MessageDeliveryStatus.SENDING &&
-                  message.status != MessageDeliveryStatus.FAILED &&
-                  message.id !in sourceIds &&
-                  message.createdAt <= oldestRecentTime &&
-                  (cid + ":" + message.id) !in deleteTombstones
+                if (uid != account) return@launch
+                val sourceIds = pageDocuments.map { it.id }.toSet()
+                val recentIds = recent.asSequence().map { it.id }.toSet()
+                val oldestRecentTime = recent.firstOrNull()?.createdAt ?: Long.MAX_VALUE
+
+                val preserveCachedHistory =
+                  snapshot.metadata.isFromCache || extraDocument != null || cid in historyPagingStarted
+                val carriedOlder = existing.filter { message ->
+                  preserveCachedHistory &&
+                    message.status != MessageDeliveryStatus.SENDING &&
+                    message.status != MessageDeliveryStatus.FAILED &&
+                    message.id !in sourceIds &&
+                    message.createdAt <= oldestRecentTime &&
+                    (cid + ":" + message.id) !in deleteTombstones
+                }
+                val pending = existing.filter {
+                  (it.status == MessageDeliveryStatus.SENDING || it.status == MessageDeliveryStatus.FAILED) &&
+                    it.id !in recentIds
+                }
+
+                val oldById = existing.associateBy { it.id }
+                val merged = (carriedOlder + recent + pending)
+                  .associateBy { it.id }
+                  .values
+                  .map { candidate -> oldById[candidate.id]?.takeIf { it == candidate } ?: candidate }
+                  .sortedBy { it.createdAt }
+
+                if (merged != existing) {
+                  _messages.update { map -> map + (cid to merged) }
+                  cacheMessages(cid, merged)
+                }
+                receiptCandidates += recent
+                reconcileCachedHistory(cid, account)
+              } else {
+                // Realtime updates after initial hydration are true deltas. Do not decode
+                // or replace the other ~60 messages when only one row changes.
+                val byId = existing.associateBy { it.id }.toMutableMap()
+                var changed = false
+
+                for (change in snapshot.documentChanges) {
+                  val id = change.document.id
+                  when (change.type) {
+                    DocumentChange.Type.ADDED,
+                    DocumentChange.Type.MODIFIED -> {
+                      val decoded = withContext(Dispatchers.Default) {
+                        runCatching { toMessage(cid, change.document, account) }.getOrNull()
+                      }?.takeUnless { message -> (cid + ":" + message.id) in deleteTombstones }
+
+                      if (uid != account) return@launch
+                      if (decoded == null) {
+                        if (byId.remove(id) != null) {
+                          changed = true
+                          removeCachedMessage(id)
+                        }
+                      } else {
+                        val previous = byId[id]
+                        val stable = previous?.takeIf { it == decoded } ?: decoded
+                        if (previous != stable) {
+                          byId[id] = stable
+                          changed = true
+                          cacheMessage(stable)
+                        }
+                        receiptCandidates += stable
+                      }
+                    }
+
+                    DocumentChange.Type.REMOVED -> {
+                      // A REMOVED change on a limited query can simply mean the oldest
+                      // document fell outside the recent window after a new message arrived.
+                      // Keep that row; explicit delete/hidden flags arrive as MODIFIED and
+                      // are removed by toMessage() above.
+                    }
+                  }
+                }
+
+                if (changed) {
+                  val merged = byId.values.sortedBy { it.createdAt }
+                  _messages.update { map ->
+                    if (map[cid].orEmpty() == merged) map else map + (cid to merged)
+                  }
+                }
               }
 
-              val pending = existing.filter {
-                (it.status == MessageDeliveryStatus.SENDING || it.status == MessageDeliveryStatus.FAILED) && it.id !in recentIds
-              }
-
-              val oldById = existing.associateBy { it.id }
-              val merged = (carriedOlder + recent + pending)
-                .associateBy { it.id }
-                .values
-                .map { candidate -> oldById[candidate.id]?.takeIf { it == candidate } ?: candidate }
-                .sortedBy { it.createdAt }
-
-              _messages.update { it + (cid to merged) }
-              cacheMessages(cid, merged)
-              reconcileCachedHistory(cid, account)
-              recent.filter { it.senderId != uid && it.status == MessageDeliveryStatus.SENT }
-                .forEach { receipt(cid, it.id, if (visibleConversation == cid && _privacy.value.readReceipts) "READ" else "DELIVERED") }
+              receiptCandidates
+                .asSequence()
+                .filter { it.senderId != uid && it.status == MessageDeliveryStatus.SENT }
+                .distinctBy { it.id }
+                .forEach {
+                  receipt(
+                    cid,
+                    it.id,
+                    if (visibleConversation == cid && _privacy.value.readReceipts) "READ" else "DELIVERED"
+                  )
+                }
               markSyncHealthy("Messages")
-            } catch (e: CancellationException) { throw e }
-            catch (e: Throwable) { reportSnapshotFailure("Messages", e) }
+            } catch (e: CancellationException) {
+              throw e
+            } catch (e: Throwable) {
+              reportSnapshotFailure("Messages", e)
+            } finally {
+              syncMutex.unlock()
+            }
           }
         }
       }
