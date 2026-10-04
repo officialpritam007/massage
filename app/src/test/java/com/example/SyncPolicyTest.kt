@@ -4,6 +4,8 @@ import com.example.data.model.AppearanceSettings
 import com.example.data.repository.PendingSetting
 import com.example.data.repository.PresenceWriteGate
 import com.example.data.repository.shouldAutoRetryOutbox
+import com.example.data.repository.shouldAttemptPresenceWrite
+import com.example.data.repository.shouldSilencePresenceFailure
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -41,6 +43,20 @@ class SyncPolicyTest {
     assertTrue(gate.shouldWrite(true, 600_001))
     assertTrue(gate.shouldWrite(true, 600_002, force = true)) // explicit privacy change
   }
+  @Test fun `presence waits for server confirmation and skips blocked peers`() {
+    assertFalse(shouldAttemptPresenceWrite(serverConfirmed = false, hasPeer = true, locallyBlocked = false))
+    assertFalse(shouldAttemptPresenceWrite(serverConfirmed = true, hasPeer = false, locallyBlocked = false))
+    assertFalse(shouldAttemptPresenceWrite(serverConfirmed = true, hasPeer = true, locallyBlocked = true))
+    assertTrue(shouldAttemptPresenceWrite(serverConfirmed = true, hasPeer = true, locallyBlocked = false))
+  }
+
+  @Test fun `blocked or deleted presence permission failures stay optional`() {
+    assertTrue(shouldSilencePresenceFailure("PERMISSION_DENIED"))
+    assertTrue(shouldSilencePresenceFailure("NOT_FOUND"))
+    assertFalse(shouldSilencePresenceFailure("UNAUTHENTICATED"))
+    assertFalse(shouldSilencePresenceFailure("UNAVAILABLE"))
+  }
+
   @Test fun `transient message transport failures remain auto retryable`() {
     assertTrue(shouldAutoRetryOutbox("UNAVAILABLE"))
     assertTrue(shouldAutoRetryOutbox("DEADLINE_EXCEEDED"))
