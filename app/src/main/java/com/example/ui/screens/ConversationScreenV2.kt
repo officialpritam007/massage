@@ -244,9 +244,6 @@ fun ConversationScreenV2(
     var voiceDraftDeleting by remember { mutableStateOf(false) }
     var voiceDraftDeleteFailed by remember { mutableStateOf(false) }
 
-    var morphId by remember(conversationId) { mutableStateOf<String?>(null) }
-    var typingAt by remember(conversationId) { mutableLongStateOf(0L) }
-    var lastRemoteId by remember(conversationId) { mutableStateOf<String?>(null) }
     var initialOpen by remember(conversationId) { mutableStateOf(true) }
     var unreadAnchorId by rememberSaveable(conversationId) { mutableStateOf<String?>(null) }
     var stickToBottom by remember(conversationId) { mutableStateOf(true) }
@@ -257,29 +254,11 @@ fun ConversationScreenV2(
 
     val nearBottom by remember { derivedStateOf { !listState.canScrollForward } }
 
-    val headerCollapsed by remember {
-        derivedStateOf {
-            listState.firstVisibleItemIndex > 1 || listState.firstVisibleItemScrollOffset > 72
-        }
-    }
-    val headerButtonSize by animateDpAsState(
-        targetValue = if (headerCollapsed) 34.dp else 38.dp,
-        animationSpec = if (config.isReducedMotion) tween(0)
-        else spring(dampingRatio = .78f, stiffness = 430f),
-        label = "header_button_size"
-    )
-    val headerAvatarSize by animateDpAsState(
-        targetValue = if (headerCollapsed) 27.dp else 30.dp,
-        animationSpec = if (config.isReducedMotion) tween(0)
-        else spring(dampingRatio = .78f, stiffness = 430f),
-        label = "header_avatar_size"
-    )
-    val headerVerticalPadding by animateDpAsState(
-        targetValue = if (headerCollapsed) 3.dp else 5.dp,
-        animationSpec = if (config.isReducedMotion) tween(0)
-        else spring(dampingRatio = .78f, stiffness = 430f),
-        label = "header_padding"
-    )
+    // Keep the Scaffold top-bar height invariant while the message list scrolls.
+    // Animating header dimensions changes content insets and creates a feedback-loop "jitter".
+    val headerButtonSize = 38.dp
+    val headerAvatarSize = 30.dp
+    val headerVerticalPadding = 5.dp
 
     fun sendVoiceDraft(draft: VoiceDraftV2) {
         if (draft.uploading || voiceDraftDeleting || !draft.file.exists() || draft.file.length() <= 0L) return
@@ -463,16 +442,6 @@ fun ConversationScreenV2(
         }
         repo.setTyping(conversationId, false)
     }
-    LaunchedEffect(conversation?.isTyping) { if (conversation?.isTyping == true) typingAt = System.currentTimeMillis() }
-    LaunchedEffect(messages.lastOrNull()?.id) {
-        val remote = messages.lastOrNull { it.senderId != me.uid }
-        if (remote != null && remote.id != lastRemoteId && remote.type == MessageType.TEXT && System.currentTimeMillis() - typingAt < 8000) {
-            morphId = remote.id
-            delay(if (config.isReducedMotion) 120 else 1050)
-            morphId = null
-        }
-        lastRemoteId = remote?.id
-    }
     LaunchedEffect(messages.size, conversation?.unreadCount) {
         if (unreadAnchorId == null) {
             val unread = conversation?.unreadCount ?: 0
@@ -489,15 +458,19 @@ fun ConversationScreenV2(
                 if (scrolling) stickToBottom = atBottom else if (atBottom) stickToBottom = true
             }
     }
-    LaunchedEffect(messages.lastOrNull()?.id, messages.size) {
+    LaunchedEffect(messages.lastOrNull()?.id) {
         if (messages.isEmpty()) return@LaunchedEffect
         val last = messages.last()
         val shouldFollow = initialOpen || last.senderId == me.uid || stickToBottom
         if (shouldFollow) {
-            delay(50)
+            // Pin to the newest row after layout. Do not start a second scroll animation:
+            // an animated scroll while LazyColumn is inserting a row is a major source of jank.
+            delay(16)
             val target = (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
-            if (config.isReducedMotion) listState.scrollToItem(target) else listState.animateScrollToItem(target)
-        } else if (last.senderId != me.uid && unreadAnchorId == null) unreadAnchorId = last.id
+            listState.scrollToItem(target)
+        } else if (last.senderId != me.uid && unreadAnchorId == null) {
+            unreadAnchorId = last.id
+        }
         initialOpen = false
     }
 
@@ -559,9 +532,8 @@ fun ConversationScreenV2(
     val filtered = remember(messages, query) {
         messages.filter { query.isBlank() || it.text.contains(query, ignoreCase = true) }
     }
-    val morphMessage = remember(filtered, morphId) { filtered.firstOrNull { it.id == morphId } }
-    val rows = remember(filtered, morphId, locallyHiddenDeletes) {
-        filtered.filterNot { it.id == morphId || it.id in locallyHiddenDeletes }
+    val rows = remember(filtered, locallyHiddenDeletes) {
+        filtered.filterNot { it.id in locallyHiddenDeletes }
     }
     val latestRemoteId = rows.lastOrNull { it.senderId != me.uid && !it.isDeleted }?.id
 
@@ -615,15 +587,13 @@ fun ConversationScreenV2(
             }
     }
 
-    LaunchedEffect(imeBottom, stickToBottom, rows.size) {
+    LaunchedEffect(imeBottom) {
         if (!stickToBottom || rows.isEmpty()) return@LaunchedEffect
-        delay(40)
+        // Keyboard movement should only keep the viewport pinned; it must not compete
+        // with the new-message effect above.
+        delay(16)
         val target = (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
-        if (config.isReducedMotion) {
-            listState.scrollToItem(target)
-        } else {
-            listState.animateScrollToItem(target)
-        }
+        listState.scrollToItem(target)
     }
 
     LaunchedEffect(messageJump, rows.size, conversationId) {
@@ -1067,16 +1037,7 @@ fun ConversationScreenV2(
                         contentType = { _, item -> item.type }
                     ) { _, message ->
                         if (message.id == unreadAnchorId) UnreadSeparatorV2()
-                        Box(
-                            Modifier
-                                .animateItem(
-                                    fadeInSpec = if (config.isReducedMotion) tween(0) else tween(170),
-                                    placementSpec = if (config.isReducedMotion) tween(0)
-                                    else spring(dampingRatio = .78f, stiffness = 390f),
-                                    fadeOutSpec = if (config.isReducedMotion) tween(0) else tween(130)
-                                )
-                                .fillMaxWidth()
-                        ) {
+                        Box(Modifier.fillMaxWidth()) {
                             MessageBubbleV2(
                                 message = message,
                                 isMe = message.senderId == me.uid,
@@ -1105,9 +1066,13 @@ fun ConversationScreenV2(
                             }
                         }
                     }
-                    item(key = "typing-morph") {
-                        AnimatedVisibility(visible = morphMessage != null || conversation?.isTyping == true, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
-                            TypingMorphBubbleV2(morphMessage, config.isReducedMotion)
+                    item(key = "typing-indicator") {
+                        AnimatedVisibility(
+                            visible = conversation?.isTyping == true,
+                            enter = fadeIn(tween(if (config.isReducedMotion) 0 else 110)),
+                            exit = fadeOut(tween(if (config.isReducedMotion) 0 else 90))
+                        ) {
+                            TypingMorphBubbleV2(null, config.isReducedMotion)
                         }
                     }
                 }
