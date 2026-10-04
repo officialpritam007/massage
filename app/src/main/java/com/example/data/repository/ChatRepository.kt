@@ -320,7 +320,8 @@ class ChatRepository(
           .onFailure { reportSnapshotFailure("Session metadata", it) }
         if (!cleanupQueued) {
           val account = uid
-          hydrateConversationListCache(account)
+          runCatching { hydrateConversationListCache(account) }
+            .onFailure { reportSnapshotFailure("Local chat cache", it) }
           if (uid == account && account.isNotBlank()) startSync()
         }
       }
@@ -1137,7 +1138,8 @@ class ChatRepository(
       if (conversationSetupJobs[cid]?.isActive == true) return
       conversationSetupJobs[cid] = scope.launch {
         try {
-          hydrateMessageCache(cid, account)
+          runCatching { hydrateMessageCache(cid, account) }
+            .onFailure { if (it !is CancellationException) reportSnapshotFailure("Local chat cache", it) }
           if (uid != account) return@launch
           ensureConversationDirect(cid, peer)
           attachConversation(cid)
