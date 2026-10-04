@@ -306,29 +306,6 @@ class ChatRepository(
       }
   }
 
-  private suspend fun ensureE2eeIdentityPublished() {
-    val account = uid
-    if (account.isBlank()) return
-    val identity = E2eeCrypto.ensureIdentity(LiquidApi.context, account)
-    val fields = mapOf(
-      "e2eePublicKey" to identity.publicKey,
-      "e2eeKeyId" to identity.keyId
-    )
-    val own = db.document("users/$account").get().await()
-    if (uid != account) return
-    val publicationKey = "publishedIdentity:$account"
-    if (own.safeString("e2eeKeyId") != identity.keyId || own.safeString("e2eePublicKey") != identity.publicKey ||
-      installPrefs.getString(publicationKey, null) != identity.keyId) {
-      // Publish both copies atomically, including a one-time repair for older
-      // versions that could stop after updating only the private profile.
-      db.batch()
-        .set(db.document("users/$account"), fields, SetOptions.merge())
-        .set(db.document("directory/$account"), fields, SetOptions.merge())
-        .commit().await()
-      installPrefs.edit().putString(publicationKey, identity.keyId).apply()
-    }
-  }
-
   private suspend fun enforceInstallationPrivacy(publishInstallation: Boolean = true) {
     val account = uid
     if (account.isBlank()) return
@@ -633,10 +610,6 @@ class ChatRepository(
     restoreAppearance(account)
 
     scope.launch { runCatching { com.example.notifications.NotificationTokenStore.register(LiquidApi.context) } }
-    scope.launch {
-      runCatching { ensureE2eeIdentityPublished() }
-        .onFailure { scheduleSyncRecovery("Encryption identity", it) }
-    }
 
     listeners += db.document("users/$account").addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
       if (error != null) {
@@ -788,21 +761,10 @@ class ChatRepository(
       if (uid != account) return@addSnapshotListener
       if (error != null) { reportSnapshotFailure("Contact", error); return@addSnapshotListener }
       if (snapshot?.exists() == true) guardSnapshot("Contact") {
-        val previousKey = _users.value.firstOrNull { it.uid == peer }?.e2eeKeyId.orEmpty()
         val user = toUser(snapshot)
         _users.update { list -> list.filterNot { it.uid == peer } + user }
         pendingPeers[cid] = user
-        peerKeyCheckedAt[peer] = System.currentTimeMillis()
         refreshUsers()
-
-        // Message snapshots commonly arrive before the peer directory snapshot. Do not leave
-        // transient "unavailable" rows on screen: when the peer identity becomes usable (or
-        // rotates), reattach only this message window so it is decoded again against the key.
-        if (user.e2eeKeyId.isNotBlank() && user.e2eeKeyId != previousKey) {
-          messageListeners.remove(cid)?.remove()
-          decodeJobs.remove(cid)?.cancel()
-          attachConversation(cid)
-        }
       }
     }
   }
@@ -1300,16 +1262,10 @@ class ChatRepository(
   private suspend fun ensureOwnDirectoryReady(account: String) {
     val directoryRef = db.document("directory/$account")
     val cachedDirectory = runCatching { directoryRef.get(Source.CACHE).await() }.getOrNull()
-    val identity = E2eeCrypto.ensureIdentity(LiquidApi.context, account)
-    val cachedIdentityReady = cachedDirectory?.exists() == true &&
-      cachedDirectory.safeString("e2eePublicKey").isNotBlank() &&
-      cachedDirectory.safeString("e2eeKeyId").isNotBlank()
-    if (cachedIdentityReady) return
+    if (cachedDirectory?.exists() == true) return
 
     val current = directoryRef.get().await()
-    val missingIdentity =
-      current.safeString("e2eePublicKey").isBlank() || current.safeString("e2eeKeyId").isBlank()
-    if (current.exists() && !missingIdentity) return
+    if (current.exists()) return
 
     val stateUser = _currentUser.value.takeIf { it.uid == account && it.displayName.isNotBlank() }
     val own = if (stateUser == null) db.document("users/$account").get().await() else null
@@ -1326,29 +1282,22 @@ class ChatRepository(
     val common = mutableMapOf<String, Any>(
       "displayName" to displayName.take(60),
       "username" to username.take(32),
-      "bio" to bio.take(160),
-      "e2eePublicKey" to identity.publicKey,
-      "e2eeKeyId" to identity.keyId
+      "bio" to bio.take(160)
     )
-    if (photo.startsWith("https://res.cloudinary.com/mthzgqhv/")) {
-      common["photoUrl"] = photo
-    }
+    if (photo.startsWith("https://res.cloudinary.com/mthzgqhv/")) common["photoUrl"] = photo
 
-    if (current.exists()) {
-      directoryRef.set(common, SetOptions.merge()).await()
-    } else {
-      directoryRef.set(
-        common + mapOf(
-          "uid" to account,
-          "createdAt" to createdAt,
-          "isOnline" to false,
-          "onlineVisible" to true,
-          "lastSeenVisible" to true,
-          "heartbeatAt" to 0L,
-          "lastSeen" to 0L
-        )
-      ).await()
-    }
+    directoryRef.set(
+      common + mapOf(
+        "uid" to account,
+        "createdAt" to createdAt,
+        "isOnline" to false,
+        "onlineVisible" to true,
+        "lastSeenVisible" to true,
+        "heartbeatAt" to 0L,
+        "lastSeen" to 0L
+      ),
+      SetOptions.merge()
+    ).await()
   }
 
   private suspend fun ensureConversationDirect(cid: String, otherUid: String) {
@@ -1411,8 +1360,7 @@ class ChatRepository(
       ?: _conversations.value.find { it.id == cid }?.otherUser?.uid
       ?: error("Contact unavailable")
 
-    val tombstone = cid + ":" + id
-    if (tombstone in deleteTombstones) return false
+    if ((cid + ":" + id) in deleteTombstones) return false
 
     val cref = db.document("conversations/$cid")
     if (cid !in serverConfirmedConversations) ensureConversationDirect(cid, otherUid)
@@ -1425,46 +1373,6 @@ class ChatRepository(
     val voiceSeconds = (data["voiceDurationSeconds"] as? Number)?.toInt()?.coerceIn(0, 600) ?: 0
     val waveform = (data["waveform"] as? List<*>)?.mapNotNull { (it as? Number)?.toFloat() }
       ?.map { it.coerceIn(.05f, 1f) }?.take(80).orEmpty()
-
-    var recipientPublicKey = ""
-    var recipientKeyId = ""
-    if (type == "TEXT" || text.isNotBlank()) {
-      val cached = _users.value.find { it.uid == otherUid }
-      val cachedKeyReady = cached?.e2eePublicKey?.isNotBlank() == true &&
-        cached.e2eeKeyId.isNotBlank()
-      val cacheFresh = now - (peerKeyCheckedAt[otherUid] ?: 0L) < 10 * 60_000L
-
-      if (cachedKeyReady && cacheFresh) {
-        recipientPublicKey = cached!!.e2eePublicKey
-        recipientKeyId = cached.e2eeKeyId
-      } else {
-        val refreshed = runCatching {
-          db.document("directory/$otherUid").get().await()
-        }
-        val recipient = refreshed.getOrNull()
-        if (recipient?.exists() == true) {
-          recipientPublicKey = recipient.safeString("e2eePublicKey")
-          recipientKeyId = recipient.safeString("e2eeKeyId")
-          val user = toUser(recipient)
-          _users.update { list -> list.filterNot { it.uid == otherUid } + user }
-          pendingPeers[cid] = user
-          peerKeyCheckedAt[otherUid] = now
-        } else if (cachedKeyReady && refreshed.exceptionOrNull()?.let {
-            shouldAutoRetryOutbox(firestoreCode(it)?.name, it is java.io.IOException, message = it.message.orEmpty())
-          } == true
-        ) {
-          // Encryption remains possible with the last verified peer key. The peer
-          // listener/contacts refresh will replace it when Firestore reconnects.
-          recipientPublicKey = cached!!.e2eePublicKey
-          recipientKeyId = cached.e2eeKeyId
-        } else {
-          refreshed.exceptionOrNull()?.let { throw it }
-        }
-      }
-      require(recipientPublicKey.isNotBlank() && recipientKeyId.isNotBlank()) {
-        "This contact must update Liquid Chat before encrypted messaging can start"
-      }
-    }
 
     val message = mutableMapOf<String, Any>(
       "senderId" to uid,
@@ -1483,66 +1391,12 @@ class ChatRepository(
       "isPinned" to false,
       "reactions" to emptyList<Map<String, Any>>()
     )
-
-    var encryptedText = false
-    if (type == "TEXT" || (mediaUrl.isBlank() && text.isNotBlank())) {
-      val encrypted = E2eeCrypto.encryptText(
-        context = LiquidApi.context,
-        uid = uid,
-        recipientPublicKeyBase64 = recipientPublicKey,
-        recipientKeyId = recipientKeyId,
-        conversationId = cid,
-        messageId = id,
-        plaintextJson = E2eeCrypto.payloadJson(
-          text = text,
-          replyToId = data["replyToId"] as? String,
-          replyToText = (data["replyToText"] as? String)?.take(500),
-          replyToSender = (data["replyToSender"] as? String)?.take(60)
-        )
-      )
-      message["text"] = ""
-      message["e2ee"] = encrypted.fields
-      encryptedText = true
-    } else if (mediaUrl.isNotBlank()) {
-      val replyId = data["replyToId"] as? String
-      val replyTextValue = (data["replyToText"] as? String)?.take(500)
-      val replySenderValue = (data["replyToSender"] as? String)?.take(60)
-      if (text.isNotBlank() || !replyId.isNullOrBlank()) {
-        require(recipientPublicKey.isNotBlank() && recipientKeyId.isNotBlank()) {
-          "Contact encryption key unavailable"
-        }
-        val encryptedMeta = E2eeCrypto.encryptText(
-          context = LiquidApi.context,
-          uid = uid,
-          recipientPublicKeyBase64 = recipientPublicKey,
-          recipientKeyId = recipientKeyId,
-          conversationId = cid,
-          messageId = id,
-          plaintextJson = E2eeCrypto.payloadJson(
-            text = text,
-            replyToId = replyId,
-            replyToText = replyTextValue,
-            replyToSender = replySenderValue
-          )
-        )
-        message["e2ee"] = encryptedMeta.fields
-      }
-      message["text"] = ""
-    } else {
-      (data["replyToId"] as? String)?.takeIf { it.isNotBlank() }?.let {
-        message["replyToId"] = it
-        message["replyToText"] = (data["replyToText"] as? String).orEmpty().take(500)
-        message["replyToSender"] = (data["replyToSender"] as? String).orEmpty().take(60)
-      }
+    (data["replyToId"] as? String)?.takeIf { it.isNotBlank() }?.let {
+      message["replyToId"] = it
+      message["replyToText"] = (data["replyToText"] as? String).orEmpty().take(500)
+      message["replyToSender"] = (data["replyToSender"] as? String).orEmpty().take(60)
     }
 
-    // Transactions require a live Firestore connection and fail immediately when
-    // the SDK briefly reports offline. A WriteBatch is persisted by Firestore and
-    // can wait for connectivity while keeping the optimistic local bubble intact.
-    //
-    // Stable message IDs make retries idempotent. If a previous batch was already
-    // accepted into Firestore's local queue, its message document is visible from
-    // CACHE; wait for that queued batch instead of incrementing unread a second time.
     val cachedExisting = runCatching { mref.get(Source.CACHE).await() }.getOrNull()
     if (cachedExisting?.exists() == true) {
       db.waitForPendingWrites().await()
@@ -1550,32 +1404,31 @@ class ChatRepository(
       if (confirmed?.exists() == true) return true
     }
 
-    val disappearingSeconds = _conversations.value
-      .firstOrNull { it.id == cid }
-      ?.disappearingSeconds
+    val disappearingSeconds = _conversations.value.firstOrNull { it.id == cid }?.disappearingSeconds
       ?: runCatching { cref.get(Source.CACHE).await().safeLong("disappearingSeconds") }.getOrDefault(0L)
+    if (disappearingSeconds > 0L) message["expiresAt"] = now + disappearingSeconds * 1000L
 
-    val finalMessage = message.toMutableMap()
-    if (disappearingSeconds > 0L) finalMessage["expiresAt"] = now + disappearingSeconds * 1000L
+    val preview = when (type) {
+      "TEXT" -> text.take(500)
+      "IMAGE" -> text.take(500).ifBlank { "Photo" }
+      "VIDEO" -> text.take(500).ifBlank { "Video" }
+      "VOICE", "AUDIO" -> "Voice message"
+      "FILE" -> text.take(500).ifBlank { "Document" }
+      else -> text.take(500).ifBlank { "Message" }
+    }
 
     suspend fun commitMessageBatch() {
       val batch = db.batch()
-      batch.set(mref, finalMessage)
+      batch.set(mref, message)
       batch.update(
         cref,
         mapOf(
           "lastMessageId" to id,
-          "lastMessageText" to when (type) {
-            "TEXT" -> if (encryptedText) "Encrypted message" else text.take(500)
-            "IMAGE" -> "Photo"
-            "VIDEO" -> "Video"
-            "VOICE", "AUDIO" -> "Voice message"
-            else -> "Document"
-          },
+          "lastMessageText" to preview,
           "lastMessageTime" to now,
           "lastMessageRevision" to now,
           "lastMessageType" to type,
-          "lastMessageE2ee" to (message["e2ee"] ?: emptyMap<String, Any>()),
+          "lastMessageE2ee" to FieldValue.delete(),
           "lastMessageSenderId" to uid,
           "unreadCounts.$otherUid" to FieldValue.increment(1),
           "deletedFor" to FieldValue.arrayRemove(uid, otherUid),
@@ -1589,9 +1442,6 @@ class ChatRepository(
     try {
       commitMessageBatch()
     } catch (t: Throwable) {
-      // A trusted cleanup/reset can race a previously confirmed conversation.
-      // The failed batch is atomic, so recreating the parent and retrying the same
-      // stable message ID cannot partially double-apply the unread increment.
       if (firestoreCode(t) != FirebaseFirestoreException.Code.NOT_FOUND) throw t
       serverConfirmedConversations.remove(cid)
       ensureConversationDirect(cid, otherUid)
@@ -2083,62 +1933,28 @@ class ChatRepository(
 
     val conversationRef = db.document("conversations/$cid")
     val conversation = conversationRef.get().await()
-    val encrypted = current.get("e2ee") is Map<*, *>
+    val existing = toMessage(cid, current)
 
-    if (encrypted) {
-      val existing = toMessage(cid, current)
-        ?: error("Message unavailable")
-      val participantIds = (conversation.get("participantIds") as? List<*>)
-        ?.filterIsInstance<String>()
-        .orEmpty()
-      val otherUid = participantIds.firstOrNull { it != uid }
-        ?: error("Contact unavailable")
-      val recipient = db.document("directory/$otherUid").get().await()
-      val recipientPublicKey = recipient.safeString("e2eePublicKey")
-      val recipientKeyId = recipient.safeString("e2eeKeyId")
-      require(recipientPublicKey.isNotBlank() && recipientKeyId.isNotBlank()) {
-        "Contact encryption key unavailable"
-      }
+    val update = mutableMapOf<String, Any>(
+      "text" to clean,
+      "isEdited" to true,
+      "e2ee" to FieldValue.delete()
+    )
+    existing?.replyToId?.let {
+      update["replyToId"] = it
+      update["replyToText"] = existing.replyToText.orEmpty().take(500)
+      update["replyToSender"] = existing.replyToSender.orEmpty().take(60)
+    }
+    ref.update(update).await()
 
-      val payload = E2eeCrypto.encryptText(
-        context = LiquidApi.context,
-        uid = uid,
-        recipientPublicKeyBase64 = recipientPublicKey,
-        recipientKeyId = recipientKeyId,
-        conversationId = cid,
-        messageId = id,
-        plaintextJson = E2eeCrypto.payloadJson(
-          text = clean,
-          replyToId = existing.replyToId,
-          replyToText = existing.replyToText,
-          replyToSender = existing.replyToSender
-        )
-      )
-
-      ref.update(
+    if (conversation.safeString("lastMessageId") == id) {
+      conversationRef.update(
         mapOf(
-          "text" to "",
-          "e2ee" to payload.fields,
-          "isEdited" to true
+          "lastMessageText" to clean.take(500),
+          "lastMessageE2ee" to FieldValue.delete(),
+          "lastMessageRevision" to System.currentTimeMillis()
         )
       ).await()
-      if (conversation.safeString("lastMessageId") == id) {
-        conversationRef.update(mapOf(
-          "lastMessageText" to "Encrypted message",
-          "lastMessageE2ee" to payload.fields,
-          "lastMessageRevision" to System.currentTimeMillis()
-        )).await()
-      }
-    } else {
-      // Legacy pre-E2EE messages remain editable without rewriting history.
-      ref.update(mapOf("text" to clean, "isEdited" to true)).await()
-      if (conversation.safeString("lastMessageId") == id) {
-        conversationRef.update(mapOf(
-          "lastMessageText" to clean.take(500),
-          "lastMessageE2ee" to emptyMap<String, Any>(),
-          "lastMessageRevision" to System.currentTimeMillis()
-        )).await()
-      }
     }
   }
 
