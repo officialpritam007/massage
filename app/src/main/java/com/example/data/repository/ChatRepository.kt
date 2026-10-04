@@ -875,6 +875,9 @@ class ChatRepository(
             val confirmed = snapshot.documents.map { it.id }.toSet()
             serverConfirmedConversations.retainAll(confirmed)
             serverConfirmedConversations.addAll(confirmed)
+            visibleConversation
+              ?.takeIf { resumed && it in confirmed }
+              ?.let { writePresenceForConversation(it, true, force = true) }
           }
           val previousById = _conversations.value.associateBy { it.id }
           if (!resumed) next.filter { current ->
@@ -1265,6 +1268,9 @@ class ChatRepository(
   }
 
   private fun attachConversation(cid: String) {
+    if (resumed && visibleConversation == cid) {
+      writePresenceForConversation(cid, true, force = true)
+    }
     // Keep a fixed recent-message realtime window. Older pages are loaded with one-shot
     // queries and merged into the same state, so loading history never tears down/restarts
     // the listener and the visible conversation does not flicker or reload.
@@ -1581,16 +1587,21 @@ class ChatRepository(
     val current = directoryRef.get().await()
     if (current.exists()) return
 
+    // Directory repair must honor the server-side privacy setting. Reading the
+    // private profile here avoids publishing a cached photo before privacy state
+    // has finished hydrating after sign-in.
+    val own = db.document("users/$account").get().await()
+    check(own.exists()) { "Your profile is not ready. Sign in again." }
     val stateUser = _currentUser.value.takeIf { it.uid == account && it.displayName.isNotBlank() }
-    val own = if (stateUser == null) db.document("users/$account").get().await() else null
-    if (stateUser == null) check(own?.exists() == true) { "Your profile is not ready. Sign in again." }
 
-    val displayName = stateUser?.displayName ?: own!!.safeString("displayName", "User")
-    val username = stateUser?.username ?: own!!.safeString("username")
-    val bio = stateUser?.bio ?: own!!.safeString("bio")
-    val photo = stateUser?.photoUrl ?: own!!.safeString("photoUrl")
+    val displayName = stateUser?.displayName ?: own.safeString("displayName", "User")
+    val username = stateUser?.username ?: own.safeString("username")
+    val bio = stateUser?.bio ?: own.safeString("bio")
+    val photo = stateUser?.photoUrl ?: own.safeString("photoUrl")
+    val privacy = own.get("privacy") as? Map<*, *>
+    val photoVisible = (privacy?.get("profilePhotoVisibility") as? String ?: "Everyone") != "Nobody"
     val createdAt = stateUser?.createdAt?.takeIf { it > 0L }
-      ?: own?.safeLong("createdAt", System.currentTimeMillis())?.takeIf { it > 0L }
+      ?: own.safeLong("createdAt", System.currentTimeMillis()).takeIf { it > 0L }
       ?: System.currentTimeMillis()
 
     val common = mutableMapOf<String, Any>(
@@ -1598,7 +1609,7 @@ class ChatRepository(
       "username" to username.take(32),
       "bio" to bio.take(160)
     )
-    if (photo.startsWith("https://res.cloudinary.com/mthzgqhv/")) common["photoUrl"] = photo
+    if (photoVisible && photo.startsWith("https://res.cloudinary.com/mthzgqhv/")) common["photoUrl"] = photo
 
     directoryRef.set(
       common + mapOf(
@@ -2500,6 +2511,15 @@ class ChatRepository(
 
   private fun writePresenceForConversation(cid: String, value: Boolean, force: Boolean = false) {
     if (uid.isBlank() || cid.isBlank() || deletingAccount || cleanupQueued || quotaPaused) return
+    val peer = _conversations.value.find { it.id == cid }?.otherUser?.uid
+      ?: pendingPeers[cid]?.uid
+    if (!shouldAttemptPresenceWrite(
+        serverConfirmed = cid in serverConfirmedConversations,
+        hasPeer = !peer.isNullOrBlank(),
+        locallyBlocked = peer != null && peer in _blockedUserIds.value
+      )
+    ) return
+
     val now = System.currentTimeMillis()
     if (!presenceGate.shouldWrite(value, now, force)) return
 
@@ -2513,7 +2533,25 @@ class ChatRepository(
         "heartbeatAt" to if (onlineVisible) now else 0L,
         "lastSeen" to if (lastSeenVisible) now else 0L
       )
-    ).addOnFailureListener { reportSnapshotFailure("Presence", it) }
+    ).addOnSuccessListener {
+      if (_syncWarning.value?.startsWith("Presence:") == true) _syncWarning.value = null
+    }.addOnFailureListener { error ->
+      val code = firestoreCode(error)?.name
+      if (shouldSilencePresenceFailure(code)) {
+        // Presence can be denied when the peer blocked us, is being deleted, or
+        // the conversation disappeared between cache hydration and the write.
+        // Messaging/rules remain authoritative; optional presence must not turn
+        // that race into a global session error banner.
+        if (_syncWarning.value?.startsWith("Presence:") == true) _syncWarning.value = null
+        _conversations.update { conversations ->
+          conversations.map { conversation ->
+            if (conversation.id == cid) conversation.copy(isOnline = false) else conversation
+          }
+        }
+      } else {
+        reportSnapshotFailure("Presence", error)
+      }
+    }
   }
 
   private suspend fun migratePublicPresence(account: String) {
