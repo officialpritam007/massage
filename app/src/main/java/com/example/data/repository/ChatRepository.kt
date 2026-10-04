@@ -242,15 +242,19 @@ class ChatRepository(
     val cached = withContext(Dispatchers.IO) {
       LiquidChatDatabase.getDatabase(LiquidApi.context).conversationDao().getAllConversationsOnce()
     }.map { it.toModel(account) }
-    if (uid == account && cached.isNotEmpty() && _conversations.value.isEmpty()) {
-      _conversations.value = cached
-      cached.forEach { pendingPeers[it.id] = it.otherUser }
+    if (uid == account && cached.isNotEmpty()) {
+      val merged = (_conversations.value + cached)
+        .associateBy { it.id }
+        .values
+        .sortedByDescending { it.lastMessageTime }
+      _conversations.value = merged
+      merged.forEach { pendingPeers[it.id] = it.otherUser }
       _loading.value = false
     }
   }
 
   private suspend fun hydrateMessageCache(cid: String, account: String) {
-    if (account.isBlank() || cid.isBlank() || _messages.value[cid].orEmpty().isNotEmpty()) return
+    if (account.isBlank() || cid.isBlank()) return
     val cached = withContext(Dispatchers.IO) {
       LiquidChatDatabase.getDatabase(LiquidApi.context).messageDao().getMessagesForConversationOnce(cid)
     }.map { it.toModel() }
@@ -258,8 +262,14 @@ class ChatRepository(
       .distinctBy { it.id }
       .sortedBy { it.createdAt }
 
-    if (uid == account && cached.isNotEmpty() && _messages.value[cid].orEmpty().isEmpty()) {
-      _messages.update { it + (cid to cached) }
+    if (uid == account && cached.isNotEmpty()) {
+      _messages.update { map ->
+        val merged = (cached + map[cid].orEmpty())
+          .associateBy { it.id }
+          .values
+          .sortedBy { it.createdAt }
+        map + (cid to merged)
+      }
     }
   }
 
