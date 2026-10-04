@@ -1044,66 +1044,39 @@ class ChatRepository(
   }
 
   private fun conversationPreview(snapshot: DocumentSnapshot): String {
-    val cid = snapshot.id
     val id = snapshot.safeString("lastMessageId")
-    val serverText = snapshot.safeString("lastMessageText")
     val account = uid
     if ((snapshot.get("hiddenLastFor") as? Map<*, *>)?.get(account) == id && id.isNotBlank()) return ""
     val cutoff = anyLong((snapshot.get("deletedBefore") as? Map<*, *>)?.get(account))
     if (cutoff > 0 && snapshot.safeLong("lastMessageTime") <= cutoff) return ""
-    if (serverText != "Encrypted message") return serverText
-    if (id.isBlank()) return "New message"
-    val sender = snapshot.safeString("lastMessageSenderId")
-    val senderKey = if (sender == account) E2eeCrypto.ensureIdentity(LiquidApi.context, account).keyId
-      else _users.value.find { it.uid == sender }?.e2eeKeyId.orEmpty()
+
+    val serverText = snapshot.safeString("lastMessageText")
+    if (serverText.isNotBlank() && serverText != "Encrypted message") return serverText
+    if (id.isBlank()) return ""
+
+    // Legacy compatibility only. New messages are stored as plaintext and never create
+    // an E2EE envelope. Old envelopes are decoded when possible without blocking sync.
     val fields = (snapshot.get("lastMessageE2ee") as? Map<*, *>)?.entries
-      ?.filter { it.key is String }?.associate { it.key as String to it.value }.orEmpty()
-    val revision = if (fields.isNotEmpty()) MessageContentDecoder.revision(fields)
-      else snapshot.safeLong("lastMessageRevision", snapshot.safeLong("lastMessageTime")).toString()
-    val token = "preview:$cid:$id:$sender:$revision"
-    previewCache[token]?.let { return it }
-    SecureMessageCache.get(LiquidApi.context, account, token)?.let { previewCache[token] = it; return it }
-    if (fields.isNotEmpty()) {
-      val decoded = MessageContentDecoder.decode(LiquidApi.context, account, cid, id, sender, fields, senderKey)
-      val text = decoded?.optString("text")?.take(500)
-      if (text != null) {
-        previewCache[token] = text
-        SecureMessageCache.put(LiquidApi.context, account, token, text)
-        return text
-      }
-      return if (senderKey.isBlank()) "New message" else "Message unavailable on this device"
+      ?.filter { it.key is String }
+      ?.associate { it.key as String to it.value }
+      .orEmpty()
+    if (fields.isEmpty()) return "Older message"
+
+    val sender = snapshot.safeString("lastMessageSenderId")
+    val senderKey = if (sender == account) {
+      runCatching { E2eeCrypto.ensureIdentity(LiquidApi.context, account).keyId }.getOrDefault("")
+    } else {
+      _users.value.find { it.uid == sender }?.e2eeKeyId.orEmpty()
     }
-    // Legacy summaries lack the encrypted envelope. Fetch only the one latest
-    // message, once per revision and contact identity; never attach a history listener.
-    val attempt = "$token:$senderKey"
-    previewFallback[attempt]?.let { return it }
-    if (!quotaPaused && !cleanupQueued && senderKey.isNotBlank() &&
-      System.currentTimeMillis() >= (previewRetryAt[attempt] ?: 0L) && previewAttempts.add(attempt)) {
-      scope.launch {
-        try {
-          val doc = db.document("conversations/$cid/messages/$id").get().await()
-          val decoded = withContext(Dispatchers.Default) { toMessage(cid, doc, account) }
-          val text = when {
-            decoded == null -> ""
-            decoded.encryptionUnavailable -> "Message unavailable on this device"
-            else -> decoded.text.take(500)
-          }
-          if (uid == account && lastMessageIds[cid] == id) {
-            if (decoded != null && !decoded.encryptionUnavailable) {
-              previewCache[token] = text
-              SecureMessageCache.put(LiquidApi.context, account, token, text)
-            } else previewFallback[attempt] = text
-            _conversations.update { list -> list.map { if (it.id == cid) it.copy(lastMessageText = text) else it } }
-          }
-        } catch (t: Throwable) {
-          if (t is CancellationException) throw t
-          previewAttempts.remove(attempt)
-          previewRetryAt[attempt] = System.currentTimeMillis() + 60_000L
-          reportSnapshotFailure("Message preview", t)
-        }
-      }
-    }
-    return "New message"
+    return MessageContentDecoder.decode(
+      LiquidApi.context,
+      account,
+      snapshot.id,
+      id,
+      sender,
+      fields,
+      senderKey
+    )?.optString("text")?.take(500)?.takeIf { it.isNotBlank() } ?: "Older message"
   }
 
   private fun refreshUsers() {
@@ -1329,23 +1302,30 @@ class ChatRepository(
 
     val createdAt = snapshot.safeLong("createdAt")
     val senderId = snapshot.safeString("senderId")
-    val currentSenderKeyId = if (senderId == account) {
-      E2eeCrypto.ensureIdentity(LiquidApi.context, account).keyId
-    } else {
-      _users.value.find { it.uid == senderId }?.e2eeKeyId.orEmpty()
-    }
-    val encryptedMap = (snapshot.get("e2ee") as? Map<*, *>)
-      ?.entries
-      ?.filter { it.key is String }
-      ?.associate { it.key as String to it.value }
+    val rawText = snapshot.safeString("text")
 
-    val decrypted = encryptedMap?.let { fields ->
-      MessageContentDecoder.decode(LiquidApi.context, account, cid, snapshot.id, senderId, fields, currentSenderKeyId)
-    }
+    val encryptedMap = if (rawText.isBlank()) {
+      (snapshot.get("e2ee") as? Map<*, *>)?.entries
+        ?.filter { it.key is String }
+        ?.associate { it.key as String to it.value }
+    } else null
 
-    val decryptedText = decrypted?.optString("text")
-      ?.takeIf { it.isNotBlank() }
-    val encryptedUnavailable = encryptedMap != null && decrypted == null
+    val legacyDecoded = encryptedMap?.let { fields ->
+      val senderKey = if (senderId == account) {
+        runCatching { E2eeCrypto.ensureIdentity(LiquidApi.context, account).keyId }.getOrDefault("")
+      } else {
+        _users.value.find { it.uid == senderId }?.e2eeKeyId.orEmpty()
+      }
+      MessageContentDecoder.decode(
+        LiquidApi.context,
+        account,
+        cid,
+        snapshot.id,
+        senderId,
+        fields,
+        senderKey
+      )
+    }
 
     val cutoff = deletedBefore[cid] ?: 0L
     if (cutoff > 0 && createdAt <= cutoff) return null
@@ -1353,40 +1333,33 @@ class ChatRepository(
     val expires = if (rawExpires == null) null else anyLong(rawExpires, 0L).takeIf { it > 0L }
     if (expires != null && expires <= System.currentTimeMillis()) return null
 
-    val readableMediaUrl = snapshot.safeString("mediaUrl")
-
     return Message(
       id = snapshot.id,
       conversationId = cid,
       senderId = senderId,
       senderName = snapshot.safeString("senderName"),
-      text = when {
-        decryptedText != null -> decryptedText
-        encryptedUnavailable -> "🔒 Message unavailable on this device"
-        else -> snapshot.safeString("text")
+      text = rawText.ifBlank {
+        legacyDecoded?.optString("text")?.takeIf { it.isNotBlank() } ?: "Older message"
       },
       type = runCatching { MessageType.valueOf(snapshot.safeString("type", "TEXT")) }.getOrDefault(MessageType.TEXT),
-      mediaUrl = readableMediaUrl,
+      mediaUrl = snapshot.safeString("mediaUrl"),
       voiceDurationSeconds = snapshot.safeLong("voiceDurationSeconds").toInt().coerceAtLeast(0),
       waveform = safeWaveform(snapshot.get("waveform")),
       createdAt = createdAt,
       status = runCatching { MessageDeliveryStatus.valueOf(snapshot.safeString("status", "SENT")) }
         .getOrDefault(MessageDeliveryStatus.SENT),
-      replyToId = decrypted?.optString("replyToId")
-        ?.takeIf { it.isNotBlank() && it != "null" }
-        ?: (snapshot.get("replyToId") as? String),
-      replyToText = decrypted?.optString("replyToText")
-        ?.takeIf { it.isNotBlank() && it != "null" }
-        ?: (snapshot.get("replyToText") as? String),
-      replyToSender = decrypted?.optString("replyToSender")
-        ?.takeIf { it.isNotBlank() && it != "null" }
-        ?: (snapshot.get("replyToSender") as? String),
+      replyToId = (snapshot.get("replyToId") as? String)
+        ?: legacyDecoded?.optString("replyToId")?.takeIf { it.isNotBlank() && it != "null" },
+      replyToText = (snapshot.get("replyToText") as? String)
+        ?: legacyDecoded?.optString("replyToText")?.takeIf { it.isNotBlank() && it != "null" },
+      replyToSender = (snapshot.get("replyToSender") as? String)
+        ?: legacyDecoded?.optString("replyToSender")?.takeIf { it.isNotBlank() && it != "null" },
       isEdited = snapshot.safeBoolean("isEdited"),
       isDeleted = snapshot.safeBoolean("isDeleted"),
       isPinned = snapshot.safeBoolean("isPinned"),
       isStarred = prefs.getBoolean("star:$account:${snapshot.id}", false),
       expiresAt = expires,
-      encryptionUnavailable = encryptedUnavailable,
+      encryptionUnavailable = false,
       reactions = (snapshot.get("reactions") as? List<*>)?.mapNotNull {
         val reaction = it as? Map<*, *> ?: return@mapNotNull null
         MessageReaction(
@@ -1635,20 +1608,21 @@ class ChatRepository(
           "lastMessageSenderId" to "",
           "lastMessageRevision" to System.currentTimeMillis(),
           "lastMessageType" to "TEXT",
-          "lastMessageE2ee" to emptyMap<String, Any>()
+          "lastMessageE2ee" to FieldValue.delete()
         )
       ).await()
       return
     }
 
     val type = latest.safeString("type", "TEXT")
+    val readableText = toMessage(cid, latest)?.text.orEmpty().take(500)
     val preview = when (type) {
-      "TEXT" -> if (latest.get("e2ee") is Map<*, *>) "Encrypted message"
-        else latest.safeString("text").take(500)
-      "IMAGE" -> "Photo"
-      "VIDEO" -> "Video"
+      "TEXT" -> readableText.ifBlank { "Older message" }
+      "IMAGE" -> readableText.ifBlank { "Photo" }
+      "VIDEO" -> readableText.ifBlank { "Video" }
       "VOICE", "AUDIO" -> "Voice message"
-      else -> "Document"
+      "FILE" -> readableText.ifBlank { "Document" }
+      else -> readableText.ifBlank { "Message" }
     }
     cref.update(
       mapOf(
@@ -1658,7 +1632,7 @@ class ChatRepository(
         "lastMessageSenderId" to latest.safeString("senderId"),
         "lastMessageRevision" to System.currentTimeMillis(),
         "lastMessageType" to type,
-        "lastMessageE2ee" to (latest.get("e2ee") ?: emptyMap<String, Any>())
+        "lastMessageE2ee" to FieldValue.delete()
       )
     ).await()
   }
