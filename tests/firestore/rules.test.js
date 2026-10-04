@@ -11,6 +11,7 @@ import {
   arrayUnion,
   doc,
   deleteDoc,
+  deleteField,
   getDoc,
   getDocs,
   increment,
@@ -60,7 +61,7 @@ function baseMessage(extra = {}) {
   return {
     senderId: 'alice',
     senderName: 'Alice',
-    text: '',
+    text: 'Hello',
     type: 'TEXT',
     mediaUrl: '',
     voiceDurationSeconds: 0,
@@ -73,7 +74,6 @@ function baseMessage(extra = {}) {
     isEdited: false,
     isPinned: false,
     reactions: [],
-    e2ee,
     ...extra
   };
 }
@@ -111,8 +111,6 @@ before(async () => {
       displayName: 'Alice',
       username: 'alice',
       bio: '',
-      e2eePublicKey: 'alice-public',
-      e2eeKeyId: 'alice-key',
       isOnline: false,
       onlineVisible: true,
       lastSeenVisible: true,
@@ -124,8 +122,6 @@ before(async () => {
       displayName: 'Bob',
       username: 'bob',
       bio: '',
-      e2eePublicKey: 'bob-public',
-      e2eeKeyId: 'bob-key',
       isOnline: false,
       onlineVisible: true,
       lastSeenVisible: true,
@@ -222,8 +218,6 @@ test('legacy owner without a public directory can repair it and start a conversa
     displayName: 'Legacy',
     username: 'legacy',
     bio: '',
-    e2eePublicKey: 'legacy-public',
-    e2eeKeyId: 'legacy-key',
     isOnline: false,
     onlineVisible: true,
     lastSeenVisible: true,
@@ -252,11 +246,10 @@ test('conversation bootstrap merge is non destructive and supports first send', 
   send.update(doc(alice, `conversations/${cid}`), {
     lastMessageId: 'm1',
     lastMessageSenderId: 'alice',
-    lastMessageText: 'Encrypted message',
+    lastMessageText: 'Hello',
     lastMessageTime: Date.now(),
     lastMessageRevision: Date.now(),
     lastMessageType: 'TEXT',
-    lastMessageE2ee: e2ee,
     'unreadCounts.bob': increment(1)
   });
   await assertSucceeds(send.commit());
@@ -293,17 +286,16 @@ test('a stale local conversation can be server-rebootstrapped before a retry sen
   send.update(doc(alice, `conversations/${cid}`), {
     lastMessageId: 'retry-1',
     lastMessageSenderId: 'alice',
-    lastMessageText: 'Encrypted message',
+    lastMessageText: 'Hello',
     lastMessageTime: Date.now(),
     lastMessageRevision: Date.now(),
     lastMessageType: 'TEXT',
-    lastMessageE2ee: e2ee,
     'unreadCounts.bob': increment(1)
   });
   await assertSucceeds(send.commit());
 });
 
-test('participants can create valid E2EE text messages', async () => {
+test('participants can create valid plaintext text messages', async () => {
   const alice = env.authenticatedContext('alice').firestore();
   await assertSucceeds(setDoc(doc(alice, 'conversations/newpair'), conversation));
   await assertSucceeds(setDoc(
@@ -312,7 +304,7 @@ test('participants can create valid E2EE text messages', async () => {
   ));
 });
 
-test('atomic message send batch can update encrypted preview and unread count', async () => {
+test('atomic message send batch can update plaintext preview and unread count', async () => {
   const alice = env.authenticatedContext('alice').firestore();
   const cid = 'atomic-send';
   await assertSucceeds(setDoc(doc(alice, `conversations/${cid}`), conversation));
@@ -322,11 +314,10 @@ test('atomic message send batch can update encrypted preview and unread count', 
   send.update(doc(alice, `conversations/${cid}`), {
     lastMessageId: 'm1',
     lastMessageSenderId: 'alice',
-    lastMessageText: 'Encrypted message',
+    lastMessageText: 'Hello',
     lastMessageTime: Date.now(),
     lastMessageRevision: Date.now(),
     lastMessageType: 'TEXT',
-    lastMessageE2ee: e2ee,
     'unreadCounts.bob': increment(1)
   });
   await assertSucceeds(send.commit());
@@ -342,8 +333,6 @@ test('direct Cloudinary media URL is allowed and arbitrary URL is rejected', asy
     type: 'IMAGE',
     mediaUrl: 'https://res.cloudinary.com/mthzgqhv/image/upload/v1/liquid-chat/photo.jpg'
   });
-  delete media.e2ee;
-
   await assertSucceeds(setDoc(
     doc(alice, 'conversations/pair/messages/photo-ok'),
     media
@@ -384,7 +373,7 @@ test('delete-for-me atomically hides the latest message and its preview, and saf
   const cid = 'delete-latest';
   await env.withSecurityRulesDisabled(async c => {
     await setDoc(doc(c.firestore(), `conversations/${cid}`), {
-      ...conversation, lastMessageId: 'last', lastMessageText: 'Encrypted message'
+      ...conversation, lastMessageId: 'last', lastMessageText: 'Hello'
     });
     await setDoc(doc(c.firestore(), `conversations/${cid}/messages/last`), baseMessage());
   });
@@ -464,27 +453,57 @@ test('signed-in user can submit a constrained report but cannot spoof reporter',
   }));
 });
 
-test('encrypted preview must match the authenticated message, including atomic sends and edits', async () => {
+test('plaintext preview references a real message and legacy encryption cannot be added', async () => {
   const alice = env.authenticatedContext('alice').firestore();
-  const cid = 'preview-envelope';
+  const cid = 'preview-plaintext';
   await setDoc(doc(alice, `conversations/${cid}`), conversation);
+
   const send = writeBatch(alice);
   send.set(doc(alice, `conversations/${cid}/messages/last`), baseMessage());
   send.update(doc(alice, `conversations/${cid}`), {
-    lastMessageId: 'last', lastMessageSenderId: 'alice',
-    lastMessageText: 'Encrypted message', lastMessageType: 'TEXT',
-    lastMessageRevision: Date.now(), lastMessageE2ee: e2ee
+    lastMessageId: 'last',
+    lastMessageSenderId: 'alice',
+    lastMessageText: 'Hello',
+    lastMessageType: 'TEXT',
+    lastMessageRevision: Date.now()
   });
   await assertSucceeds(send.commit());
+
   await assertFails(updateDoc(doc(alice, `conversations/${cid}`), {
-    lastMessageE2ee: {...e2ee, e2eeCiphertext: 'forged-summary'}
+    lastMessageId: 'missing',
+    lastMessageSenderId: 'alice',
+    lastMessageType: 'TEXT'
   }));
-  await assertFails(updateDoc(doc(alice, `conversations/${cid}`), {lastMessageId: 'missing'}));
-  const edited = {...e2ee, e2eeCiphertext: 'edited', e2eeSignature: 'new-signature'};
-  const edit = writeBatch(alice);
-  edit.update(doc(alice, `conversations/${cid}/messages/last`), {text: '', e2ee: edited, isEdited: true});
-  edit.update(doc(alice, `conversations/${cid}`), {lastMessageE2ee: edited, lastMessageRevision: Date.now()});
-  await assertSucceeds(edit.commit());
+  await assertFails(updateDoc(doc(alice, `conversations/${cid}`), {
+    lastMessageE2ee: e2ee
+  }));
+
+  await assertSucceeds(updateDoc(
+    doc(alice, `conversations/${cid}/messages/last`),
+    {text: 'Edited plaintext', isEdited: true}
+  ));
+});
+
+test('legacy encrypted message can only migrate to plaintext on sender edit', async () => {
+  const alice = env.authenticatedContext('alice').firestore();
+  const cid = 'legacy-migrate';
+  await env.withSecurityRulesDisabled(async ctx => {
+    const admin = ctx.firestore();
+    await setDoc(doc(admin, `conversations/${cid}`), conversation);
+    await setDoc(doc(admin, `conversations/${cid}/messages/legacy`), {
+      ...baseMessage({text: ''}),
+      e2ee
+    });
+  });
+
+  await assertSucceeds(updateDoc(
+    doc(alice, `conversations/${cid}/messages/legacy`),
+    {text: 'Migrated plaintext', e2ee: deleteField(), isEdited: true}
+  ));
+  await assertFails(updateDoc(
+    doc(alice, `conversations/${cid}/messages/legacy`),
+    {text: '', e2ee: {...e2ee, e2eeCiphertext: 'new-ciphertext'}, isEdited: true}
+  ));
 });
 
 test('a delivery acknowledgement cannot downgrade an already read message', async () => {
