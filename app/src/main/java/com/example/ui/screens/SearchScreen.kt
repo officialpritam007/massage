@@ -199,7 +199,7 @@ fun SearchScreen(
                 style = MaterialTheme.typography.labelSmall.copy(color = glassConfig.accentColor, fontWeight = FontWeight.Bold)
               )
             }
-            items(searchResults.users) { user ->
+            items(searchResults.users, key = { it.uid }) { user ->
               GlassCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = liquidRoundedShape(18f),
@@ -238,7 +238,7 @@ fun SearchScreen(
                 style = MaterialTheme.typography.labelSmall.copy(color = glassConfig.accentColor, fontWeight = FontWeight.Bold)
               )
             }
-            items(searchResults.conversations) { conv ->
+            items(searchResults.conversations, key = { it.id }) { conv ->
               GlassCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = liquidRoundedShape(18f),
@@ -268,7 +268,7 @@ fun SearchScreen(
                 style = MaterialTheme.typography.labelSmall.copy(color = glassConfig.accentColor, fontWeight = FontWeight.Bold)
               )
             }
-            items(searchResults.messages) { msg ->
+            items(searchResults.messages, key = { it.id }) { msg ->
               GlassCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = liquidRoundedShape(18f),
