@@ -68,7 +68,15 @@ service cloud.firestore {
         && request.resource.data.heartbeatAt is int
         && request.resource.data.lastSeen is int
         && request.resource.data.heartbeatAt <= request.time.toMillis() + 60000
-        && request.resource.data.lastSeen <= request.time.toMillis() + 60000;
+        && request.resource.data.lastSeen <= request.time.toMillis() + 60000
+        && (
+          request.resource.data.onlineVisible
+          || (request.resource.data.isOnline == false && request.resource.data.heartbeatAt == 0)
+        )
+        && (
+          request.resource.data.lastSeenVisible
+          || request.resource.data.lastSeen == 0
+        );
     }
 
     match /users/{uid} {
