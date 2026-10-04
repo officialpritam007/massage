@@ -48,6 +48,7 @@ class ChatRepository(
   private val peerPresenceListeners = mutableMapOf<String, ListenerRegistration>()
   private val historyCursors = mutableMapOf<String, DocumentSnapshot>()
   private val historyPagingStarted = mutableSetOf<String>()
+  private val historyReconciled = mutableSetOf<String>()
   private val deletedBefore = java.util.concurrent.ConcurrentHashMap<String, Long>()
   private val failed = mutableSetOf<String>()
   private val receipts = mutableSetOf<String>()
@@ -281,18 +282,20 @@ class ChatRepository(
   }
 
   private fun cacheConversations(items: List<Conversation>) {
-    val snapshot = items.map { it.toCacheEntity() }
+    val copy = items.toList()
     scope.launch(Dispatchers.IO) {
       runCatching {
+        val snapshot = copy.map { it.toCacheEntity() }
         LiquidChatDatabase.getDatabase(LiquidApi.context).conversationDao().replaceConversations(snapshot)
       }
     }
   }
 
   private fun cacheMessages(cid: String, items: List<Message>) {
-    val snapshot = items.distinctBy { it.id }.sortedBy { it.createdAt }.map { it.toCacheEntity() }
+    val copy = items.toList()
     scope.launch(Dispatchers.IO) {
       runCatching {
+        val snapshot = copy.distinctBy { it.id }.sortedBy { it.createdAt }.map { it.toCacheEntity() }
         LiquidChatDatabase.getDatabase(LiquidApi.context).messageDao().replaceConversation(cid, snapshot)
       }
     }
@@ -758,6 +761,7 @@ class ChatRepository(
     contactsJob = null
     historyCursors.clear()
     historyPagingStarted.clear()
+    historyReconciled.clear()
     _historyHasOlder.value = emptyMap()
     _historyLoading.value = emptyMap()
     heartbeat?.cancel()
@@ -1017,6 +1021,7 @@ class ChatRepository(
     peerListener?.remove()
     peerListener = null
     observedPeer = ""
+    historyReconciled.clear()
     visibleConversation = null
   }
 
@@ -1329,13 +1334,16 @@ class ChatRepository(
                 (it.status == MessageDeliveryStatus.SENDING || it.status == MessageDeliveryStatus.FAILED) && it.id !in recentIds
               }
 
+              val oldById = existing.associateBy { it.id }
               val merged = (carriedOlder + recent + pending)
                 .associateBy { it.id }
                 .values
+                .map { candidate -> oldById[candidate.id]?.takeIf { it == candidate } ?: candidate }
                 .sortedBy { it.createdAt }
 
               _messages.update { it + (cid to merged) }
               cacheMessages(cid, merged)
+              reconcileCachedHistory(cid, account)
               recent.filter { it.senderId != uid && it.status == MessageDeliveryStatus.SENT }
                 .forEach { receipt(cid, it.id, if (visibleConversation == cid && _privacy.value.readReceipts) "READ" else "DELIVERED") }
               markSyncHealthy("Messages")
@@ -1344,6 +1352,54 @@ class ChatRepository(
           }
         }
       }
+  }
+
+  private fun reconcileCachedHistory(cid: String, account: String) {
+    if (uid != account || !historyReconciled.add(cid)) return
+    val existingAtStart = _messages.value[cid].orEmpty()
+    if (existingAtStart.size <= 60) return
+
+    scope.launch {
+      try {
+        val limit = existingAtStart.size.coerceIn(61, 300).toLong()
+        val snapshot = db.collection("conversations/$cid/messages")
+          .orderBy("createdAt", Query.Direction.DESCENDING)
+          .limit(limit)
+          .get(Source.SERVER)
+          .await()
+        if (uid != account) return@launch
+
+        val server = withContext(Dispatchers.Default) {
+          snapshot.documents.mapNotNull { doc -> runCatching { toMessage(cid, doc, account) }.getOrNull() }
+        }.filterNot { message -> (cid + ":" + message.id) in deleteTombstones }
+          .sortedBy { it.createdAt }
+
+        val current = _messages.value[cid].orEmpty()
+        val serverIds = server.asSequence().map { it.id }.toSet()
+        val oldestServerTime = server.firstOrNull()?.createdAt ?: Long.MIN_VALUE
+        val pending = current.filter {
+          (it.status == MessageDeliveryStatus.SENDING || it.status == MessageDeliveryStatus.FAILED) &&
+            it.id !in serverIds
+        }
+        val untouchedOlder = current.filter {
+          it.createdAt < oldestServerTime &&
+            it.status != MessageDeliveryStatus.SENDING &&
+            it.status != MessageDeliveryStatus.FAILED
+        }
+        val oldById = current.associateBy { it.id }
+        val merged = (untouchedOlder + server + pending)
+          .associateBy { it.id }
+          .values
+          .map { candidate -> oldById[candidate.id]?.takeIf { it == candidate } ?: candidate }
+          .sortedBy { it.createdAt }
+
+        _messages.update { map -> map + (cid to merged) }
+        cacheMessages(cid, merged)
+      } catch (t: Throwable) {
+        historyReconciled.remove(cid)
+        if (t !is CancellationException) scheduleSyncRecovery("History", t)
+      }
+    }
   }
 
   fun loadOlder(cid: String) {
