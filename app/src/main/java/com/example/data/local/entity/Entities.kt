@@ -60,3 +60,24 @@ data class MessageEntity(
   val isStarred: Boolean,
   val expiresAt: Long?
 )
+
+
+@Entity(
+  tableName = "message_outbox",
+  indices = [
+    Index(value = ["accountId"]),
+    Index(value = ["conversationId"]),
+    Index(value = ["messageId"], unique = true)
+  ]
+)
+data class OutboxMessageEntity(
+  @PrimaryKey(autoGenerate = true) val queueId: Long = 0,
+  val messageId: String,
+  val accountId: String,
+  val conversationId: String,
+  val payloadJson: String,
+  val createdAt: Long,
+  val state: String = "PENDING",
+  val attemptCount: Int = 0,
+  val lastError: String = ""
+)
