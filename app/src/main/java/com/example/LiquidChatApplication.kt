@@ -25,15 +25,23 @@ class LiquidChatApplication : Application() {
     if (firebaseReady) {
       StartupCrashStore.markStage(this, "firebase_ready")
       runCatching {
-        when (BuildConfig.APP_CHECK_PROVIDER.lowercase()) {
+        when (val provider = BuildConfig.APP_CHECK_PROVIDER.lowercase()) {
           "debug" -> FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
             DebugAppCheckProviderFactory.getInstance()
           )
           "play_integrity" -> FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
             PlayIntegrityAppCheckProviderFactory.getInstance()
           )
-          else -> Unit
+          "auto" -> if (!BuildConfig.DEBUG) {
+            FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
+              PlayIntegrityAppCheckProviderFactory.getInstance()
+            )
+          }
+          "none" -> Unit
+          else -> error("Unsupported App Check provider: $provider")
         }
+      }.onFailure {
+        StartupCrashStore.record(this, "app_check", it)
       }
     } else {
       StartupCrashStore.markStage(this, "firebase_unavailable")
