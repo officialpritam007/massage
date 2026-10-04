@@ -53,7 +53,7 @@ Firestore rules deploy independently; Firebase Functions are not part of this ar
 
 ## Session logout / account deletion
 
-Log out now ends only the current device session: it removes local message cache, pending work, notifications and the device FCM registration while preserving the cloud account and device E2EE identity for a later sign-in. Delete account remains the irreversible path that erases the account, one-to-one conversation trees and owned uploads after trusted cleanup. Permanent deletion requires recent authentication and never reports success before cloud verification.
+Log out ends only the current device session: it removes local message cache, pending work, notifications and the device FCM registration while preserving the cloud account and conversations for a later sign-in. Delete account remains the irreversible path that erases the account, one-to-one conversation trees and owned uploads after trusted cleanup. Permanent deletion requires recent authentication and never reports success before cloud verification.
 
 Final verification includes a **70-minute wait after Auth deletion**, plus worker scheduling, so tokens on other devices expire before the UID gate is removed. A random status proof without a UID allows the app to resume without the deleted Auth account. Keep the app installed until the local wipe is confirmed.
 
