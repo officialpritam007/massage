@@ -123,7 +123,11 @@ fun GlassCard(
   } else {
     Color.White.copy(alpha = (0.36f + config.blurAlpha * 0.14f + config.glassIntensity * 0.06f).coerceIn(0.38f, 0.64f))
   }
-  val glassBackground = backgroundColor ?: surface
+  val glassBackground = if (config.isReducedTransparency) {
+    MaterialTheme.colorScheme.surface
+  } else {
+    backgroundColor ?: surface
+  }
   val backdrop = LocalGlassBackdrop.current
   val border = borderColor ?: if (config.isDark) GlassBorderStrokeDark else Color.White.copy(alpha = 0.38f)
   val resolvedShape: Shape = shape ?: liquidRoundedShape(30f)
@@ -149,7 +153,12 @@ fun GlassCard(
       .shadow(elevation, resolvedShape, ambientColor = shadow, spotColor = shadow)
       .clip(resolvedShape)
       .then(
-        if (backdrop != null && config.isGlassEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (
+          backdrop != null &&
+          config.isGlassEnabled &&
+          !config.isReducedTransparency &&
+          Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+        ) {
           // Haze captures the real backdrop and delegates blur to the platform on Android 12+.
           // Older devices intentionally use the translucent surface fallback below.
           Modifier.hazeEffect(backdrop) {
@@ -269,18 +278,28 @@ fun GlassIconButton(
     spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
     label = "icon_spring"
   )
+  val touchSize = maxOf(size, 48.dp)
   Box(
     modifier = modifier
-      .graphicsLayer { scaleX = pressScale; scaleY = pressScale }
-      .size(size)
-      .clip(CircleShape)
-      .background(bg)
-      .border(1.dp, if (config.isDark) GlassBorderStrokeDark else GlassBorderStrokeLight, CircleShape)
+      .size(touchSize)
       .clickable(interactionSource = interactions, indication = null, onClick = onClick)
       .testTag(testTag),
     contentAlignment = Alignment.Center
   ) {
-    Icon(icon, contentDescription = contentDescription, tint = iconTint, modifier = Modifier.size(22.dp))
+    Box(
+      modifier = Modifier
+        .graphicsLayer { scaleX = pressScale; scaleY = pressScale }
+        .size(size)
+        .clip(CircleShape)
+        .background(
+          if (config.isReducedTransparency) MaterialTheme.colorScheme.surface
+          else bg
+        )
+        .border(1.dp, if (config.isDark) GlassBorderStrokeDark else GlassBorderStrokeLight, CircleShape),
+      contentAlignment = Alignment.Center
+    ) {
+      Icon(icon, contentDescription = contentDescription, tint = iconTint, modifier = Modifier.size(22.dp))
+    }
   }
 }
 
