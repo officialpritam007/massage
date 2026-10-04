@@ -39,6 +39,19 @@ service cloud.firestore {
         && request.auth.uid in get(/databases/$(database)/documents/conversations/$(cid)).data.participantIds;
     }
 
+    function blockedBetween(data) {
+      let other = otherParticipant(data);
+      return !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        || !exists(/databases/$(database)/documents/users/$(other))
+        || other in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('blockedUserIds', [])
+        || request.auth.uid in get(/databases/$(database)/documents/users/$(other)).data.get('blockedUserIds', []);
+    }
+
+    function canInteract(cid) {
+      return participant(cid)
+        && !blockedBetween(get(/databases/$(database)/documents/conversations/$(cid)).data);
+    }
+
     function validCloudinaryUrl(value) {
       return value is string
         && value.matches('^https://res\\.cloudinary\\.com/mthzgqhv/(image|video|raw)/upload/.*');
@@ -118,17 +131,10 @@ service cloud.firestore {
 
       allow create: if owner(uid)
         && request.resource.data.keys().hasOnly([
-          'uid', 'displayName', 'username', 'bio', 'photoUrl', 'createdAt',
-          'isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'
+          'uid', 'displayName', 'username', 'bio', 'photoUrl', 'createdAt'
         ])
         && (!request.resource.data.keys().hasAny(['uid']) || request.resource.data.uid == uid)
-        && validOptionalCloudinaryPhoto(request.resource.data)
-        && (
-          !request.resource.data.keys().hasAll([
-            'isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'
-          ])
-          || validPresence()
-        );
+        && validOptionalCloudinaryPhoto(request.resource.data);
 
       allow update: if owner(uid)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -139,11 +145,14 @@ service cloud.firestore {
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['photoUrl'])
           || validOptionalCloudinaryPhoto(request.resource.data)
         )
+        // Presence moved out of the public directory. Legacy fields may only be deleted.
         && (
           !request.resource.data.diff(resource.data).affectedKeys().hasAny([
             'isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'
           ])
-          || validPresence()
+          || !request.resource.data.keys().hasAny([
+            'isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'
+          ])
         );
 
       allow delete: if owner(uid);
@@ -174,7 +183,9 @@ service cloud.firestore {
         && request.auth.uid in request.resource.data.participantIds
         && membersActive(request.resource.data)
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && exists(/databases/$(database)/documents/users/$(otherParticipant(request.resource.data)))
         && exists(/databases/$(database)/documents/directory/$(otherParticipant(request.resource.data)))
+        && !blockedBetween(request.resource.data)
         && request.resource.data.keys().hasOnly([
           'participantIds', 'lastMessageId', 'lastMessageTime', 'lastMessageText',
           'lastMessageSenderId', 'lastMessageRevision', 'lastMessageType', 'unreadCounts', 'deletedFor', 'deletedBefore',
@@ -221,7 +232,7 @@ service cloud.firestore {
       match /messages/{mid} {
         allow read: if participant(cid);
 
-        allow create: if participant(cid)
+        allow create: if canInteract(cid)
           && request.resource.data.keys().hasOnly([
             'senderId', 'senderName', 'text', 'type', 'mediaUrl',
             'voiceDurationSeconds', 'waveform', 'createdAt', 'status',
@@ -304,18 +315,38 @@ service cloud.firestore {
         );
 
         allow delete: if participant(cid)
-          && resource.data.senderId == request.auth.uid;
+          && (
+            resource.data.senderId == request.auth.uid
+            || (
+              resource.data.keys().hasAny(['expiresAt'])
+              && resource.data.expiresAt is int
+              && resource.data.expiresAt <= request.time.toMillis()
+            )
+          );
       }
 
       match /typing/{uid} {
-        allow read: if participant(cid);
+        allow read: if canInteract(cid);
 
         allow create, update: if owner(uid)
-          && participant(cid)
+          && canInteract(cid)
           && request.resource.data.keys().hasOnly(['until'])
           && request.resource.data.until is int
           && request.resource.data.until >= 0
           && request.resource.data.until <= request.time.toMillis() + 15000;
+
+        allow delete: if owner(uid) && canInteract(cid);
+      }
+
+      match /presence/{uid} {
+        allow read: if canInteract(cid);
+
+        allow create, update: if owner(uid)
+          && canInteract(cid)
+          && request.resource.data.keys().hasOnly([
+            'isOnline', 'onlineVisible', 'lastSeenVisible', 'heartbeatAt', 'lastSeen'
+          ])
+          && validPresence();
 
         allow delete: if owner(uid) && participant(cid);
       }
