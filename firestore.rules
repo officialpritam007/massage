@@ -214,13 +214,29 @@ service cloud.firestore {
           'hiddenLastFor', 'archivedFor', 'mutedFor', 'favoriteFor',
           'disappearingSeconds'
         ])
+        // E2EE is retired. A legacy summary envelope may only be removed, never
+        // added or replaced by current clients.
         && (
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastMessageE2ee', 'lastMessageId', 'lastMessageSenderId'])
-          || request.resource.data.get('lastMessageE2ee', {}) == {}
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastMessageE2ee'])
+          || !request.resource.data.keys().hasAny(['lastMessageE2ee'])
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastMessageText'])
           || (
-            validE2eePayload(request.resource.data.lastMessageE2ee)
-            && request.resource.data.lastMessageE2ee == getAfter(/databases/$(database)/documents/conversations/$(cid)/messages/$(request.resource.data.lastMessageId)).data.e2ee
-            && request.resource.data.lastMessageSenderId == getAfter(/databases/$(database)/documents/conversations/$(cid)/messages/$(request.resource.data.lastMessageId)).data.senderId
+            request.resource.data.lastMessageText is string
+            && request.resource.data.lastMessageText.size() <= 500
+          )
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'lastMessageId', 'lastMessageSenderId', 'lastMessageType'
+          ])
+          || request.resource.data.lastMessageId == ''
+          || (
+            getAfter(/databases/$(database)/documents/conversations/$(cid)/messages/$(request.resource.data.lastMessageId)).data.senderId
+              == request.resource.data.lastMessageSenderId
+            && getAfter(/databases/$(database)/documents/conversations/$(cid)/messages/$(request.resource.data.lastMessageId)).data.type
+              == request.resource.data.lastMessageType
           )
         );
 
@@ -230,28 +246,26 @@ service cloud.firestore {
         allow read: if participant(cid);
 
         allow create: if participant(cid)
+          && request.resource.data.keys().hasOnly([
+            'senderId', 'senderName', 'text', 'type', 'mediaUrl',
+            'voiceDurationSeconds', 'waveform', 'createdAt', 'status',
+            'isDeleted', 'deletedForEveryone', 'hiddenFor', 'isEdited',
+            'isPinned', 'reactions', 'replyToId', 'replyToText',
+            'replyToSender', 'expiresAt'
+          ])
           && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.senderName is string
+          && request.resource.data.senderName.size() <= 60
           && request.resource.data.text is string
           && request.resource.data.text.size() <= 8000
           && request.resource.data.type in ['TEXT', 'IMAGE', 'VIDEO', 'AUDIO', 'VOICE', 'FILE', 'LOCATION']
           && (
             request.resource.data.type != 'TEXT'
-            || (
-              request.resource.data.text == ''
-              && request.resource.data.keys().hasAny(['e2ee'])
-              && validE2eePayload(request.resource.data.e2ee)
-            )
+            || request.resource.data.text.size() > 0
           )
           && (
             !(request.resource.data.type in ['IMAGE', 'VIDEO', 'AUDIO', 'VOICE', 'FILE'])
-            || (
-              validCloudinaryUrl(request.resource.data.mediaUrl)
-              && request.resource.data.text == ''
-              && (
-                !request.resource.data.keys().hasAny(['e2ee'])
-                || validE2eePayload(request.resource.data.e2ee)
-              )
-            )
+            || validCloudinaryUrl(request.resource.data.mediaUrl)
           )
           && request.resource.data.status == 'SENT'
           && request.resource.data.createdAt is int
@@ -264,27 +278,23 @@ service cloud.firestore {
           && request.resource.data.hiddenFor is list
           && request.resource.data.hiddenFor.size() == 0
           && request.resource.data.reactions is list
-          && request.resource.data.reactions.size() == 0;
+          && request.resource.data.reactions.size() == 0
+          && (!request.resource.data.keys().hasAny(['replyToId']) || request.resource.data.replyToId is string)
+          && (!request.resource.data.keys().hasAny(['replyToText'])
+              || (request.resource.data.replyToText is string && request.resource.data.replyToText.size() <= 500))
+          && (!request.resource.data.keys().hasAny(['replyToSender'])
+              || (request.resource.data.replyToSender is string && request.resource.data.replyToSender.size() <= 60));
 
         allow update: if participant(cid) && (
           (
             resource.data.senderId == request.auth.uid
-            && (
-              (
-                !resource.data.keys().hasAny(['e2ee'])
-                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'isEdited'])
-                && request.resource.data.text is string
-                && request.resource.data.text.size() > 0
-                && request.resource.data.text.size() <= 8000
-              )
-              ||
-              (
-                resource.data.keys().hasAny(['e2ee'])
-                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'e2ee', 'isEdited'])
-                && request.resource.data.text == ''
-                && validE2eePayload(request.resource.data.e2ee)
-              )
-            )
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'text', 'e2ee', 'isEdited', 'replyToId', 'replyToText', 'replyToSender'
+            ])
+            && request.resource.data.text is string
+            && request.resource.data.text.size() > 0
+            && request.resource.data.text.size() <= 8000
+            && !request.resource.data.keys().hasAny(['e2ee'])
             && request.resource.data.isEdited == true
           )
           ||
