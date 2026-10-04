@@ -1,10 +1,7 @@
 package com.example.data.repository
 
 import android.net.Uri
-import com.example.data.crypto.E2eeCrypto
-import com.example.data.crypto.MessageContentDecoder
 import com.example.data.local.AccountDataWiper
-import com.example.data.local.SecureMessageCache
 import com.example.data.local.LiquidChatDatabase
 import com.example.data.local.entity.ConversationEntity
 import com.example.data.local.entity.MessageEntity
@@ -45,7 +42,6 @@ class ChatRepository(
   private val messageListeners = mutableMapOf<String, ListenerRegistration>()
   private val decodeJobs = mutableMapOf<String, Job>()
   private val conversationSetupJobs = mutableMapOf<String, Job>()
-  private val plaintextCache = java.util.concurrent.ConcurrentHashMap<String, String>()
   private val presenceListeners = mutableMapOf<String, ListenerRegistration>()
   private val historyCursors = mutableMapOf<String, DocumentSnapshot>()
   private val historyPagingStarted = mutableSetOf<String>()
@@ -62,17 +58,12 @@ class ChatRepository(
   private var observedPeer = ""
   private var visibleConversation: String? = null
   private val unreadWrites = mutableSetOf<String>()
-  private val previewAttempts = mutableSetOf<String>()
-  private val previewRetryAt = mutableMapOf<String, Long>()
   private val lastMessageIds = mutableMapOf<String, String>()
   private val summarySnapshots = mutableMapOf<String, DocumentSnapshot>()
   // Only this set is trusted as proof that a conversation currently exists on the
   // server. A cached chat can outlive a trusted cleanup/reset and must not make a
   // later send skip the server bootstrap.
   private val serverConfirmedConversations = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
-  private val previewCache = mutableMapOf<String, String>()
-  private val previewFallback = mutableMapOf<String, String>()
-  private val peerKeyCheckedAt = mutableMapOf<String, Long>()
   private var deletingAccount = false
   private var cleanupQueued = false
   private val mutationJobs = mutableSetOf<Job>()
@@ -492,7 +483,6 @@ class ChatRepository(
     failedUpload = null
     retryUpload = null
     if (account.isNotBlank()) {
-      runCatching { SecureMessageCache.clear(LiquidApi.context, account) }
       runCatching { LiquidChatDatabase.clearForLogout(LiquidApi.context) }
       runCatching {
         androidx.work.WorkManager.getInstance(LiquidApi.context)
@@ -507,14 +497,8 @@ class ChatRepository(
     legacyDeleteMigrations.clear()
     deleteTombstones.clear()
     pendingPeers.clear()
-    plaintextCache.clear()
-    peerKeyCheckedAt.clear()
-    previewAttempts.clear()
-    previewRetryAt.clear()
     lastMessageIds.clear()
     summarySnapshots.clear()
-    previewCache.clear()
-    previewFallback.clear()
     typingValues.clear()
     presenceGate.reset()
     appearanceDirty = false
@@ -990,12 +974,6 @@ class ChatRepository(
 
   private fun toUser(snapshot: DocumentSnapshot): User {
     val own = snapshot.id == uid
-    val observedKey = snapshot.safeString("e2eeKeyId")
-    if (!own && uid.isNotBlank() && observedKey.isNotBlank()) {
-      val key = "trustedPeerKeys:$uid:${snapshot.id}"
-      val known = installPrefs.getStringSet(key, emptySet()).orEmpty()
-      if (observedKey !in known) installPrefs.edit().putStringSet(key, known + observedKey).apply()
-    }
     val heartbeatAt = snapshot.safeLong("heartbeatAt")
     val pubPhoto = snapshot.safeString("photoUrl")
       .takeUnless { it.contains("images.unsplash.com") }
@@ -1012,9 +990,7 @@ class ChatRepository(
       lastSeen = snapshot.safeLong("lastSeen"),
       lastActiveAt = heartbeatAt,
       onlineVisible = snapshot.safeBoolean("onlineVisible", true),
-      lastSeenVisible = snapshot.safeBoolean("lastSeenVisible", true),
-      e2eePublicKey = snapshot.safeString("e2eePublicKey"),
-      e2eeKeyId = snapshot.safeString("e2eeKeyId")
+      lastSeenVisible = snapshot.safeBoolean("lastSeenVisible", true)
     )
   }
 
@@ -1062,31 +1038,7 @@ class ChatRepository(
 
     val serverText = snapshot.safeString("lastMessageText")
     if (serverText.isNotBlank() && serverText != "Encrypted message") return serverText
-    if (id.isBlank()) return ""
-
-    // Legacy compatibility only. New messages are stored as plaintext and never create
-    // an E2EE envelope. Old envelopes are decoded when possible without blocking sync.
-    val fields = (snapshot.get("lastMessageE2ee") as? Map<*, *>)?.entries
-      ?.filter { it.key is String }
-      ?.associate { it.key as String to it.value }
-      .orEmpty()
-    if (fields.isEmpty()) return "Older message"
-
-    val sender = snapshot.safeString("lastMessageSenderId")
-    val senderKey = if (sender == account) {
-      runCatching { E2eeCrypto.ensureIdentity(LiquidApi.context, account).keyId }.getOrDefault("")
-    } else {
-      _users.value.find { it.uid == sender }?.e2eeKeyId.orEmpty()
-    }
-    return MessageContentDecoder.decode(
-      LiquidApi.context,
-      account,
-      snapshot.id,
-      id,
-      sender,
-      fields,
-      senderKey
-    )?.optString("text")?.take(500)?.takeIf { it.isNotBlank() } ?: "Older message"
+    return if (id.isBlank()) "" else "Older message"
   }
 
   private fun refreshUsers() {
@@ -1313,45 +1265,20 @@ class ChatRepository(
     }
 
     val createdAt = snapshot.safeLong("createdAt")
-    val senderId = snapshot.safeString("senderId")
-    val rawText = snapshot.safeString("text")
-
-    val encryptedMap = if (rawText.isBlank()) {
-      (snapshot.get("e2ee") as? Map<*, *>)?.entries
-        ?.filter { it.key is String }
-        ?.associate { it.key as String to it.value }
-    } else null
-
-    val legacyDecoded = encryptedMap?.let { fields ->
-      val senderKey = if (senderId == account) {
-        runCatching { E2eeCrypto.ensureIdentity(LiquidApi.context, account).keyId }.getOrDefault("")
-      } else {
-        _users.value.find { it.uid == senderId }?.e2eeKeyId.orEmpty()
-      }
-      MessageContentDecoder.decode(
-        LiquidApi.context,
-        account,
-        cid,
-        snapshot.id,
-        senderId,
-        fields,
-        senderKey
-      )
-    }
-
     val cutoff = deletedBefore[cid] ?: 0L
     if (cutoff > 0 && createdAt <= cutoff) return null
     val rawExpires = snapshot.get("expiresAt")
     val expires = if (rawExpires == null) null else anyLong(rawExpires, 0L).takeIf { it > 0L }
     if (expires != null && expires <= System.currentTimeMillis()) return null
 
+    val rawText = snapshot.safeString("text")
     return Message(
       id = snapshot.id,
       conversationId = cid,
-      senderId = senderId,
+      senderId = snapshot.safeString("senderId"),
       senderName = snapshot.safeString("senderName"),
       text = rawText.ifBlank {
-        legacyDecoded?.optString("text")?.takeIf { it.isNotBlank() } ?: "Older message"
+        if (snapshot.get("e2ee") is Map<*, *>) "Older message" else ""
       },
       type = runCatching { MessageType.valueOf(snapshot.safeString("type", "TEXT")) }.getOrDefault(MessageType.TEXT),
       mediaUrl = snapshot.safeString("mediaUrl"),
@@ -1360,12 +1287,9 @@ class ChatRepository(
       createdAt = createdAt,
       status = runCatching { MessageDeliveryStatus.valueOf(snapshot.safeString("status", "SENT")) }
         .getOrDefault(MessageDeliveryStatus.SENT),
-      replyToId = (snapshot.get("replyToId") as? String)
-        ?: legacyDecoded?.optString("replyToId")?.takeIf { it.isNotBlank() && it != "null" },
-      replyToText = (snapshot.get("replyToText") as? String)
-        ?: legacyDecoded?.optString("replyToText")?.takeIf { it.isNotBlank() && it != "null" },
-      replyToSender = (snapshot.get("replyToSender") as? String)
-        ?: legacyDecoded?.optString("replyToSender")?.takeIf { it.isNotBlank() && it != "null" },
+      replyToId = snapshot.get("replyToId") as? String,
+      replyToText = snapshot.get("replyToText") as? String,
+      replyToSender = snapshot.get("replyToSender") as? String,
       isEdited = snapshot.safeBoolean("isEdited"),
       isDeleted = snapshot.safeBoolean("isDeleted"),
       isPinned = snapshot.safeBoolean("isPinned"),
