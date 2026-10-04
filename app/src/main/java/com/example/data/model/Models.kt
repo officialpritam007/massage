@@ -87,7 +87,8 @@ data class AppearanceSettings(
   val cornerRadiusDp: Float = 30f,
   val borderStrength: Float = 0.70f,
   val accentColorHex: String = "#00E39C",
-  val isReducedMotion: Boolean = false
+  val isReducedMotion: Boolean = false,
+  val isReducedTransparency: Boolean = false
 )
 
 @Immutable
