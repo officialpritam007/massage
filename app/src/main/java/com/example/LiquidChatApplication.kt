@@ -32,11 +32,9 @@ class LiquidChatApplication : Application() {
           "play_integrity" -> FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
             PlayIntegrityAppCheckProviderFactory.getInstance()
           )
-          "auto" -> if (!BuildConfig.DEBUG) {
-            FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
-              PlayIntegrityAppCheckProviderFactory.getInstance()
-            )
-          }
+          "auto" -> FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
+            PlayIntegrityAppCheckProviderFactory.getInstance()
+          )
           "none" -> Unit
           else -> error("Unsupported App Check provider: $provider")
         }
