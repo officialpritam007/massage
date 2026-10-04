@@ -42,6 +42,7 @@ class ChatRepository(
   private val messageListeners = mutableMapOf<String, ListenerRegistration>()
   private val decodeJobs = mutableMapOf<String, Job>()
   private val conversationSetupJobs = mutableMapOf<String, Job>()
+  private val messageHydrationJobs = mutableMapOf<String, Job>()
   private val presenceListeners = mutableMapOf<String, ListenerRegistration>()
   private val historyCursors = mutableMapOf<String, DocumentSnapshot>()
   private val historyPagingStarted = mutableSetOf<String>()
@@ -317,7 +318,11 @@ class ChatRepository(
       scope.launch {
         runCatching { enforceInstallationPrivacy() }
           .onFailure { reportSnapshotFailure("Session metadata", it) }
-        if (!cleanupQueued) startSync()
+        if (!cleanupQueued) {
+          val account = uid
+          hydrateConversationListCache(account)
+          if (uid == account && account.isNotBlank()) startSync()
+        }
       }
     } else {
       _themeReady.value = true
@@ -730,6 +735,8 @@ class ChatRepository(
     decodeJobs.clear()
     conversationSetupJobs.values.forEach { it.cancel() }
     conversationSetupJobs.clear()
+    messageHydrationJobs.values.forEach { it.cancel() }
+    messageHydrationJobs.clear()
     presenceListeners.values.forEach { it.remove() }
     presenceListeners.clear()
     peerListener?.remove()
@@ -1124,18 +1131,43 @@ class ChatRepository(
   fun observeConversation(cid: String) {
     if (uid.isBlank()) return
     val account = uid
-    if (_messages.value[cid].orEmpty().isEmpty()) {
-      scope.launch { hydrateMessageCache(cid, account) }
-    }
+
     if (_conversations.value.none { it.id == cid }) {
       val peer = pendingPeers[cid]?.uid ?: return
       if (conversationSetupJobs[cid]?.isActive == true) return
       conversationSetupJobs[cid] = scope.launch {
-        runCatching { ensureConversationDirect(cid, peer); attachConversation(cid) }
-          .onFailure { if (it !is CancellationException) reportSnapshotFailure("Conversation", it) }
+        try {
+          hydrateMessageCache(cid, account)
+          if (uid != account) return@launch
+          ensureConversationDirect(cid, peer)
+          attachConversation(cid)
+        } catch (t: Throwable) {
+          if (t is CancellationException) throw t
+          reportSnapshotFailure("Conversation", t)
+        } finally {
+          conversationSetupJobs.remove(cid)
+        }
       }
       return
     }
+
+    if (_messages.value[cid].orEmpty().isEmpty()) {
+      if (messageHydrationJobs[cid]?.isActive == true) return
+      messageHydrationJobs[cid] = scope.launch {
+        try {
+          hydrateMessageCache(cid, account)
+          if (uid == account) attachConversation(cid)
+        } catch (t: Throwable) {
+          if (t is CancellationException) throw t
+          reportSnapshotFailure("Local chat cache", t)
+          if (uid == account) attachConversation(cid)
+        } finally {
+          messageHydrationJobs.remove(cid)
+        }
+      }
+      return
+    }
+
     attachConversation(cid)
   }
 
