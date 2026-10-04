@@ -45,6 +45,7 @@ class ChatRepository(
   private val conversationSetupJobs = mutableMapOf<String, Job>()
   private val messageHydrationJobs = mutableMapOf<String, Job>()
   private val presenceListeners = mutableMapOf<String, ListenerRegistration>()
+  private val peerPresenceListeners = mutableMapOf<String, ListenerRegistration>()
   private val historyCursors = mutableMapOf<String, DocumentSnapshot>()
   private val historyPagingStarted = mutableSetOf<String>()
   private val deletedBefore = java.util.concurrent.ConcurrentHashMap<String, Long>()
@@ -747,6 +748,8 @@ class ChatRepository(
     messageHydrationJobs.clear()
     presenceListeners.values.forEach { it.remove() }
     presenceListeners.clear()
+    peerPresenceListeners.values.forEach { it.remove() }
+    peerPresenceListeners.clear()
     peerListener?.remove()
     peerListener = null
     observedPeer = ""
@@ -778,6 +781,7 @@ class ChatRepository(
     restoreAppearance(account)
 
     scope.launch { runCatching { com.example.notifications.NotificationTokenStore.register(LiquidApi.context) } }
+    scope.launch { runCatching { migratePublicPresence(account) } }
     scope.launch { hydrateConversationListCache(account) }
 
     listeners += db.document("users/$account").addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
@@ -958,8 +962,13 @@ class ChatRepository(
 
   fun setConversationVisible(cid: String, visible: Boolean) {
     prefs.edit().putString("visibleConversation", if (visible) cid else null).apply()
-    if (visible) visibleConversation = cid
-    else if (visibleConversation == cid) visibleConversation = null
+    if (visible) {
+      visibleConversation = cid
+      if (resumed) writePresenceForConversation(cid, true, force = true)
+    } else if (visibleConversation == cid) {
+      writePresenceForConversation(cid, false, force = true)
+      visibleConversation = null
+    }
   }
 
   suspend fun refreshMessageFromPush(cid: String, messageId: String) {
@@ -1001,6 +1010,8 @@ class ChatRepository(
     conversationSetupJobs.clear()
     presenceListeners.values.forEach { it.remove() }
     presenceListeners.clear()
+    peerPresenceListeners.values.forEach { it.remove() }
+    peerPresenceListeners.clear()
     peerListener?.remove()
     peerListener = null
     observedPeer = ""
@@ -1009,7 +1020,6 @@ class ChatRepository(
 
   private fun toUser(snapshot: DocumentSnapshot): User {
     val own = snapshot.id == uid
-    val heartbeatAt = snapshot.safeLong("heartbeatAt")
     val pubPhoto = snapshot.safeString("photoUrl")
       .takeUnless { it.contains("images.unsplash.com") }
       .orEmpty()
@@ -1021,11 +1031,11 @@ class ChatRepository(
       phoneNumber = if (own) snapshot.safeString("phoneNumber") else "",
       photoUrl = pubPhoto,
       bio = snapshot.safeString("bio"),
-      isOnline = snapshot.safeBoolean("isOnline") && System.currentTimeMillis() - heartbeatAt < 90_000,
-      lastSeen = snapshot.safeLong("lastSeen"),
-      lastActiveAt = heartbeatAt,
-      onlineVisible = snapshot.safeBoolean("onlineVisible", true),
-      lastSeenVisible = snapshot.safeBoolean("lastSeenVisible", true)
+      isOnline = false,
+      lastSeen = 0L,
+      lastActiveAt = 0L,
+      onlineVisible = false,
+      lastSeenVisible = false
     )
   }
 
@@ -1111,18 +1121,67 @@ class ChatRepository(
   }
 
   private fun observePresence(cid: String) {
-    if (presenceListeners.containsKey(cid)) return
-    presenceListeners[cid] = db.collection("conversations/$cid/typing").addSnapshotListener { snapshot, error ->
-      if (error != null) return@addSnapshotListener
-      guardSnapshot("Typing") {
-        val other = _conversations.value.find { it.id == cid }?.otherUser?.uid ?: pendingPeers[cid]?.uid
-        val until = snapshot?.documents?.firstOrNull { it.id == other }?.safeLong("until") ?: 0L
-        _conversations.update { conversations ->
-          conversations.map {
-            if (it.id == cid) it.copy(typingUntil = until, isTyping = until > System.currentTimeMillis()) else it
+    val other = _conversations.value.find { it.id == cid }?.otherUser?.uid ?: pendingPeers[cid]?.uid ?: return
+
+    if (!presenceListeners.containsKey(cid)) {
+      presenceListeners[cid] = db.collection("conversations/$cid/typing").addSnapshotListener { snapshot, error ->
+        if (error != null) return@addSnapshotListener
+        guardSnapshot("Typing") {
+          val until = snapshot?.documents?.firstOrNull { it.id == other }?.safeLong("until") ?: 0L
+          _conversations.update { conversations ->
+            conversations.map {
+              if (it.id == cid) it.copy(typingUntil = until, isTyping = until > System.currentTimeMillis()) else it
+            }
           }
         }
       }
+    }
+
+    if (!peerPresenceListeners.containsKey(cid)) {
+      peerPresenceListeners[cid] = db.document("conversations/$cid/presence/$other")
+        .addSnapshotListener { snapshot, error ->
+          if (error != null) return@addSnapshotListener
+          guardSnapshot("Presence") {
+            val now = System.currentTimeMillis()
+            val onlineVisible = snapshot?.safeBoolean("onlineVisible") == true
+            val lastSeenVisible = snapshot?.safeBoolean("lastSeenVisible") == true
+            val heartbeat = if (onlineVisible) snapshot?.safeLong("heartbeatAt") ?: 0L else 0L
+            val online = onlineVisible &&
+              snapshot?.safeBoolean("isOnline") == true &&
+              now - heartbeat < 90_000L
+            val lastSeen = if (lastSeenVisible) snapshot?.safeLong("lastSeen") ?: 0L else 0L
+
+            _users.update { users ->
+              users.map { user ->
+                if (user.uid != other) user else user.copy(
+                  isOnline = online,
+                  lastSeen = lastSeen,
+                  lastActiveAt = heartbeat,
+                  onlineVisible = onlineVisible,
+                  lastSeenVisible = lastSeenVisible
+                )
+              }
+            }
+            _conversations.update { conversations ->
+              conversations.map { conversation ->
+                if (conversation.id != cid) conversation
+                else {
+                  val base = conversation.otherUser
+                  val peer = if (base.uid == other) {
+                    base.copy(
+                      isOnline = online,
+                      lastSeen = lastSeen,
+                      lastActiveAt = heartbeat,
+                      onlineVisible = onlineVisible,
+                      lastSeenVisible = lastSeenVisible
+                    )
+                  } else base
+                  conversation.copy(otherUser = peer, isOnline = online)
+                }
+              }
+            }
+          }
+        }
     }
   }
 
@@ -1198,6 +1257,9 @@ class ChatRepository(
     }
     presenceListeners.keys.filter { it != cid }.toList().forEach { key ->
       presenceListeners.remove(key)?.remove()
+    }
+    peerPresenceListeners.keys.filter { it != cid }.toList().forEach { key ->
+      peerPresenceListeners.remove(key)?.remove()
     }
     observePresence(cid)
     observePeer(cid)
@@ -1447,12 +1509,7 @@ class ChatRepository(
     directoryRef.set(
       common + mapOf(
         "uid" to account,
-        "createdAt" to createdAt,
-        "isOnline" to false,
-        "onlineVisible" to true,
-        "lastSeenVisible" to true,
-        "heartbeatAt" to 0L,
-        "lastSeen" to 0L
+        "createdAt" to createdAt
       ),
       SetOptions.merge()
     ).await()
@@ -2336,19 +2393,42 @@ class ChatRepository(
   }
 
   private fun writePresence(value: Boolean, force: Boolean = false) {
-    if (uid.isBlank() || deletingAccount || cleanupQueued || quotaPaused) return
+    val cid = visibleConversation ?: return
+    writePresenceForConversation(cid, value, force)
+  }
+
+  private fun writePresenceForConversation(cid: String, value: Boolean, force: Boolean = false) {
+    if (uid.isBlank() || cid.isBlank() || deletingAccount || cleanupQueued || quotaPaused) return
     val now = System.currentTimeMillis()
     if (!presenceGate.shouldWrite(value, now, force)) return
-    db.document("directory/$uid").set(
+
+    val onlineVisible = _privacy.value.onlineVisibility != "Nobody"
+    val lastSeenVisible = _privacy.value.lastSeenVisibility != "Nobody"
+    db.document("conversations/$cid/presence/$uid").set(
       mapOf(
-        "isOnline" to (value && _privacy.value.onlineVisibility != "Nobody"),
-        "onlineVisible" to (_privacy.value.onlineVisibility != "Nobody"),
-        "lastSeenVisible" to (_privacy.value.lastSeenVisibility != "Nobody"),
-        "heartbeatAt" to now,
-        "lastSeen" to if (_privacy.value.lastSeenVisibility != "Nobody") now else 0L
-      ),
-      SetOptions.merge()
+        "isOnline" to (value && onlineVisible),
+        "onlineVisible" to onlineVisible,
+        "lastSeenVisible" to lastSeenVisible,
+        "heartbeatAt" to if (onlineVisible) now else 0L,
+        "lastSeen" to if (lastSeenVisible) now else 0L
+      )
     ).addOnFailureListener { reportSnapshotFailure("Presence", it) }
+  }
+
+  private suspend fun migratePublicPresence(account: String) {
+    if (account.isBlank()) return
+    val key = "publicPresenceMigrated:$account"
+    if (prefs.getBoolean(key, false)) return
+    val ref = db.document("directory/$account")
+    val snapshot = runCatching { ref.get(Source.SERVER).await() }.getOrNull() ?: return
+    if (!snapshot.exists()) return
+    val legacyFields = listOf("isOnline", "onlineVisible", "lastSeenVisible", "heartbeatAt", "lastSeen")
+    if (legacyFields.none { snapshot.contains(it) }) {
+      prefs.edit().putBoolean(key, true).apply()
+      return
+    }
+    ref.update(legacyFields.associateWith { FieldValue.delete() }).await()
+    prefs.edit().putBoolean(key, true).apply()
   }
 
   fun draft(cid: String) = prefs.getString("draft:$uid:$cid", "").orEmpty()
