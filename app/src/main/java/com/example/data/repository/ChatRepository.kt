@@ -722,7 +722,10 @@ class ChatRepository(
             decodeJobs.remove(it)?.cancel()
             presenceListeners.remove(it)?.remove()
           }
-          _messages.update { map -> map.filterKeys { it in active } }
+          // Keep decoded message state as a cache across chat-list refreshes/navigation.
+          // A cache-only conversation summary can temporarily omit a valid thread; pruning here
+          // used to blank the open/reopened chat until Firestore emitted the next server snapshot.
+          // Explicit logout/account deletion still clears _messages in resetSessionState().
           // Message + typing listeners are attached only when a conversation is opened.
           // The chat list needs only the lightweight conversation-summary listener.
         }
@@ -785,11 +788,21 @@ class ChatRepository(
       if (uid != account) return@addSnapshotListener
       if (error != null) { reportSnapshotFailure("Contact", error); return@addSnapshotListener }
       if (snapshot?.exists() == true) guardSnapshot("Contact") {
+        val previousKey = _users.value.firstOrNull { it.uid == peer }?.e2eeKeyId.orEmpty()
         val user = toUser(snapshot)
         _users.update { list -> list.filterNot { it.uid == peer } + user }
         pendingPeers[cid] = user
         peerKeyCheckedAt[peer] = System.currentTimeMillis()
         refreshUsers()
+
+        // Message snapshots commonly arrive before the peer directory snapshot. Do not leave
+        // transient "unavailable" rows on screen: when the peer identity becomes usable (or
+        // rotates), reattach only this message window so it is decoded again against the key.
+        if (user.e2eeKeyId.isNotBlank() && user.e2eeKeyId != previousKey) {
+          messageListeners.remove(cid)?.remove()
+          decodeJobs.remove(cid)?.cancel()
+          attachConversation(cid)
+        }
       }
     }
   }
@@ -806,7 +819,11 @@ class ChatRepository(
     try {
       val snapshot = db.document("conversations/$cid/messages/$messageId").get(Source.SERVER).await()
       if (uid != account || !snapshot.exists()) return
-      val decoded = withContext(Dispatchers.Default) { toMessage(cid, snapshot, account) } ?: return
+      val candidate = withContext(Dispatchers.Default) { toMessage(cid, snapshot, account) } ?: return
+      val previous = _messages.value[cid].orEmpty().firstOrNull { it.id == candidate.id }
+      val peerKeyReady = candidate.senderId == account ||
+        _users.value.firstOrNull { it.uid == candidate.senderId }?.e2eeKeyId.orEmpty().isNotBlank()
+      val decoded = stabilizeDecodedMessage(candidate, previous, account, peerKeyReady) ?: return
       _messages.update { map ->
         val merged = (map[cid].orEmpty().filterNot { it.id == decoded.id } + decoded)
           .associateBy { it.id }
@@ -1066,14 +1083,27 @@ class ChatRepository(
               }
               _historyLoading.update { it + (cid to false) }
 
-              val recent = withContext(Dispatchers.Default) {
+              val existing = _messages.value[cid].orEmpty()
+              val existingById = existing.associateBy { it.id }
+              val decodedRecent = withContext(Dispatchers.Default) {
                 pageDocuments.mapNotNull { doc -> runCatching { toMessage(cid, doc, account) }.getOrNull() }
               }.filterNot { message -> (cid + ":" + message.id) in deleteTombstones }.sortedBy { it.createdAt }
               if (uid != account) return@launch
+
+              val recent = decodedRecent.mapNotNull { candidate ->
+                val peerKeyReady = candidate.senderId == account ||
+                  _users.value.firstOrNull { it.uid == candidate.senderId }?.e2eeKeyId.orEmpty().isNotBlank()
+                stabilizeDecodedMessage(
+                  candidate = candidate,
+                  previous = existingById[candidate.id],
+                  accountId = account,
+                  peerKeyReady = peerKeyReady
+                )
+              }
               val sourceIds = pageDocuments.map { it.id }.toSet()
               val recentIds = recent.asSequence().map { it.id }.toSet()
               val oldestRecentTime = recent.firstOrNull()?.createdAt ?: Long.MAX_VALUE
-              val existing = _messages.value[cid].orEmpty()
+
 
               // Preserve already-loaded older pages when the fixed recent window shifts because
               // a new realtime message arrived. This prevents old rows disappearing/reappearing.
@@ -1139,12 +1169,24 @@ class ChatRepository(
           (cutoff <= 0L || extraCreatedAt > cutoff)
         _historyHasOlder.update { it + (cid to hasOlder) }
 
-        val older = withContext(Dispatchers.Default) {
+        val existing = _messages.value[cid].orEmpty()
+        val existingById = existing.associateBy { it.id }
+        val decodedOlder = withContext(Dispatchers.Default) {
           pageDocuments.mapNotNull { doc -> runCatching { toMessage(cid, doc, account) }.getOrNull() }
         }.filterNot { message -> (cid + ":" + message.id) in deleteTombstones }
+        val older = decodedOlder.mapNotNull { candidate ->
+          val peerKeyReady = candidate.senderId == account ||
+            _users.value.firstOrNull { it.uid == candidate.senderId }?.e2eeKeyId.orEmpty().isNotBlank()
+          stabilizeDecodedMessage(
+            candidate = candidate,
+            previous = existingById[candidate.id],
+            accountId = account,
+            peerKeyReady = peerKeyReady
+          )
+        }
         if (uid != account) return@launch
 
-        val merged = (_messages.value[cid].orEmpty() + older)
+        val merged = (existing + older)
           .associateBy { it.id }
           .values
           .sortedBy { it.createdAt }
