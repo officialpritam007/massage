@@ -63,6 +63,7 @@ data class Message(
   val encryptionUnavailable: Boolean = false
 )
 
+@Immutable
 data class Conversation(
   val id: String = "",
   val participantIds: List<String> = emptyList(),
@@ -81,6 +82,7 @@ data class Conversation(
   val wallpaperIndex: Int = 0
 )
 
+@Immutable
 data class AppearanceSettings(
   val isDarkMode: Boolean = true,
   val glassIntensity: Float = 0.75f,
@@ -91,12 +93,14 @@ data class AppearanceSettings(
   val isReducedMotion: Boolean = false
 )
 
+@Immutable
 data class NotificationSettings(
   val messages: Boolean = true,
   val vibration: Boolean = true,
   val showPreview: Boolean = true
 )
 
+@Immutable
 data class PrivacySettings(
   val lastSeenVisibility: String = "Everyone",
   val onlineVisibility: String = "Everyone",
