@@ -196,7 +196,7 @@ service cloud.firestore {
         && !blockedBetween(request.resource.data)
         && request.resource.data.keys().hasOnly([
           'participantIds', 'lastMessageId', 'lastMessageTime', 'lastMessageText',
-          'lastMessageSenderId', 'lastMessageRevision', 'lastMessageType', 'unreadCounts', 'deletedFor', 'deletedBefore',
+          'lastMessageSenderId', 'lastMessageRevision', 'lastMessageType', 'lastMessageExpiresAt', 'unreadCounts', 'deletedFor', 'deletedBefore',
           'hiddenLastFor', 'archivedFor', 'mutedFor', 'favoriteFor',
           'disappearingSeconds'
         ]);
@@ -205,7 +205,7 @@ service cloud.firestore {
         && request.resource.data.participantIds == resource.data.participantIds
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'lastMessageId', 'lastMessageTime', 'lastMessageText',
-          'lastMessageSenderId', 'lastMessageE2ee', 'lastMessageRevision', 'lastMessageType', 'unreadCounts', 'deletedFor', 'deletedBefore',
+          'lastMessageSenderId', 'lastMessageE2ee', 'lastMessageRevision', 'lastMessageType', 'lastMessageExpiresAt', 'unreadCounts', 'deletedFor', 'deletedBefore',
           'hiddenLastFor', 'archivedFor', 'mutedFor', 'favoriteFor',
           'disappearingSeconds'
         ])
@@ -278,7 +278,15 @@ service cloud.firestore {
           && (!request.resource.data.keys().hasAny(['replyToText'])
               || (request.resource.data.replyToText is string && request.resource.data.replyToText.size() <= 500))
           && (!request.resource.data.keys().hasAny(['replyToSender'])
-              || (request.resource.data.replyToSender is string && request.resource.data.replyToSender.size() <= 60));
+              || (request.resource.data.replyToSender is string && request.resource.data.replyToSender.size() <= 60))
+          && (
+            !request.resource.data.keys().hasAny(['expiresAt'])
+            || (
+              request.resource.data.expiresAt is int
+              && request.resource.data.expiresAt > request.resource.data.createdAt
+              && request.resource.data.expiresAt <= request.resource.data.createdAt + 7776000000
+            )
+          );
 
         allow update: if participant(cid) && (
           (
