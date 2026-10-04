@@ -22,7 +22,7 @@ jobs:
     env:
       CLOUDINARY_CLOUD_NAME: ${{ vars.CLOUDINARY_CLOUD_NAME || 'mthzgqhv' }}
       CLOUDINARY_UPLOAD_PRESET: liquid_chat_owned_v1
-      APP_CHECK_PROVIDER: ${{ vars.APP_CHECK_PROVIDER || 'none' }}
+      APP_CHECK_PROVIDER: ${{ vars.APP_CHECK_PROVIDER || 'auto' }}
 
     steps:
       - name: Checkout source code

@@ -17,8 +17,10 @@ suspend fun ChatRepository.removeProfilePhoto(): Result<Unit> = runCatching {
     val previous = currentUser.value.photoUrl
     val db = FirebaseFirestore.getInstance()
 
-    db.document("users/$account").update("photoUrl", FieldValue.delete()).await()
-    db.document("directory/$account").update("photoUrl", FieldValue.delete()).await()
+    val batch = db.batch()
+    batch.update(db.document("users/$account"), "photoUrl", FieldValue.delete())
+    batch.update(db.document("directory/$account"), "photoUrl", FieldValue.delete())
+    batch.commit().await()
 
     if (previous.isNotBlank()) LiquidApi.invalidateMedia(previous)
 }

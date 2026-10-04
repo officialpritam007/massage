@@ -61,6 +61,25 @@ service cloud.firestore {
       return !data.keys().hasAny(['photoUrl']) || validCloudinaryUrl(data.photoUrl);
     }
 
+    function profilePhotoHidden(data) {
+      return data.get('privacy', {}).get('profilePhotoVisibility', 'Everyone') == 'Nobody';
+    }
+
+    function hiddenProfilePhotoIsNotPublished(uid, userData) {
+      return !profilePhotoHidden(userData)
+        || !existsAfter(/databases/$(database)/documents/directory/$(uid))
+        || !getAfter(/databases/$(database)/documents/directory/$(uid)).data.keys().hasAny(['photoUrl']);
+    }
+
+    function validDirectoryPhotoForPrivacy(uid, data) {
+      return !data.keys().hasAny(['photoUrl'])
+        || (
+          validCloudinaryUrl(data.photoUrl)
+          && existsAfter(/databases/$(database)/documents/users/$(uid))
+          && !profilePhotoHidden(getAfter(/databases/$(database)/documents/users/$(uid)).data)
+        );
+    }
+
     function validPresence() {
       return request.resource.data.isOnline is bool
         && request.resource.data.onlineVisible is bool
@@ -89,7 +108,8 @@ service cloud.firestore {
           'installationId', 'dataEpoch'
         ])
         && (!request.resource.data.keys().hasAny(['uid']) || request.resource.data.uid == uid)
-        && validOptionalCloudinaryPhoto(request.resource.data);
+        && validOptionalCloudinaryPhoto(request.resource.data)
+        && hiddenProfilePhotoIsNotPublished(uid, request.resource.data);
 
       allow update: if owner(uid)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -100,6 +120,10 @@ service cloud.firestore {
         && (
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['photoUrl'])
           || validOptionalCloudinaryPhoto(request.resource.data)
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['privacy', 'photoUrl'])
+          || hiddenProfilePhotoIsNotPublished(uid, request.resource.data)
         );
 
       allow delete: if owner(uid);
@@ -142,7 +166,7 @@ service cloud.firestore {
           'uid', 'displayName', 'username', 'bio', 'photoUrl', 'createdAt'
         ])
         && (!request.resource.data.keys().hasAny(['uid']) || request.resource.data.uid == uid)
-        && validOptionalCloudinaryPhoto(request.resource.data);
+        && validDirectoryPhotoForPrivacy(uid, request.resource.data);
 
       allow update: if owner(uid)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -151,7 +175,7 @@ service cloud.firestore {
         ])
         && (
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['photoUrl'])
-          || validOptionalCloudinaryPhoto(request.resource.data)
+          || validDirectoryPhotoForPrivacy(uid, request.resource.data)
         )
         // Presence moved out of the public directory. Legacy fields may only be deleted.
         && (

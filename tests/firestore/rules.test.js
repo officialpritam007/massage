@@ -165,6 +165,36 @@ test('profile photo accepts only the configured Cloudinary environment', async (
   await assertFails(updateDoc(doc(alice, 'users/alice'), {photoUrl: 'https://example.com/avatar.jpg'}));
 });
 
+test('profile photo privacy cannot leave a public directory photo behind', async () => {
+  const alice = env.authenticatedContext('alice').firestore();
+  const good = 'https://res.cloudinary.com/mthzgqhv/image/upload/v1/liquid-chat/avatar-private.jpg';
+
+  await assertSucceeds(updateDoc(doc(alice, 'users/alice'), {
+    privacy: {profilePhotoVisibility: 'Everyone'}
+  }));
+  await assertSucceeds(updateDoc(doc(alice, 'directory/alice'), {photoUrl: good}));
+
+  await assertFails(updateDoc(doc(alice, 'users/alice'), {
+    privacy: {profilePhotoVisibility: 'Nobody'}
+  }));
+
+  const hide = writeBatch(alice);
+  hide.update(doc(alice, 'users/alice'), {
+    privacy: {profilePhotoVisibility: 'Nobody'}
+  });
+  hide.update(doc(alice, 'directory/alice'), {photoUrl: deleteField()});
+  await assertSucceeds(hide.commit());
+
+  await assertFails(updateDoc(doc(alice, 'directory/alice'), {photoUrl: good}));
+
+  const show = writeBatch(alice);
+  show.update(doc(alice, 'users/alice'), {
+    privacy: {profilePhotoVisibility: 'Everyone'}
+  });
+  show.update(doc(alice, 'directory/alice'), {photoUrl: good});
+  await assertSucceeds(show.commit());
+});
+
 test('legacy public presence can be stripped while private presence remains usable', async () => {
   await env.withSecurityRulesDisabled(async c => {
     const db = c.firestore();
