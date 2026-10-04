@@ -6,6 +6,8 @@ import com.example.data.crypto.MessageContentDecoder
 import com.example.data.local.AccountDataWiper
 import com.example.data.local.SecureMessageCache
 import com.example.data.local.LiquidChatDatabase
+import com.example.data.local.entity.ConversationEntity
+import com.example.data.local.entity.MessageEntity
 import com.example.data.model.*
 import com.example.data.network.LiquidApi
 import com.google.firebase.Timestamp
@@ -144,6 +146,163 @@ class ChatRepository(
   val historyLoading = _historyLoading.asStateFlow()
   private val _themeReady = MutableStateFlow(false)
   val themeReady = _themeReady.asStateFlow()
+
+  private fun Conversation.toCacheEntity() = ConversationEntity(
+    id = id,
+    otherUserId = otherUser.uid,
+    otherUserName = otherUser.displayName,
+    otherUserPhoto = otherUser.photoUrl,
+    lastMessageText = lastMessageText,
+    lastMessageTime = lastMessageTime,
+    lastMessageSenderId = lastMessageSenderId,
+    unreadCount = unreadCount,
+    isPinned = isPinned,
+    isMuted = isMuted,
+    isArchived = isArchived,
+    disappearingSeconds = disappearingSeconds,
+    wallpaperIndex = wallpaperIndex
+  )
+
+  private fun ConversationEntity.toModel(account: String) = Conversation(
+    id = id,
+    participantIds = listOf(account, otherUserId).filter { it.isNotBlank() }.distinct(),
+    otherUser = User(uid = otherUserId, displayName = otherUserName, photoUrl = otherUserPhoto),
+    lastMessageText = lastMessageText,
+    lastMessageTime = lastMessageTime,
+    lastMessageSenderId = lastMessageSenderId,
+    unreadCount = unreadCount,
+    isPinned = isPinned,
+    isMuted = isMuted,
+    isArchived = isArchived,
+    disappearingSeconds = disappearingSeconds,
+    wallpaperIndex = wallpaperIndex
+  )
+
+  private fun Message.toCacheEntity() = MessageEntity(
+    id = id,
+    conversationId = conversationId,
+    senderId = senderId,
+    senderName = senderName,
+    text = text,
+    type = type.name,
+    mediaUrl = mediaUrl,
+    voiceDurationSeconds = voiceDurationSeconds,
+    waveformCsv = waveform.joinToString(","),
+    createdAt = createdAt,
+    status = status.name,
+    replyToId = replyToId,
+    replyToText = replyToText,
+    replyToSender = replyToSender,
+    reactionsJson = JSONArray(reactions.map { reaction ->
+      JSONObject().put("emoji", reaction.emoji).put("userIds", JSONArray(reaction.userIds))
+    }).toString(),
+    isEdited = isEdited,
+    isDeleted = isDeleted,
+    isPinned = isPinned,
+    isStarred = isStarred,
+    expiresAt = expiresAt
+  )
+
+  private fun MessageEntity.toModel(): Message {
+    val parsedReactions = runCatching {
+      val array = JSONArray(reactionsJson)
+      buildList {
+        for (index in 0 until array.length()) {
+          val item = array.optJSONObject(index) ?: continue
+          val users = item.optJSONArray("userIds")
+          add(MessageReaction(
+            emoji = item.optString("emoji"),
+            userIds = buildList {
+              if (users != null) for (i in 0 until users.length()) {
+                users.optString(i).takeIf { it.isNotBlank() }?.let(::add)
+              }
+            }
+          ))
+        }
+      }
+    }.getOrDefault(emptyList())
+
+    return Message(
+      id = id,
+      conversationId = conversationId,
+      senderId = senderId,
+      senderName = senderName,
+      text = text,
+      type = runCatching { MessageType.valueOf(type) }.getOrDefault(MessageType.TEXT),
+      mediaUrl = mediaUrl,
+      voiceDurationSeconds = voiceDurationSeconds,
+      waveform = waveformCsv.split(',').mapNotNull { it.toFloatOrNull() },
+      createdAt = createdAt,
+      status = runCatching { MessageDeliveryStatus.valueOf(status) }.getOrDefault(MessageDeliveryStatus.SENT),
+      replyToId = replyToId,
+      replyToText = replyToText,
+      replyToSender = replyToSender,
+      reactions = parsedReactions,
+      isEdited = isEdited,
+      isDeleted = isDeleted,
+      isPinned = isPinned,
+      isStarred = isStarred,
+      expiresAt = expiresAt
+    )
+  }
+
+  private suspend fun hydrateConversationListCache(account: String) {
+    if (account.isBlank()) return
+    val cached = withContext(Dispatchers.IO) {
+      LiquidChatDatabase.getDatabase(LiquidApi.context).conversationDao().getAllConversationsOnce()
+    }.map { it.toModel(account) }
+    if (uid == account && cached.isNotEmpty() && _conversations.value.isEmpty()) {
+      _conversations.value = cached
+      cached.forEach { pendingPeers[it.id] = it.otherUser }
+      _loading.value = false
+    }
+  }
+
+  private suspend fun hydrateMessageCache(cid: String, account: String) {
+    if (account.isBlank() || cid.isBlank() || _messages.value[cid].orEmpty().isNotEmpty()) return
+    val cached = withContext(Dispatchers.IO) {
+      LiquidChatDatabase.getDatabase(LiquidApi.context).messageDao().getMessagesForConversationOnce(cid)
+    }.map { it.toModel() }
+      .filter { it.expiresAt == null || it.expiresAt > System.currentTimeMillis() }
+      .distinctBy { it.id }
+      .sortedBy { it.createdAt }
+
+    if (uid == account && cached.isNotEmpty() && _messages.value[cid].orEmpty().isEmpty()) {
+      _messages.update { it + (cid to cached) }
+    }
+  }
+
+  private fun cacheConversations(items: List<Conversation>) {
+    val snapshot = items.map { it.toCacheEntity() }
+    scope.launch(Dispatchers.IO) {
+      runCatching {
+        LiquidChatDatabase.getDatabase(LiquidApi.context).conversationDao().replaceConversations(snapshot)
+      }
+    }
+  }
+
+  private fun cacheMessages(cid: String, items: List<Message>) {
+    val snapshot = items.distinctBy { it.id }.sortedBy { it.createdAt }.map { it.toCacheEntity() }
+    scope.launch(Dispatchers.IO) {
+      runCatching {
+        LiquidChatDatabase.getDatabase(LiquidApi.context).messageDao().replaceConversation(cid, snapshot)
+      }
+    }
+  }
+
+  private fun cacheMessage(message: Message) {
+    scope.launch(Dispatchers.IO) {
+      runCatching {
+        LiquidChatDatabase.getDatabase(LiquidApi.context).messageDao().insertMessage(message.toCacheEntity())
+      }
+    }
+  }
+
+  private fun removeCachedMessage(id: String) {
+    scope.launch(Dispatchers.IO) {
+      runCatching { LiquidChatDatabase.getDatabase(LiquidApi.context).messageDao().deleteMessage(id) }
+    }
+  }
 
   init {
     val pendingAccount = deletionPrefs.getString("account", null)
