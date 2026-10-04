@@ -243,9 +243,7 @@ fun MessageBubbleV2(
                     .border(0.5.dp, borderColor.copy(alpha = borderColor.alpha * .72f), shape)
             ) {
                 Column(
-                    Modifier
-                        .animateContentSize(if (reduced) tween(0) else spring(dampingRatio = .78f, stiffness = 410f))
-                        .padding(horizontal = 9.dp, vertical = 7.dp),
+                    Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     if (message.replyToText != null) {
