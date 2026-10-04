@@ -849,9 +849,16 @@ class ChatRepository(
             prior != null && current.lastMessageSenderId != account && current.unreadCount > prior.unreadCount &&
               lastMessageIds[current.id]?.isNotBlank() == true && current.lastMessageTime > prior.lastMessageTime
           }.forEach { com.example.notifications.MessageNotificationWorker.enqueue(LiquidApi.context, account, it.id, lastMessageIds[it.id].orEmpty()) }
-          _conversations.value = next
-          cacheConversations(next)
-          val active = next.map { it.id }.toSet()
+          val effective = if (snapshot.metadata.isFromCache && _conversations.value.isNotEmpty()) {
+            (next + _conversations.value.filter { existing -> next.none { it.id == existing.id } })
+              .distinctBy { it.id }
+              .sortedByDescending { it.lastMessageTime }
+          } else {
+            next
+          }
+          _conversations.value = effective
+          if (!snapshot.metadata.isFromCache) cacheConversations(effective)
+          val active = effective.map { it.id }.toSet()
           messageListeners.keys.filter { it !in active }.toList().forEach {
             messageListeners.remove(it)?.remove()
             decodeJobs.remove(it)?.cancel()
@@ -1144,7 +1151,7 @@ class ChatRepository(
 
               val cutoff = deletedBefore[cid] ?: 0L
               val extraCreatedAt = extraDocument?.safeLong("createdAt") ?: 0L
-              if (cid !in historyPagingStarted) {
+              if (cid !in historyPagingStarted && !snapshot.metadata.isFromCache) {
                 _historyHasOlder.update {
                   it + (cid to (
                     extraDocument != null &&
