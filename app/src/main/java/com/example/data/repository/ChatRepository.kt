@@ -942,18 +942,17 @@ class ChatRepository(
     try {
       val snapshot = db.document("conversations/$cid/messages/$messageId").get(Source.SERVER).await()
       if (uid != account || !snapshot.exists()) return
-      val candidate = withContext(Dispatchers.Default) { toMessage(cid, snapshot, account) } ?: return
-      val previous = _messages.value[cid].orEmpty().firstOrNull { it.id == candidate.id }
-      val peerKeyReady = candidate.senderId == account ||
-        _users.value.firstOrNull { it.uid == candidate.senderId }?.e2eeKeyId.orEmpty().isNotBlank()
-      val decoded = stabilizeDecodedMessage(candidate, previous, account, peerKeyReady) ?: return
+      val decoded = withContext(Dispatchers.Default) { toMessage(cid, snapshot, account) } ?: return
+      var mergedForCache: List<Message> = emptyList()
       _messages.update { map ->
         val merged = (map[cid].orEmpty().filterNot { it.id == decoded.id } + decoded)
           .associateBy { it.id }
           .values
           .sortedBy { it.createdAt }
+        mergedForCache = merged
         map + (cid to merged)
       }
+      cacheMessages(cid, mergedForCache)
       if (decoded.senderId != account && decoded.status == MessageDeliveryStatus.SENT) {
         receipt(
           cid,
@@ -1286,20 +1285,9 @@ class ChatRepository(
         _historyHasOlder.update { it + (cid to hasOlder) }
 
         val existing = _messages.value[cid].orEmpty()
-        val existingById = existing.associateBy { it.id }
-        val decodedOlder = withContext(Dispatchers.Default) {
+        val older = withContext(Dispatchers.Default) {
           pageDocuments.mapNotNull { doc -> runCatching { toMessage(cid, doc, account) }.getOrNull() }
         }.filterNot { message -> (cid + ":" + message.id) in deleteTombstones }
-        val older = decodedOlder.mapNotNull { candidate ->
-          val peerKeyReady = candidate.senderId == account ||
-            _users.value.firstOrNull { it.uid == candidate.senderId }?.e2eeKeyId.orEmpty().isNotBlank()
-          stabilizeDecodedMessage(
-            candidate = candidate,
-            previous = existingById[candidate.id],
-            accountId = account,
-            peerKeyReady = peerKeyReady
-          )
-        }
         if (uid != account) return@launch
 
         val merged = (existing + older)
@@ -1308,6 +1296,7 @@ class ChatRepository(
           .sortedBy { it.createdAt }
 
         _messages.update { it + (cid to merged) }
+        cacheMessages(cid, merged)
         older.filter { it.senderId != uid && it.status == MessageDeliveryStatus.SENT }
           .forEach { receipt(cid, it.id, "DELIVERED") }
       } catch (t: Throwable) {
@@ -1713,7 +1702,10 @@ class ChatRepository(
       waveform = cleanWaveform,
       status = MessageDeliveryStatus.SENDING
     )
-    _messages.update { it + (conversationId to (it[conversationId].orEmpty() + message)) }
+    _messages.update {
+      it + (conversationId to (it[conversationId].orEmpty().filterNot { saved -> saved.id == message.id } + message))
+    }
+    cacheMessage(message)
     persist(message)
     scope.launch { flushOutbox() }
     setTyping(conversationId, false)
@@ -1768,6 +1760,7 @@ class ChatRepository(
         _messages.update {
           it + (cid to (it[cid].orEmpty().filterNot { saved -> saved.id == message.id } + message))
         }
+        cacheMessage(message)
       }
     }
   }
@@ -1886,7 +1879,13 @@ class ChatRepository(
   }
 
   private fun updateLocal(cid: String, id: String, transform: (Message) -> Message) {
-    _messages.update { map -> map + (cid to map[cid].orEmpty().map { if (it.id == id) transform(it) else it }) }
+    var updated: Message? = null
+    _messages.update { map ->
+      map + (cid to map[cid].orEmpty().map {
+        if (it.id == id) transform(it).also { value -> updated = value } else it
+      })
+    }
+    updated?.let(::cacheMessage)
   }
 
   private fun removeLocalMessage(cid: String, id: String) {
@@ -1896,6 +1895,7 @@ class ChatRepository(
     // local tombstone until the optional backend can migrate it cross-device.
     prefs.edit().remove("outbox:$uid:$id").remove("star:$uid:$id").apply()
     _messages.update { map -> map + (cid to map[cid].orEmpty().filterNot { it.id == id }) }
+    removeCachedMessage(id)
   }
 
   fun uploadChatMedia(
