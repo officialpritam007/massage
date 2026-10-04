@@ -149,7 +149,7 @@ fun MessageActionSheetV3(
                         }
                     }
 
-                    if (!message.encryptionUnavailable) Row(
+                    Row(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(7.dp)
                     ) {
@@ -181,7 +181,7 @@ fun MessageActionSheetV3(
                         ) { act(onTogglePin) }
                     }
 
-                    if (isMine && message.type == MessageType.TEXT && !message.isDeleted && !message.encryptionUnavailable) {
+                    if (isMine && message.type == MessageType.TEXT && !message.isDeleted) {
                         MessageActionRowV3(
                             icon = Icons.Default.Edit,
                             label = "Edit message"
