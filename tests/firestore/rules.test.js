@@ -364,6 +364,33 @@ test('direct Cloudinary media URL is allowed and arbitrary URL is rejected', asy
   ));
 });
 
+test('disappearing messages require a future bounded expiry and can be deleted after expiry', async () => {
+  const alice = env.authenticatedContext('alice').firestore();
+  const bob = env.authenticatedContext('bob').firestore();
+  const createdAt = Date.now();
+
+  await assertFails(setDoc(
+    doc(alice, 'conversations/pair/messages/already-expired'),
+    baseMessage({createdAt, expiresAt: createdAt - 1})
+  ));
+
+  await assertSucceeds(setDoc(
+    doc(alice, 'conversations/pair/messages/future-expiry'),
+    baseMessage({createdAt, expiresAt: createdAt + 60_000})
+  ));
+
+  await env.withSecurityRulesDisabled(async c => {
+    await updateDoc(
+      doc(c.firestore(), 'conversations/pair/messages/future-expiry'),
+      {expiresAt: Date.now() - 1}
+    );
+  });
+
+  await assertSucceeds(deleteDoc(
+    doc(bob, 'conversations/pair/messages/future-expiry')
+  ));
+});
+
 test('recipient delivery, delete-for-me and reaction updates are authorized', async () => {
   const bob = env.authenticatedContext('bob').firestore();
   await env.withSecurityRulesDisabled(async c => {
