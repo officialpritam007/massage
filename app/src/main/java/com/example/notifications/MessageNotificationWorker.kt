@@ -14,7 +14,6 @@ import androidx.core.content.ContextCompat
 import androidx.work.*
 import com.example.MainActivity
 import com.example.R
-import com.example.data.crypto.MessageContentDecoder
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.Source
@@ -64,12 +63,8 @@ class MessageNotificationWorker(context: Context, params: WorkerParameters) : Co
       if (settings?.get("messages") == false) return Result.success()
       val preview = settings?.get("showPreview") != false
       val peer = db.document("directory/$sender").get(Source.SERVER).await()
-      val fields = (message.get("e2ee") as? Map<*, *>)?.entries
-        ?.filter { it.key is String }?.associate { it.key as String to it.value }
-      val decoded = fields?.let {
-        MessageContentDecoder.decode(applicationContext, account, cid, id, sender, it, peer.getString("e2eeKeyId").orEmpty())
-      }
-      val revision = fields?.let { MessageContentDecoder.revision(it) } ?: message.get("text").toString()
+      val messageText = message.getString("text")?.take(8000)
+      val revision = message.get("updatedAt")?.toString() ?: messageText.orEmpty()
       if (ChatNotificationState.shouldSuppressSystemNotification(sender, cid)) {
         ChatNotificationState.dispatchForegroundMessage(sender, cid, id)
         return Result.success()
@@ -84,7 +79,7 @@ class MessageNotificationWorker(context: Context, params: WorkerParameters) : Co
         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
       val number = "$account:$cid:$id".hashCode()
       val pending = PendingIntent.getActivity(applicationContext, number, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-      val text = NotificationText.body(message.getString("type") ?: "TEXT", decoded?.optString("text") ?: if (fields == null) message.getString("text")?.takeUnless { it == "Encrypted message" } else null, preview)
+      val text = NotificationText.body(message.getString("type") ?: "TEXT", messageText, preview)
       val notification = NotificationCompat.Builder(applicationContext, "messages")
         .setSmallIcon(R.drawable.ic_stat_message)
         .setContentTitle(if (preview) peer.getString("displayName").orEmpty().ifBlank { "Liquid Chat" } else "Liquid Chat")
