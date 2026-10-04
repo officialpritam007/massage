@@ -4,7 +4,6 @@ import android.app.Application
 import com.example.data.network.LiquidApi
 import com.google.firebase.FirebaseApp
 import com.google.firebase.appcheck.FirebaseAppCheck
-import com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory
 import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderFactory
 
 /** Process-wide initialization before MainActivity or any ViewModel is created. */
@@ -26,9 +25,7 @@ class LiquidChatApplication : Application() {
       StartupCrashStore.markStage(this, "firebase_ready")
       runCatching {
         when (BuildConfig.APP_CHECK_PROVIDER.lowercase()) {
-          "debug" -> FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
-            DebugAppCheckProviderFactory.getInstance()
-          )
+          "debug" -> if (BuildConfig.DEBUG) installDebugAppCheckProvider()
           "play_integrity" -> FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
             PlayIntegrityAppCheckProviderFactory.getInstance()
           )

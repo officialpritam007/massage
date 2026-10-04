@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/cloud-account-cleanup.yml'
       - 'tools/cloud_cleanup.py'
+      - 'tools/expire_messages.py'
       - 'tools/cleanup_readiness.py'
       - 'tools/cleanup_inventory.py'
       - 'tools/cleanup-policy.json'
