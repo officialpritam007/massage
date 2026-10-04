@@ -84,6 +84,7 @@ class ChatRepository(
   private val legacyDeleteMigrations = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
   private val deleteTombstones = mutableSetOf<String>()
   private val expiryDeletes = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+  private val profilePhotoPrivacySynced = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
   // Keeps enough peer identity to compose a fresh message without putting a
   // server-deleted conversation back into the chats list before a new send.
   private val pendingPeers = mutableMapOf<String, User>()
@@ -524,6 +525,7 @@ class ChatRepository(
     deletedBefore.clear()
     legacyDeleteMigrations.clear()
     deleteTombstones.clear()
+    profilePhotoPrivacySynced.clear()
     pendingPeers.clear()
     lastMessageIds.clear()
     summarySnapshots.clear()
@@ -825,6 +827,12 @@ class ChatRepository(
             p["profilePhotoVisibility"] as? String ?: "Everyone",
             anyBoolean(p["readReceipts"], true)
           )
+        }
+        if (profilePhotoPrivacySynced.add(account)) {
+          scope.launch {
+            runCatching { syncDirectoryProfilePhoto(account, _privacy.value) }
+              .onFailure { if (it !is CancellationException) reportSnapshotFailure("Profile photo privacy", it) }
+          }
         }
 
         (snapshot.get("notifications") as? Map<*, *>)?.let { n ->
@@ -2214,8 +2222,12 @@ class ChatRepository(
         val account = uid
         require(account.isNotBlank()) { "Please sign in again" }
         val url = LiquidApi.upload(uri, null)
-        db.document("users/$account").set(mapOf("photoUrl" to url), SetOptions.merge()).await()
-        db.document("directory/$account").set(mapOf("photoUrl" to url), SetOptions.merge()).await()
+        val publicPhoto: Any = if (_privacy.value.profilePhotoVisibility == "Nobody") FieldValue.delete() else url
+        val batch = db.batch()
+        batch.set(db.document("users/$account"), mapOf("photoUrl" to url), SetOptions.merge())
+        batch.set(db.document("directory/$account"), mapOf("photoUrl" to publicPhoto), SetOptions.merge())
+        batch.commit().await()
+        profilePhotoPrivacySynced += account
         url
       }
       onResult(result)
@@ -2594,14 +2606,54 @@ class ChatRepository(
     }
   }
 
+  private fun privacyPayload(settings: PrivacySettings): Map<String, Any> = mapOf(
+    "lastSeenVisibility" to settings.lastSeenVisibility,
+    "onlineVisibility" to settings.onlineVisibility,
+    "profilePhotoVisibility" to settings.profilePhotoVisibility,
+    "readReceipts" to settings.readReceipts
+  )
+
+  private suspend fun syncDirectoryProfilePhoto(account: String, settings: PrivacySettings) {
+    if (account.isBlank() || uid != account) return
+    val photo = _currentUser.value.photoUrl
+      .takeIf { settings.profilePhotoVisibility != "Nobody" }
+      .orEmpty()
+    val publicPhoto: Any = if (photo.isBlank()) FieldValue.delete() else photo
+    db.document("directory/$account")
+      .set(mapOf("photoUrl" to publicPhoto), SetOptions.merge())
+      .await()
+  }
+
   fun updatePrivacy(settings: PrivacySettings) {
     _privacy.value = settings
-    save("privacy", mapOf(
-      "lastSeenVisibility" to settings.lastSeenVisibility,
-      "onlineVisibility" to settings.onlineVisibility,
-      "profilePhotoVisibility" to settings.profilePhotoVisibility,
-      "readReceipts" to settings.readReceipts
-    ))
+    val account = uid
+    if (account.isNotBlank() && !deletingAccount && !cleanupQueued) {
+      scope.launch {
+        runCatching {
+          val photo = _currentUser.value.photoUrl
+            .takeIf { settings.profilePhotoVisibility != "Nobody" }
+            .orEmpty()
+          val publicPhoto: Any = if (photo.isBlank()) FieldValue.delete() else photo
+          val batch = db.batch()
+          batch.set(
+            db.document("users/$account"),
+            mapOf("privacy" to privacyPayload(settings)),
+            SetOptions.merge()
+          )
+          batch.set(
+            db.document("directory/$account"),
+            mapOf("photoUrl" to publicPhoto),
+            SetOptions.merge()
+          )
+          batch.commit().await()
+          profilePhotoPrivacySynced += account
+        }.onFailure {
+          if (it !is CancellationException) {
+            _syncWarning.value = "Privacy: " + friendlyError(it)
+          }
+        }
+      }
+    }
     writePresence(resumed, force = true)
   }
 
