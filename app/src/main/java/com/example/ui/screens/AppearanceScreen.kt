@@ -136,8 +136,10 @@ fun AppearanceScreen(viewModel: LiquidChatViewModel, onBackClick: () -> Unit) {
 
       AppearanceAccentCard(
         accents = accents,
-        selected = appearance.accentColorHex.ifBlank { defaultAccent },
-        onSelect = { viewModel.updateAppearance(appearance.copy(accentColorHex = it)) }
+        selected = if (appearance.accentColorHex.isBlank() ||
+          appearance.accentColorHex.uppercase() in setOf("#00E39C", "#78C7FF", "#0068D9")) defaultAccent
+          else appearance.accentColorHex,
+        onSelect = { viewModel.updateAppearance(appearance.copy(accentColorHex = if (it == defaultAccent) "" else it)) }
       )
 
       AppearanceToggleCard(

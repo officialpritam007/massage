@@ -10,6 +10,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.lerp
 
 /** Shared design tokens for the app-wide Liquid Glass material. */
 @Immutable
@@ -73,14 +74,16 @@ fun LiquidChatTheme(
   content: @Composable () -> Unit
 ) {
   val base = if (darkTheme) DarkColorScheme else LightColorScheme
+  val accent = resolveLiquidAccent(glassConfig.accentColor, base.surface)
   val colorScheme = base.copy(
-    primary = glassConfig.accentColor,
-    onPrimary = if (glassConfig.accentColor.luminance() > .179f) Color.Black else Color.White
+    primary = accent,
+    onPrimary = if (accent.luminance() > .179f) Color.Black else Color.White
   )
   // Preserve the user's glass toggle and sanitize persisted values so malformed
   // legacy settings cannot produce broken corners, excessive blur or invisible rims.
   val resolvedConfig = glassConfig.copy(
     isDark = darkTheme,
+    accentColor = accent,
     glassIntensity = glassConfig.glassIntensity.finiteOr(.75f).coerceIn(0.35f, 1f),
     blurAlpha = glassConfig.blurAlpha.finiteOr(.35f).coerceIn(0f, 0.65f),
     cornerRadiusDp = glassConfig.cornerRadiusDp.finiteOr(30f).coerceIn(12f, 56f),
@@ -97,6 +100,23 @@ fun LiquidChatTheme(
 }
 
 private fun Float.finiteOr(fallback: Float) = if (isFinite()) this else fallback
+
+/** Accent labels share the chosen hue while remaining readable in either appearance. */
+internal fun resolveLiquidAccent(candidate: Color, surface: Color): Color {
+  val opaque = candidate.copy(alpha = 1f)
+  val target = if (surface.luminance() < .179f) Color.White else Color.Black
+  fun contrast(color: Color): Float {
+    val first = color.luminance()
+    val second = surface.luminance()
+    return (maxOf(first, second) + .05f) / (minOf(first, second) + .05f)
+  }
+  if (contrast(opaque) >= 4.5f) return opaque
+  for (step in 1..40) {
+    val adjusted = lerp(opaque, target, step / 40f)
+    if (contrast(adjusted) >= 4.5f) return adjusted
+  }
+  return target
+}
 
 @Composable
 fun MyApplicationTheme(

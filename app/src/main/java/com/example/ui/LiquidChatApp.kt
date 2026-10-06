@@ -63,7 +63,8 @@ fun LiquidChatApp(
     onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
   }
 
-  val referenceAccent = appearance.accentColorHex.isBlank() || appearance.accentColorHex.equals("#00E39C", ignoreCase = true)
+  val referenceAccent = appearance.accentColorHex.isBlank() ||
+    appearance.accentColorHex.uppercase() in setOf("#00E39C", "#78C7FF", "#0068D9")
   val referenceDark = appearance.isDarkMode
   val view = androidx.compose.ui.platform.LocalView.current
   SideEffect {
