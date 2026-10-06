@@ -3,6 +3,7 @@ package com.example.ui
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -27,6 +28,7 @@ import com.example.notifications.ChatNotificationState
 import com.example.ui.components.GlassDialog
 import com.example.ui.components.GlassCard
 import com.example.ui.components.NetworkStatusBanner
+import com.example.ui.components.rememberValidatedNetwork
 import com.example.ui.navigation.Screen
 import com.example.ui.screens.*
 import com.example.ui.theme.LiquidChatTheme
@@ -61,7 +63,7 @@ fun LiquidChatApp(
     onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
   }
 
-  val referenceAccent = appearance.accentColorHex.isBlank()
+  val referenceAccent = appearance.accentColorHex.isBlank() || appearance.accentColorHex.equals("#00E39C", ignoreCase = true)
   val referenceDark = appearance.isDarkMode
   val view = androidx.compose.ui.platform.LocalView.current
   SideEffect {
@@ -77,11 +79,11 @@ fun LiquidChatApp(
     cornerRadiusDp = appearance.cornerRadiusDp,
     borderStrength = appearance.borderStrength,
     accentColor = if (referenceAccent) {
-      Color(0xFF00E39C)
+      if (referenceDark) Color(0xFF78C7FF) else Color(0xFF0068D9)
     } else try {
       Color(android.graphics.Color.parseColor(appearance.accentColorHex))
     } catch (_: Exception) {
-      Color(0xFF00E39C)
+      if (referenceDark) Color(0xFF78C7FF) else Color(0xFF0068D9)
     },
     isGlassEnabled = !appearance.isReducedTransparency,
     isReducedMotion = appearance.isReducedMotion,
@@ -157,8 +159,35 @@ fun LiquidChatApp(
       }
     }
 
-    Box(Modifier.fillMaxSize()) {
+    val online = rememberValidatedNetwork()
+    val showBanners = !online || !syncWarning.isNullOrBlank()
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+      if (showBanners) {
+        Column(
+          Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+          NetworkStatusBanner(online = online)
+          syncWarning?.takeIf { it.isNotBlank() }?.let { warning ->
+            GlassCard(
+              shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
+              backgroundColor = MaterialTheme.colorScheme.surface,
+              elevation = 0.dp,
+              enableBackdrop = false
+            ) {
+              Text(
+                text = warning,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+            }
+          }
+        }
+      }
       NavHost(
+        modifier = Modifier.weight(1f).then(if (showBanners) Modifier.consumeWindowInsets(WindowInsets.statusBars) else Modifier),
         navController = navController,
         startDestination = startDestination,
         enterTransition = {
@@ -344,35 +373,6 @@ fun LiquidChatApp(
       }
       }
 
-      NetworkStatusBanner(
-        Modifier
-          .align(Alignment.TopCenter)
-          .statusBarsPadding()
-          .padding(top = 8.dp)
-      )
-
-      AnimatedVisibility(
-        visible = !syncWarning.isNullOrBlank(),
-        modifier = Modifier
-          .align(Alignment.TopCenter)
-          .statusBarsPadding()
-          .padding(top = 52.dp, start = 16.dp, end = 16.dp),
-        enter = fadeIn(tween(if (appearance.isReducedMotion) 0 else 150)),
-        exit = fadeOut(tween(if (appearance.isReducedMotion) 0 else 120))
-      ) {
-        GlassCard(
-          shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
-          backgroundColor = MaterialTheme.colorScheme.error.copy(alpha = .08f),
-          elevation = 1.dp
-        ) {
-          Text(
-            text = syncWarning ?: "",
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-          )
-        }
-      }
     }
   }
 }

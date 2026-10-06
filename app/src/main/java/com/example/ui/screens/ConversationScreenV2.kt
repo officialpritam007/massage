@@ -30,6 +30,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
@@ -40,6 +42,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
@@ -66,10 +70,19 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.filled.StarOutline
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Text
@@ -98,6 +111,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -109,6 +123,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.core.content.ContextCompat
 import com.example.data.model.Message
 import com.example.data.model.MessageType
@@ -130,6 +146,7 @@ import com.example.ui.theme.EmeraldOnline
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
@@ -138,6 +155,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.Calendar
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
@@ -150,6 +168,20 @@ private data class VoiceDraftV2(
 )
 
 private enum class DeleteModeV2 { FOR_ME, FOR_EVERYONE }
+
+internal data class MessageViewportTargetV2(val index: Int, val scrollOffset: Int)
+
+/** Resolve by stable message ID because older pages and the optional loader shift row indices. */
+internal fun messageViewportTargetV2(
+    messageIds: List<String>,
+    targetId: String,
+    loadingOlder: Boolean,
+    visibleItemOffset: Int = 0
+): MessageViewportTargetV2? {
+    val messageIndex = messageIds.indexOf(targetId)
+    if (messageIndex < 0) return null
+    return MessageViewportTargetV2(messageIndex + if (loadingOlder) 1 else 0, (-visibleItemOffset).coerceAtLeast(0))
+}
 
 private fun appendWaveformV2(existing: List<Float>, value: Float): List<Float> {
     var next = existing + value.coerceIn(.05f, 1f)
@@ -212,6 +244,8 @@ fun ConversationScreenV2(
     val density = LocalDensity.current
     val clipboard = LocalClipboardManager.current
     val imeBottom = WindowInsets.ime.getBottom(density)
+    val recordingGestureThresholdPx = with(density) { 100.dp.toPx() }
+    val recordingDragLimitPx = with(density) { 120.dp.toPx() }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
@@ -225,6 +259,9 @@ fun ConversationScreenV2(
     var pendingAttachment by remember { mutableStateOf<PendingAttachmentV3?>(null) }
     var attachmentCaption by rememberSaveable(conversationId) { mutableStateOf("") }
     var attachmentDeleting by remember { mutableStateOf(false) }
+    var attachmentUploading by remember(conversationId) { mutableStateOf(false) }
+    var attachmentUploadFailed by remember(conversationId) { mutableStateOf(false) }
+    var screenActive by remember(conversationId) { mutableStateOf(true) }
     var menu by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf(false) }
     var query by rememberSaveable(conversationId) { mutableStateOf("") }
@@ -256,28 +293,40 @@ fun ConversationScreenV2(
 
     // Keep the Scaffold top-bar height invariant while the message list scrolls.
     // Animating header dimensions changes content insets and creates a feedback-loop "jitter".
-    val headerButtonSize = 38.dp
-    val headerAvatarSize = 30.dp
-    val headerVerticalPadding = 5.dp
+    val headerButtonSize = 44.dp
+    val headerAvatarSize = 38.dp
+    val headerVerticalPadding = 8.dp
 
     fun sendVoiceDraft(draft: VoiceDraftV2) {
-        if (draft.uploading || voiceDraftDeleting || !draft.file.exists() || draft.file.length() <= 0L) return
+        if (draft.uploading || upload != null || voiceDraftDeleting || other.uid in blocked || !draft.file.exists() || draft.file.length() <= 0L) return
+        val replyTarget = reply
         voiceDraft = draft.copy(uploading = true, failed = false)
         voiceDraftDeleteFailed = false
+        val voiceUri = Uri.fromFile(draft.file)
+        if (draft.failed && repo.retryUpload(conversationId, voiceUri, MessageType.VOICE)) return
+        var delivered = false
         repo.uploadChatMedia(conversationId, Uri.fromFile(draft.file), MessageType.VOICE) { result ->
             result.onSuccess { url ->
+                if (delivered) return@onSuccess
+                delivered = true
                 viewModel.sendMessage(
                     conversationId = conversationId,
                     text = "Voice message",
                     type = MessageType.VOICE,
                     mediaUrl = url,
+                    replyToId = replyTarget?.id,
+                    replyToText = replyTarget?.text,
+                    replyToSender = replyTarget?.senderName,
                     voiceDurationSeconds = draft.seconds,
                     waveform = draft.waveform
                 )
                 draft.file.delete()
-                if (voiceDraft?.file == draft.file) voiceDraft = null
+                if (screenActive) {
+                    if (voiceDraft?.file == draft.file) voiceDraft = null
+                    if (reply?.id == replyTarget?.id) reply = null
+                }
             }.onFailure {
-                if (draft.file.exists()) voiceDraft = draft.copy(uploading = false, failed = true)
+                if (screenActive && draft.file.exists()) voiceDraft = draft.copy(uploading = false, failed = true)
             }
         }
     }
@@ -286,6 +335,7 @@ fun ConversationScreenV2(
         if (draft.uploading || voiceDraftDeleting) return
         voiceDraftDeleting = true
         voiceDraftDeleteFailed = false
+        repo.cancelUploadRetry(conversationId, Uri.fromFile(draft.file), MessageType.VOICE)
         scope.launch {
             delay(if (config.isReducedMotion) 90 else 520)
             val removed = !draft.file.exists() || draft.file.delete()
@@ -338,6 +388,8 @@ fun ConversationScreenV2(
             active.setAudioSamplingRate(44100)
             active.setAudioChannels(1)
             active.setOutputFile(file.absolutePath)
+            recorder = active
+            recordingFile = file
             active.prepare()
             active.start()
             recorder = active
@@ -348,6 +400,10 @@ fun ConversationScreenV2(
             recording = true
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         }.onFailure {
+            runCatching { recorder?.release() }
+            recordingFile?.delete()
+            recorder = null
+            recordingFile = null
             android.widget.Toast.makeText(context, it.message ?: "Unable to record", android.widget.Toast.LENGTH_LONG).show()
         }
     }
@@ -375,35 +431,66 @@ fun ConversationScreenV2(
     val requestCurrent by rememberUpdatedState<() -> Unit> { requestRecording() }
 
     fun uploadAttachment(uri: Uri, type: MessageType, caption: String = "") {
+        if (attachmentUploading || upload != null || other.uid in blocked) return
+        attachmentUploading = true
+        if (attachmentUploadFailed && repo.retryUpload(conversationId, uri, type)) {
+            attachmentUploadFailed = false
+            return
+        }
+        attachmentUploadFailed = false
+        val replyTarget = reply
+        var delivered = false
         repo.uploadChatMedia(conversationId, uri, type) { result ->
+            if (screenActive) attachmentUploading = false
             result.onSuccess { url ->
+                if (delivered) return@onSuccess
+                delivered = true
                 val fallback = when (type) {
                     MessageType.IMAGE -> "Photo"
                     MessageType.VIDEO -> "Video"
                     MessageType.FILE -> "Document"
                     else -> ""
                 }
-                val textToSend = caption.trim().ifBlank { fallback }
-                viewModel.sendMessage(conversationId, textToSend, type, url)
+                val currentCaption = if (screenActive && pendingAttachment?.uri == uri) attachmentCaption else caption
+                val textToSend = currentCaption.trim().ifBlank { fallback }
+                viewModel.sendMessage(
+                    conversationId, textToSend, type, url,
+                    replyToId = replyTarget?.id,
+                    replyToText = replyTarget?.text,
+                    replyToSender = replyTarget?.senderName
+                )
+                if (screenActive && pendingAttachment?.uri == uri) {
+                    pendingAttachment = null
+                    attachmentCaption = ""
+                }
+                if (screenActive && reply?.id == replyTarget?.id) reply = null
+            }.onFailure {
+                if (screenActive) attachmentUploadFailed = it !is CancellationException
             }
         }
     }
 
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
+            pendingAttachment?.let { repo.cancelUploadRetry(conversationId, it.uri, it.type) }
             attachmentCaption = ""
+            attachmentUploadFailed = false
             pendingAttachment = PendingAttachmentV3(uri, MessageType.IMAGE)
         }
     }
     val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
+            pendingAttachment?.let { repo.cancelUploadRetry(conversationId, it.uri, it.type) }
             attachmentCaption = ""
+            attachmentUploadFailed = false
             pendingAttachment = PendingAttachmentV3(uri, MessageType.VIDEO)
         }
     }
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
+            pendingAttachment?.let { repo.cancelUploadRetry(conversationId, it.uri, it.type) }
             attachmentCaption = ""
+            attachmentUploadFailed = false
             pendingAttachment = PendingAttachmentV3(uri, MessageType.FILE)
         }
     }
@@ -476,7 +563,8 @@ fun ConversationScreenV2(
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val atBottomCurrent by rememberUpdatedState(nearBottom)
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, conversationId) {
+        screenActive = true
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) repo.setConversationVisible(conversationId, atBottomCurrent)
             if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE) repo.setConversationVisible(conversationId, false)
@@ -488,6 +576,9 @@ fun ConversationScreenV2(
         lifecycleOwner.lifecycle.addObserver(observer)
         repo.setConversationVisible(conversationId, atBottomCurrent && lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED))
         onDispose {
+            screenActive = false
+            pendingAttachment?.let { repo.cancelUploadRetry(conversationId, it.uri, it.type) }
+            voiceDraft?.let { repo.cancelUploadRetry(conversationId, Uri.fromFile(it.file), MessageType.VOICE) }
             repo.setConversationVisible(conversationId, false)
             lifecycleOwner.lifecycle.removeObserver(observer)
             runCatching { recorder?.release() }
@@ -535,6 +626,13 @@ fun ConversationScreenV2(
     val rows = remember(filtered, locallyHiddenDeletes) {
         filtered.filterNot { it.id in locallyHiddenDeletes }
     }
+    val rowIdList = remember(rows) { rows.map { it.id } }
+    val rowIds = remember(rowIdList) { rowIdList.toSet() }
+    val dateStarts = remember(rows) {
+        rows.mapIndexed { index, message ->
+            index == 0 || !sameMessageDayV2(rows[index - 1].createdAt, message.createdAt)
+        }
+    }
     val latestRemoteId = rows.lastOrNull { it.senderId != me.uid && !it.isDeleted }?.id
 
     LaunchedEffect(messages.map { it.id }, locallyHiddenDeletes) {
@@ -546,17 +644,17 @@ fun ConversationScreenV2(
         }
     }
 
-    LaunchedEffect(loadingOlder, rows.size) {
+    LaunchedEffect(loadingOlder, rowIdList) {
         val anchorId = historyAnchorId ?: return@LaunchedEffect
         if (loadingOlder) return@LaunchedEffect
-        val index = rows.indexOfFirst { it.id == anchorId }
-        if (index >= 0) {
-            listState.scrollToItem(index, historyAnchorOffset)
+        val target = messageViewportTargetV2(rowIdList, anchorId, loadingOlder, historyAnchorOffset)
+        if (target != null) {
+            listState.scrollToItem(target.index, target.scrollOffset)
         }
         historyAnchorId = null
     }
 
-    LaunchedEffect(listState, canLoadOlder, loadingOlder, rows.size) {
+    LaunchedEffect(listState, canLoadOlder, loadingOlder, rowIds, query) {
         snapshotFlow {
             Triple(
                 listState.isScrollInProgress,
@@ -570,7 +668,7 @@ fun ConversationScreenV2(
                     historyLoadGestureConsumed = false
                     return@collect
                 }
-                if (!canLoadOlder || loadingOlder || rows.isEmpty() || historyLoadGestureConsumed) {
+                if (!canLoadOlder || loadingOlder || rows.isEmpty() || query.isNotBlank() || historyLoadGestureConsumed) {
                     return@collect
                 }
 
@@ -579,7 +677,7 @@ fun ConversationScreenV2(
 
                 historyLoadGestureConsumed = true
                 val firstVisible = listState.layoutInfo.visibleItemsInfo.firstOrNull { item ->
-                    rows.any { it.id == item.key }
+                    item.key in rowIds
                 }
                 historyAnchorId = firstVisible?.key as? String
                 historyAnchorOffset = firstVisible?.offset ?: 0
@@ -596,15 +694,15 @@ fun ConversationScreenV2(
         listState.scrollToItem(target)
     }
 
-    LaunchedEffect(messageJump, rows.size, conversationId) {
+    LaunchedEffect(messageJump, rowIdList, conversationId, loadingOlder) {
         val jump = messageJump
         if (jump?.first != conversationId) return@LaunchedEffect
         val messageId = jump.second
-        val target = rows.indexOfFirst { it.id == messageId }
-        if (target >= 0) {
+        val target = messageViewportTargetV2(rowIdList, messageId, loadingOlder)
+        if (target != null) {
             delay(90)
-            if (config.isReducedMotion) listState.scrollToItem(target + 1)
-            else listState.animateScrollToItem(target + 1)
+            if (config.isReducedMotion) listState.scrollToItem(target.index)
+            else listState.animateScrollToItem(target.index)
             searchHighlightId = messageId
             delay(if (config.isReducedMotion) 250 else 900)
             if (searchHighlightId == messageId) searchHighlightId = null
@@ -644,18 +742,14 @@ fun ConversationScreenV2(
                             size = headerButtonSize
                         )
                         GlassCard(
-                            modifier = Modifier.weight(1f),
-                            shape = liquidRoundedShape(24f),
-                            backgroundColor = if (config.isDark) {
-                                Color(0xFF142A31).copy(alpha = .74f)
-                            } else {
-                                Color.White.copy(alpha = .60f)
-                            },
-                            elevation = 4.dp,
-                            onClick = { onNavigateToProfile(other.uid) }
+                            modifier = Modifier.weight(1f).defaultMinSize(minHeight = 60.dp),
+                            shape = liquidRoundedShape(28f),
+                            backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = if (config.isDark) .64f else .72f),
+                            elevation = 6.dp,
+                            onClick = { if (other.uid.isNotBlank()) onNavigateToProfile(other.uid) }
                         ) {
                             Row(
-                                Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                                Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 GlassAvatar(
@@ -674,12 +768,12 @@ fun ConversationScreenV2(
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
-                                    val label = compactPresenceLabelV3(other)
+                                    val label = if (conversation?.isTyping == true) "Typing…" else compactPresenceLabelV3(other)
                                     if (label.isNotBlank()) {
                                         Text(
                                             label,
-                                            fontSize = 10.sp,
-                                            color = if (other.isOnline) EmeraldOnline else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (conversation?.isTyping == true) MaterialTheme.colorScheme.primary else if (other.isOnline) EmeraldOnline else MaterialTheme.colorScheme.onSurfaceVariant,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
@@ -695,7 +789,13 @@ fun ConversationScreenV2(
                         )
                     }
                     AnimatedVisibility(search) {
-                        GlassTextField(query, { query = it }, placeholder = "Search messages", modifier = Modifier.padding(top = 7.dp), shape = liquidRoundedShape(24f), keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None))
+                        GlassTextField(
+                            query, { query = it }, placeholder = "Search this conversation",
+                            modifier = Modifier.padding(top = 10.dp), shape = liquidRoundedShape(24f),
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
+                            leadingIcon = { Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
+                            trailingIcon = { GlassIconButton(Icons.Default.Close, "Close search", { search = false; query = "" }, size = 32.dp) }
+                        )
                     }
                 }
             },
@@ -722,10 +822,10 @@ fun ConversationScreenV2(
                                         )
                                         Text("${draft.seconds / 60}:${(draft.seconds % 60).toString().padStart(2, '0')}", style = MaterialTheme.typography.labelSmall)
                                     }
-                                    VoiceWaveformPlayer(draft.seconds, Uri.fromFile(draft.file).toString(), draft.waveform, isOutgoing = true)
+                                    VoiceWaveformPlayer(draft.seconds, Uri.fromFile(draft.file).toString(), draft.waveform, isOutgoing = false)
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        GlassButton(if (voiceDraftDeleteFailed) "Retry discard" else "Discard", { discardVoiceDraft(draft) }, Modifier.weight(1f), isPrimary = false, enabled = !draft.uploading && !voiceDraftDeleting)
-                                        GlassButton(if (draft.failed) "Retry" else "Send", { sendVoiceDraft(draft.copy(uploading = false)) }, Modifier.weight(1f), isLoading = draft.uploading, enabled = !draft.uploading && !voiceDraftDeleting)
+                                        GlassButton(if (voiceDraftDeleteFailed) "Retry discard" else "Discard", { discardVoiceDraft(draft) }, Modifier.weight(1f), isPrimary = false, enabled = !draft.uploading && upload == null && !voiceDraftDeleting)
+                                        GlassButton(if (draft.failed) "Retry" else "Send", { sendVoiceDraft(draft.copy(uploading = false)) }, Modifier.weight(1f), isLoading = draft.uploading, enabled = !draft.uploading && upload == null && !voiceDraftDeleting && other.uid !in blocked)
                                     }
                                 }
                             }
@@ -761,24 +861,28 @@ fun ConversationScreenV2(
                             attachment = attachment,
                             caption = attachmentCaption,
                             deleting = attachmentDeleting,
+                            uploading = attachmentUploading,
+                            busy = upload != null,
+                            uploadFailed = attachmentUploadFailed,
+                            onCancelUpload = { repo.cancelUpload(conversationId, attachment.uri, attachment.type) },
                             onCaptionChange = { attachmentCaption = it },
                             onDiscard = {
-                                if (!attachmentDeleting) {
+                                if (!attachmentDeleting && !attachmentUploading) {
+                                    repo.cancelUploadRetry(conversationId, attachment.uri, attachment.type)
                                     attachmentDeleting = true
                                     scope.launch {
                                         delay(if (config.isReducedMotion) 90 else 520)
                                         pendingAttachment = null
                                         attachmentCaption = ""
+                                        attachmentUploadFailed = false
                                         attachmentDeleting = false
                                     }
                                 }
                             },
                             onSend = {
-                                if (!attachmentDeleting) {
+                                if (!attachmentDeleting && !attachmentUploading) {
                                     val selected = attachment
                                     val caption = attachmentCaption
-                                    pendingAttachment = null
-                                    attachmentCaption = ""
                                     uploadAttachment(selected.uri, selected.type, caption)
                                 }
                             }
@@ -786,7 +890,7 @@ fun ConversationScreenV2(
                     }
 
                     upload?.let { progress ->
-                        if (voiceDraft?.uploading != true) {
+                        if (voiceDraft?.uploading != true && !attachmentUploading) {
                             GlassCard(shape = liquidRoundedShape(18f), backgroundColor = config.accentColor.copy(alpha = .07f), elevation = 0.dp) {
                                 Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 7.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -801,13 +905,9 @@ fun ConversationScreenV2(
 
                     GlassCard(
                         Modifier.fillMaxWidth(),
-                        shape = liquidRoundedShape(27f),
-                        backgroundColor = if (config.isDark) {
-                            Color(0xFF12262D).copy(alpha = .84f)
-                        } else {
-                            Color.White.copy(alpha = .62f)
-                        },
-                        elevation = 7.dp
+                        shape = liquidRoundedShape(30f),
+                        backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = if (config.isDark) .72f else .80f),
+                        elevation = 9.dp
                     ) {
                         Column(
                             Modifier
@@ -864,8 +964,8 @@ fun ConversationScreenV2(
                                 GlassIconButton(
                                     Icons.Default.Add,
                                     "Attach",
-                                    { attachmentSheet = true },
-                                    size = 36.dp
+                                    { if (!attachmentUploading && other.uid !in blocked) attachmentSheet = true },
+                                    size = 40.dp
                                 )
                                 Spacer(Modifier.width(3.dp))
                                 GlassTextField(
@@ -873,7 +973,7 @@ fun ConversationScreenV2(
                                     onValueChange = { if (it.length <= 8000) text = it },
                                     placeholder = if (other.uid in blocked) "Contact blocked" else "Message…",
                                     modifier = Modifier.weight(1f),
-                                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
+                                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                                     singleLine = false,
                                     maxLines = 5,
                                     shape = liquidRoundedShape(22f),
@@ -895,13 +995,13 @@ fun ConversationScreenV2(
                                             GlassIconButton(
                                                 Icons.Default.PhotoCamera,
                                                 "Camera",
-                                                { onNavigateToCamera() },
+                                                { if (!attachmentUploading && other.uid !in blocked) onNavigateToCamera() },
                                                 size = 36.dp
                                             )
                                             var dx by remember { mutableFloatStateOf(0f) }
                                             var dy by remember { mutableFloatStateOf(0f) }
-                                            val micX = if (recording && !locked) dx.coerceIn(-120f, 0f) else 0f
-                                            val micY = if (recording && !locked) dy.coerceIn(-120f, 0f) else 0f
+                                            val micX = if (recording && !locked) dx.coerceIn(-recordingDragLimitPx, 0f) else 0f
+                                            val micY = if (recording && !locked) dy.coerceIn(-recordingDragLimitPx, 0f) else 0f
                                             Box(
                                                 Modifier
                                                     .size(48.dp)
@@ -915,7 +1015,7 @@ fun ConversationScreenV2(
                                                     .then(
                                                         if (recordPermissionGranted) {
                                                             Modifier
-                                                                .pointerInput(other.uid, blocked, recordPermissionGranted) {
+                                                                .pointerInput(other.uid, blocked, recordPermissionGranted, recordingGestureThresholdPx) {
                                                                     detectDragGesturesAfterLongPress(
                                                                         onDragStart = {
                                                                             dx = 0f
@@ -939,12 +1039,12 @@ fun ConversationScreenV2(
                                                                             change.consume()
                                                                             dx += amount.x
                                                                             dy += amount.y
-                                                                            if (dx < -100f && recordingCurrent) {
+                                                                            if (dx < -recordingGestureThresholdPx && recordingCurrent) {
                                                                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                                                                 finishCurrent(false, false)
                                                                                 dx = 0f
                                                                                 dy = 0f
-                                                                            } else if (dy < -100f && recordingCurrent && !lockedCurrent) {
+                                                                            } else if (dy < -recordingGestureThresholdPx && recordingCurrent && !lockedCurrent) {
                                                                                 locked = true
                                                                                 dx = 0f
                                                                                 dy = 0f
@@ -1000,8 +1100,8 @@ fun ConversationScreenV2(
                                                 }
                                             },
                                             tint = MaterialTheme.colorScheme.onPrimary,
-                                            backgroundColor = config.accentColor.copy(alpha = .92f),
-                                            size = 36.dp
+                                            backgroundColor = MaterialTheme.colorScheme.primary,
+                                            size = 40.dp
                                         )
                                     }
                                 }
@@ -1015,11 +1115,11 @@ fun ConversationScreenV2(
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     state = listState,
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.Bottom)
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.Bottom)
                 ) {
                     if (loadingOlder) {
-                        item(key = "history-loading") {
+                        item(key = "history-loading", contentType = "history-loading") {
                             Box(
                                 Modifier.fillMaxWidth().padding(vertical = 5.dp),
                                 contentAlignment = Alignment.Center
@@ -1031,11 +1131,17 @@ fun ConversationScreenV2(
                             }
                         }
                     }
+                    if (rows.isEmpty() && !loadingOlder) {
+                        item(key = "conversation-empty", contentType = "empty-state") {
+                            ConversationEmptyStateV2(searching = query.isNotBlank(), name = other.displayName.ifBlank { "your contact" })
+                        }
+                    }
                     itemsIndexed(
                         items = rows,
                         key = { _, item -> item.id },
                         contentType = { _, item -> item.type }
-                    ) { _, message ->
+                    ) { index, message ->
+                        if (dateStarts[index]) ConversationDateSeparatorV2(message.createdAt)
                         if (message.id == unreadAnchorId) UnreadSeparatorV2()
                         Box(Modifier.fillMaxWidth()) {
                             MessageBubbleV2(
@@ -1052,8 +1158,11 @@ fun ConversationScreenV2(
                                 onLongClick = { actionMessage = message; haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
                                 onReply = { reply = message; haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
                                 onReplyPreviewClick = { replyId ->
-                                    val target = rows.indexOfFirst { it.id == replyId }
-                                    if (target >= 0) scope.launch { listState.animateScrollToItem(target + 1) }
+                                    val target = messageViewportTargetV2(rowIdList, replyId, loadingOlder)
+                                    if (target != null) scope.launch {
+                                        if (config.isReducedMotion) listState.scrollToItem(target.index)
+                                        else listState.animateScrollToItem(target.index)
+                                    }
                                 },
                                 onMedia = { viewer = message },
                                 onReaction = { emoji -> viewModel.addReaction(conversationId, message.id, emoji) },
@@ -1066,7 +1175,7 @@ fun ConversationScreenV2(
                             }
                         }
                     }
-                    item(key = "typing-indicator") {
+                    item(key = "typing-indicator", contentType = "typing-indicator") {
                         AnimatedVisibility(
                             visible = conversation?.isTyping == true,
                             enter = fadeIn(tween(if (config.isReducedMotion) 0 else 110)),
@@ -1079,26 +1188,29 @@ fun ConversationScreenV2(
                 if (!stickToBottom && listState.layoutInfo.totalItemsCount > 0) {
                     SmallFloatingActionButton(onClick = {
                         stickToBottom = true
-                        scope.launch { listState.animateScrollToItem((listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)) }
-                    }, modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp).size(48.dp)) { Icon(Icons.Default.KeyboardArrowDown, "Jump to newest") }
+                        scope.launch {
+                            val target = (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
+                            if (config.isReducedMotion) listState.scrollToItem(target) else listState.animateScrollToItem(target)
+                        }
+                    }, containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp).size(48.dp)) { Icon(Icons.Default.KeyboardArrowDown, "Jump to newest") }
                 }
             }
         }
 
         if (attachmentSheet) {
-            GlassDialog("Share content", { attachmentSheet = false }) {
-                TextButton(onClick = { attachmentSheet = false; onNavigateToCamera() }) { Text("Camera") }
-                TextButton(onClick = { attachmentSheet = false; imagePicker.launch("image/*") }) { Text("Photo gallery") }
-                TextButton(onClick = { attachmentSheet = false; videoPicker.launch("video/*") }) { Text("Video gallery") }
-                TextButton(onClick = { attachmentSheet = false; filePicker.launch("*/*") }) { Text("Document") }
+            ConversationGlassSheetV2("Share something", { attachmentSheet = false }) {
+                ConversationSheetActionV2(Icons.Default.PhotoCamera, "Camera", "Capture a moment") { attachmentSheet = false; onNavigateToCamera() }
+                ConversationSheetActionV2(Icons.Default.Image, "Photo library", "Choose a photo") { attachmentSheet = false; imagePicker.launch("image/*") }
+                ConversationSheetActionV2(Icons.Default.Movie, "Video", "Choose a video") { attachmentSheet = false; videoPicker.launch("video/*") }
+                ConversationSheetActionV2(Icons.Default.Description, "Document", "Share a file") { attachmentSheet = false; filePicker.launch("*/*") }
             }
         }
 
         if (menu) {
-            GlassDialog("Conversation", { menu = false }) {
-                TextButton(onClick = { search = !search; if (!search) query = ""; menu = false }) { Text(if (search) "Close search" else "Search messages") }
-                TextButton(onClick = { viewModel.setConversationMuted(conversationId, conversation?.isMuted != true); menu = false }) { Text(if (conversation?.isMuted == true) "Unmute" else "Mute") }
-                TextButton(onClick = { repo.setFavorite(conversationId, conversation?.isPinned != true); menu = false }) { Text(if (conversation?.isPinned == true) "Remove favorite" else "Add favorite") }
+            ConversationGlassSheetV2("Conversation", { menu = false }) {
+                ConversationSheetActionV2(Icons.Default.Search, if (search) "Close search" else "Search messages", "Find something in this chat") { search = !search; if (!search) query = ""; menu = false }
+                ConversationSheetActionV2(Icons.Default.NotificationsOff, if (conversation?.isMuted == true) "Unmute notifications" else "Mute notifications", "Choose when this chat alerts you") { viewModel.setConversationMuted(conversationId, conversation?.isMuted != true); menu = false }
+                ConversationSheetActionV2(Icons.Default.StarOutline, if (conversation?.isPinned == true) "Remove from favorites" else "Add to favorites", "Keep this person close") { repo.setFavorite(conversationId, conversation?.isPinned != true); menu = false }
             }
         }
 
@@ -1133,6 +1245,7 @@ fun ConversationScreenV2(
         editMessage?.let { message ->
             CompactEditMessageDialogV3(
                 value = editText,
+                originalValue = message.text,
                 onValueChange = { editText = it },
                 onDismiss = { editMessage = null },
                 onSave = {
@@ -1148,11 +1261,99 @@ fun ConversationScreenV2(
     }
 }
 
+private fun sameMessageDayV2(first: Long, second: Long): Boolean {
+    val a = Calendar.getInstance().apply { timeInMillis = first }
+    val b = Calendar.getInstance().apply { timeInMillis = second }
+    return a.get(Calendar.YEAR) == b.get(Calendar.YEAR) && a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
+}
+
+@Composable
+private fun ConversationDateSeparatorV2(timestamp: Long) {
+    val label = remember(timestamp) {
+        val now = System.currentTimeMillis()
+        val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }.timeInMillis
+        when {
+            sameMessageDayV2(timestamp, now) -> "Today"
+            sameMessageDayV2(timestamp, yesterday) -> "Yesterday"
+            else -> SimpleDateFormat("EEE, MMM d", Locale.getDefault()).format(Date(timestamp))
+        }
+    }
+    Box(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 8.dp), contentAlignment = Alignment.Center) {
+        Text(
+            label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.clip(RoundedCornerShape(999.dp)).background(MaterialTheme.colorScheme.surface.copy(alpha = .76f)).padding(horizontal = 14.dp, vertical = 6.dp)
+        )
+    }
+}
+
+@Composable
+private fun ConversationEmptyStateV2(searching: Boolean, name: String) {
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 64.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(Modifier.size(76.dp).clip(RoundedCornerShape(28.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = .09f)), contentAlignment = Alignment.Center) {
+            Icon(if (searching) Icons.Default.Search else Icons.AutoMirrored.Filled.Chat, null, Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
+        }
+        Text(if (searching) "No messages found" else "Start with a hello", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Text(
+            if (searching) "Try a different word or close search to see this conversation." else "Your conversation with $name starts here.",
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+    }
+}
+
+@Composable
+private fun ConversationGlassSheetV2(title: String, onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    val glass = LocalLiquidGlass.current
+    val maxHeight = (LocalConfiguration.current.screenHeightDp * .84f).dp
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = Color.Transparent, dragHandle = null,
+        scrimColor = Color.Black.copy(alpha = .36f)
+    ) {
+        GlassCard(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+            shape = liquidRoundedShape(32f),
+            backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = if (glass.isDark) .90f else .86f),
+            elevation = 12.dp
+        ) {
+            Column(
+                Modifier.fillMaxWidth().heightIn(max = maxHeight).verticalScroll(rememberScrollState()).padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(Modifier.align(Alignment.CenterHorizontally).size(width = 36.dp, height = 4.dp).clip(RoundedCornerShape(99.dp)).background(MaterialTheme.colorScheme.onSurface.copy(alpha = .16f)))
+                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp))
+                content()
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConversationSheetActionV2(icon: ImageVector, label: String, detail: String, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().defaultMinSize(minHeight = 64.dp).clip(RoundedCornerShape(20.dp)).background(MaterialTheme.colorScheme.onSurface.copy(alpha = .035f)).clickable(role = Role.Button, onClick = onClick).padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Icon(icon, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
 @Composable
 private fun UnreadSeparatorV2() {
     val config = LocalLiquidGlass.current
     Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-        GlassCard(shape = RoundedCornerShape(999.dp), backgroundColor = config.accentColor.copy(alpha = if (config.isDark) .13f else .10f), elevation = 0.dp) {
+        GlassCard(shape = RoundedCornerShape(999.dp), backgroundColor = config.accentColor.copy(alpha = if (config.isDark) .13f else .10f), enableBackdrop = false, elevation = 0.dp) {
             Text("Unread messages", Modifier.padding(horizontal = 12.dp, vertical = 5.dp), style = MaterialTheme.typography.labelSmall, color = config.accentColor, fontWeight = FontWeight.SemiBold)
         }
     }

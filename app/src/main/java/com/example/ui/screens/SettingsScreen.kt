@@ -71,7 +71,6 @@ fun SettingsScreen(
   val appearance by viewModel.appearance.collectAsStateWithLifecycle()
   val blocked by viewModel.blockedUserIds.collectAsStateWithLifecycle()
   val users by viewModel.users.collectAsStateWithLifecycle()
-  val messages by viewModel.messages.collectAsStateWithLifecycle()
   val conversations by viewModel.conversations.collectAsStateWithLifecycle()
   val deletionStatus by viewModel.deletionStatus.collectAsStateWithLifecycle()
   val deletionPending by viewModel.deletionPending.collectAsStateWithLifecycle()
@@ -190,14 +189,15 @@ fun SettingsScreen(
           .padding(horizontal = 18.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
       ) {
-        GlassHeader("Settings", subtitle = "Liquid Chat", onBackClick = onBackClick)
+        GlassHeader("Settings", subtitle = "Your profile, preferences and privacy", onBackClick = onBackClick)
 
         GlassCard(
           modifier = Modifier.fillMaxWidth(),
           shape = liquidRoundedShape(28f),
-          backgroundColor = if (glass.isDark) Color(0xFF142C34).copy(alpha = .82f) else Color.White.copy(alpha = .70f),
-          borderColor = if (glass.isDark) Color(0xFF142C34).copy(alpha = .82f) else Color.White.copy(alpha = .70f),
-          elevation = 7.dp
+          backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = .94f),
+          borderColor = MaterialTheme.colorScheme.outline.copy(alpha = .14f),
+          elevation = 0.dp,
+          enableBackdrop = false
         ) {
           Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -215,7 +215,7 @@ fun SettingsScreen(
                   "Change photo",
                   { photo.launch("image/*") },
                   size = 32.dp,
-                  tint = Color.White,
+                  tint = MaterialTheme.colorScheme.onPrimary,
                   backgroundColor = glass.accentColor.copy(alpha = .88f)
                 )
               }
@@ -272,30 +272,27 @@ fun SettingsScreen(
           }
         }
 
-        val sentCount = messages.values.sumOf { list -> list.count { it.senderId == me.uid } }
-        val activeDays = (((System.currentTimeMillis() - me.createdAt).coerceAtLeast(0L) / 86_400_000L) + 1L).coerceAtMost(999L)
-        val contactCount = conversationsCountForSettings(messages, users)
-
         GlassCard(
           modifier = Modifier.fillMaxWidth(),
           shape = liquidRoundedShape(24f),
-          backgroundColor = if (glass.isDark) Color(0xFF10252D).copy(alpha = .60f) else Color.White.copy(alpha = .58f),
-          borderColor = Color.White.copy(alpha = if (glass.isDark) .13f else .58f),
-          elevation = 4.dp
+          backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = .94f),
+          borderColor = MaterialTheme.colorScheme.outline.copy(alpha = .14f),
+          elevation = 0.dp,
+          enableBackdrop = false
         ) {
           Row(
             Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
           ) {
-            SettingsStat(Icons.Default.Whatshot, activeDays.toString(), "Days active", Color(0xFFFF9F0A), Modifier.weight(1f))
+            SettingsStat(Icons.Default.ChatBubbleOutline, conversations.size.toString(), "Chats", glass.accentColor, Modifier.weight(1f))
             SettingsMetricDivider()
-            SettingsStat(Icons.Default.ChatBubbleOutline, sentCount.toString(), "Sent messages", glass.accentColor, Modifier.weight(1f))
+            SettingsStat(Icons.Default.Whatshot, conversations.count { it.isPinned }.toString(), "Favorites", Color(0xFFFFB85C), Modifier.weight(1f))
             SettingsMetricDivider()
-            SettingsStat(Icons.Default.People, contactCount.toString(), "Contacts", Color(0xFF007AFF), Modifier.weight(1f))
+            SettingsStat(Icons.Default.People, blocked.size.toString(), "Blocked", MaterialTheme.colorScheme.secondary, Modifier.weight(1f))
           }
         }
 
-        SettingsSection("SETTINGS") {
+        SettingsSection("ACCOUNT & PRIVACY") {
           ProfessionalSettingItem(Icons.Default.Person, "Account", "Display name, username, phone", Color(0xFF007AFF)) { dialog = "Profile" }
           SettingDivider()
           ProfessionalSettingItem(Icons.Default.Lock, "Privacy", "Last seen, read receipts, online status", Color(0xFF34C759)) { dialog = "Privacy" }
@@ -314,7 +311,7 @@ fun SettingsScreen(
             value = if (appearance.isDarkMode) "Dark" else "Light"
           ) { onNavigateToAppearance() }
           SettingDivider()
-          ProfessionalSettingItem(Icons.Default.Storage, "Storage and Data", "Network usage and cache cleaner", Color(0xFF32ADE6)) {
+          ProfessionalSettingItem(Icons.Default.Storage, "Storage and Data", "Cached media and local storage", Color(0xFF32ADE6)) {
             scope.launch {
               cacheSize = withContext(Dispatchers.IO) {
                 context.cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
@@ -347,12 +344,7 @@ fun SettingsScreen(
             style = MaterialTheme.typography.labelLarge
           )
           Text(
-            "Firebase Auth + Firestore + Cloudinary • free-tier architecture",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.labelSmall
-          )
-          Text(
-            "Messages sync through Firebase with a persistent local cache",
+            "Your conversations, across your devices",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.labelSmall
           )
@@ -628,6 +620,7 @@ private fun ProfileGlassAction(
   val foreground = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
   Box(
     modifier
+      .defaultMinSize(minHeight = 48.dp)
       .clip(liquidRoundedShape(18f))
       .background(if (glass.isDark) Color.White.copy(alpha = .08f) else Color.White.copy(alpha = .55f))
       .clickable(enabled = enabled, onClick = onClick)
@@ -655,9 +648,10 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
     GlassCard(
       modifier = Modifier.fillMaxWidth(),
       shape = liquidRoundedShape(24f),
-      backgroundColor = if (glass.isDark) Color(0xFF11262E).copy(alpha = .62f) else Color.White.copy(alpha = .60f),
-      borderColor = Color.White.copy(alpha = if (glass.isDark) .13f else .62f),
-      elevation = 4.dp
+      backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = .94f),
+      borderColor = MaterialTheme.colorScheme.outline.copy(alpha = .14f),
+      elevation = 0.dp,
+      enableBackdrop = false
     ) {
       Column(Modifier.padding(vertical = 4.dp), content = content)
     }
@@ -728,13 +722,6 @@ private fun SettingDivider() {
     thickness = .5.dp,
     color = MaterialTheme.colorScheme.onSurface.copy(alpha = .10f)
   )
-}
-
-private fun conversationsCountForSettings(
-  messages: Map<String, List<com.example.data.model.Message>>,
-  users: List<com.example.data.model.User>
-): Int {
-  return maxOf(users.count { it.uid.isNotBlank() }, messages.keys.count()).coerceAtLeast(0)
 }
 
 @Composable

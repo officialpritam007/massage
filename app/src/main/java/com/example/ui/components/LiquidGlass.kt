@@ -32,6 +32,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -62,6 +63,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
 import coil.compose.AsyncImage
 import com.example.ui.theme.AzureBlue
 import com.example.ui.theme.CyanAccent
@@ -108,6 +112,7 @@ fun GlassCard(
   borderColor: Color? = null,
   elevation: Dp = 3.dp,
   onClick: (() -> Unit)? = null,
+  enableBackdrop: Boolean = true,
   content: @Composable () -> Unit
 ) {
   val config = LocalLiquidGlass.current
@@ -119,11 +124,11 @@ fun GlassCard(
     label = "glass_card_press"
   )
   val surface = if (config.isDark) {
-    Color(0xFF19323B).copy(alpha = (0.46f + config.blurAlpha * 0.12f + config.glassIntensity * 0.08f).coerceIn(0.50f, 0.76f))
+    Color(0xFF1B2E49).copy(alpha = (0.52f + config.blurAlpha * 0.10f + config.glassIntensity * 0.08f).coerceIn(0.55f, 0.78f))
   } else {
     Color.White.copy(alpha = (0.36f + config.blurAlpha * 0.14f + config.glassIntensity * 0.06f).coerceIn(0.38f, 0.64f))
   }
-  val glassBackground = if (config.isReducedTransparency) {
+  val glassBackground = if (config.isReducedTransparency || !config.isGlassEnabled) {
     MaterialTheme.colorScheme.surface
   } else {
     backgroundColor ?: surface
@@ -154,7 +159,7 @@ fun GlassCard(
       .clip(resolvedShape)
       .then(
         if (
-          backdrop != null &&
+          enableBackdrop && backdrop != null &&
           config.isGlassEnabled &&
           !config.isReducedTransparency &&
           Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
@@ -162,8 +167,8 @@ fun GlassCard(
           // Haze captures the real backdrop and delegates blur to the platform on Android 12+.
           // Older devices intentionally use the translucent surface fallback below.
           Modifier.hazeEffect(backdrop) {
-            blurRadius = (14f + config.blurAlpha.coerceIn(0f, 0.65f) * 36f).dp
-            noiseFactor = 0.03f
+            blurRadius = (12f + config.blurAlpha.coerceIn(0f, 0.65f) * 20f).dp
+            noiseFactor = 0f
             this.backgroundColor = glassBackground
           }
         } else Modifier
@@ -190,6 +195,7 @@ fun GlassCard(
         if (onClick != null) Modifier.clickable(
           interactionSource = interactionSource,
           indication = null,
+          role = Role.Button,
           onClick = onClick
         ) else Modifier
       )
@@ -239,14 +245,17 @@ fun GlassButton(
       .clip(resolvedShape)
       .background(accent)
       .border(1.dp, if (config.isDark) GlassHighlight.copy(alpha = 0.32f) else GlassBorderStrokeLight, resolvedShape)
-      .clickable(enabled = enabled && !isLoading, interactionSource = pressedSource, indication = null, onClick = onClick)
+      .clickable(enabled = enabled && !isLoading, role = Role.Button, interactionSource = pressedSource, indication = null, onClick = onClick)
+      .semantics { if (!enabled || isLoading) disabled() }
       .padding(horizontal = 22.dp, vertical = 14.dp)
       .testTag(testTag),
     contentAlignment = Alignment.Center
   ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-      if (icon != null) {
-        Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(20.dp).padding(end = 8.dp))
+      if (isLoading) {
+        CircularProgressIndicator(Modifier.padding(end = 8.dp).size(18.dp), color = contentColor, strokeWidth = 2.dp)
+      } else if (icon != null) {
+        Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.padding(end = 8.dp).size(20.dp))
       }
       Text(
         text = if (isLoading) "Processing..." else text,
@@ -282,7 +291,7 @@ fun GlassIconButton(
   Box(
     modifier = modifier
       .size(touchSize)
-      .clickable(interactionSource = interactions, indication = null, onClick = onClick)
+      .clickable(interactionSource = interactions, role = Role.Button, indication = null, onClick = onClick)
       .testTag(testTag),
     contentAlignment = Alignment.Center
   ) {
@@ -330,7 +339,10 @@ fun GlassTextField(
     modifier = modifier
       .defaultMinSize(minHeight = minHeight)
       .clip(resolvedShape)
-      .background(if (config.isDark) Color(0xFF18343C).copy(alpha = 0.62f) else Color.White.copy(alpha = 0.48f))
+      .background(
+        if (config.isReducedTransparency || !config.isGlassEnabled) MaterialTheme.colorScheme.surfaceVariant
+        else if (config.isDark) Color(0xFF1B2E49).copy(alpha = 0.72f) else Color.White.copy(alpha = 0.64f)
+      )
       .border(1.dp, if (config.isDark) GlassBorderStrokeDark else GlassBorderStrokeLight, resolvedShape)
       .padding(horizontal = horizontalPadding, vertical = verticalPadding)
       .testTag(testTag),
@@ -423,7 +435,7 @@ fun GlassBadge(count: Int, modifier: Modifier = Modifier, color: Color? = null) 
     Text(
       if (count > 99) "99+" else count.toString(),
       style = TextStyle(
-        color = if (config.isDark) Color.Black else Color.White,
+        color = if (badgeColor.luminance() > .179f) Color.Black else Color.White,
         fontWeight = FontWeight.Bold,
         fontSize = 11.sp,
         textAlign = TextAlign.Center

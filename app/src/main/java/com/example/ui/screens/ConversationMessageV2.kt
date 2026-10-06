@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -55,8 +57,17 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -72,9 +83,7 @@ import com.example.ui.components.VoiceWaveformPlayer
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.data.network.LiquidApi
 import kotlinx.coroutines.delay
-import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 import kotlin.math.roundToInt
 
 private object ReplyHighlightBusV2 {
@@ -155,6 +164,10 @@ fun MessageBubbleV2(
     onRetrySend: () -> Unit
 ) {
     val config = LocalLiquidGlass.current
+    val maxBubbleWidth = (LocalConfiguration.current.screenWidthDp * .82f).coerceAtMost(360f).dp
+    val density = LocalDensity.current
+    val replyThresholdPx = with(density) { 58.dp.toPx() }
+    val maxDragPx = with(density) { 92.dp.toPx() }
     var drag by remember { mutableFloatStateOf(0f) }
     var expanded by rememberSaveable(message.id) { mutableStateOf(false) }
     var collapsedOverflow by remember(message.id, message.text) { mutableStateOf(false) }
@@ -182,16 +195,16 @@ fun MessageBubbleV2(
         animationSpec = if (reduced) tween(0) else spring(dampingRatio = .55f, stiffness = 360f),
         label = "reply_target_highlight"
     )
-    val shape = if (isMe) RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp)
-    else RoundedCornerShape(22.dp, 22.dp, 22.dp, 6.dp)
-    val bg = if (isMe) {
-        com.example.ui.theme.BubbleOutgoingGradientStart.copy(alpha = if (config.isDark) .82f else .72f)
-    } else {
-        if (config.isDark) Color(0xFFB8D9FF).copy(alpha = .075f)
-        else Color.White.copy(alpha = .56f)
+    val shape = if (isMe) RoundedCornerShape(24.dp, 24.dp, 7.dp, 24.dp)
+    else RoundedCornerShape(24.dp, 24.dp, 24.dp, 7.dp)
+    val outgoing = MaterialTheme.colorScheme.primary
+    val incoming = MaterialTheme.colorScheme.surfaceContainerHigh
+    val bubbleBrush = remember(isMe, outgoing, incoming, config.isReducedTransparency) {
+        if (isMe) Brush.linearGradient(listOf(outgoing, lerp(outgoing, Color.Black, .09f)))
+        else Brush.linearGradient(listOf(incoming.copy(alpha = if (config.isReducedTransparency) 1f else .94f), incoming.copy(alpha = if (config.isReducedTransparency) 1f else .88f)))
     }
-    val contentColor = if (isMe) Color.White else MaterialTheme.colorScheme.onSurface
-    val metaColor = if (isMe) Color.White.copy(alpha = .76f) else MaterialTheme.colorScheme.onSurfaceVariant
+    val contentColor = if (isMe) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    val metaColor = if (isMe) contentColor.copy(alpha = .74f) else MaterialTheme.colorScheme.onSurfaceVariant
     val genericLabels = setOf("Photo", "Video", "Voice message", "Document")
     val caption = message.text.trim().takeUnless { it in genericLabels }.orEmpty()
     val borderColor = when {
@@ -205,7 +218,7 @@ fun MessageBubbleV2(
         DustDeleteContainerV2(active = deleting, reduced = reduced) {
             Column(
             Modifier
-                .widthIn(max = 330.dp)
+                .widthIn(max = maxBubbleWidth)
                 .offset { IntOffset(offset.roundToInt(), 0) }
                 .graphicsLayer {
                     val pulse = 1f + highlightAmount * .022f
@@ -214,20 +227,23 @@ fun MessageBubbleV2(
                     translationY = -3.dp.toPx() * highlightAmount
                     shadowElevation = 8.dp.toPx() * highlightAmount
                 }
-                .pointerInput(message.id, isMe) {
+                .pointerInput(message.id, isMe, replyThresholdPx, maxDragPx) {
                     detectHorizontalDragGestures(
                         onDragEnd = {
-                            if ((isMe && drag < -58f) || (!isMe && drag > 58f)) onReply()
+                            if ((isMe && drag < -replyThresholdPx) || (!isMe && drag > replyThresholdPx)) onReply()
                             drag = 0f
                         },
                         onDragCancel = { drag = 0f },
                         onHorizontalDrag = { change, amount ->
                             change.consume()
-                            drag = if (isMe) (drag + amount).coerceIn(-92f, 0f) else (drag + amount).coerceIn(0f, 92f)
+                            drag = if (isMe) (drag + amount).coerceIn(-maxDragPx, 0f) else (drag + amount).coerceIn(0f, maxDragPx)
                         }
                     )
                 }
-                .combinedClickable(onClick = { if (LiquidApi.isSupportedMedia(message.mediaUrl)) onMedia() }, onLongClick = onLongClick)
+                .combinedClickable(onClick = { if (LiquidApi.isSupportedMedia(message.mediaUrl)) onMedia() }, onLongClick = onLongClick, onLongClickLabel = "Message actions")
+                .semantics {
+                    customActions = listOf(CustomAccessibilityAction("Reply") { onReply(); true })
+                }
         ) {
             // Message rows deliberately avoid backdrop blur. Rendering a haze layer for every
             // LazyColumn item is expensive; tint + rim + a small shadow keeps the glass language.
@@ -239,18 +255,19 @@ fun MessageBubbleV2(
                         clip = false
                     )
                     .clip(shape)
-                    .background(bg)
+                    .background(bubbleBrush)
                     .border(0.5.dp, borderColor.copy(alpha = borderColor.alpha * .72f), shape)
             ) {
                 Column(
-                    Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     if (message.replyToText != null) {
                         Row(
                             Modifier
                                 .widthIn(max = 260.dp)
-                                .background(if (isMe) Color.White.copy(alpha = .10f) else config.accentColor.copy(alpha = .08f), RoundedCornerShape(13.dp))
+                                .defaultMinSize(minHeight = 48.dp)
+                                .background(if (isMe) contentColor.copy(alpha = .09f) else config.accentColor.copy(alpha = .08f), RoundedCornerShape(15.dp))
                                 .clickable {
                                     message.replyToId?.let { replyId ->
                                         ReplyHighlightBusV2.show(replyId)
@@ -260,7 +277,7 @@ fun MessageBubbleV2(
                                 .padding(horizontal = 8.dp, vertical = 5.dp)
                         ) {
                             Column {
-                                Text(message.replyToSender.orEmpty().ifBlank { "Reply" }, style = MaterialTheme.typography.labelSmall, color = if (isMe) Color.White else config.accentColor)
+                                Text(message.replyToSender.orEmpty().ifBlank { "Reply" }, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = if (isMe) contentColor else config.accentColor)
                                 Text(message.replyToText.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = contentColor.copy(alpha = .82f))
                             }
                         }
@@ -271,8 +288,8 @@ fun MessageBubbleV2(
                         Text("Media unavailable", color = contentColor, style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.padding(8.dp))
                     } else when (message.type) {
-                        MessageType.IMAGE -> PrivateImage(message.mediaUrl, "Photo", Modifier.widthIn(min = 210.dp, max = 310.dp), preview = true)
-                        MessageType.VIDEO -> PrivateVideoThumbnail(message.mediaUrl, Modifier.widthIn(min = 210.dp, max = 310.dp).aspectRatio(16f / 10f))
+                        MessageType.IMAGE -> PrivateImage(message.mediaUrl, "Photo", Modifier.widthIn(min = 120.dp, max = maxBubbleWidth - 24.dp).clip(RoundedCornerShape(16.dp)), preview = true)
+                        MessageType.VIDEO -> PrivateVideoThumbnail(message.mediaUrl, Modifier.widthIn(min = 120.dp, max = maxBubbleWidth - 24.dp).aspectRatio(16f / 10f).clip(RoundedCornerShape(16.dp)))
                         MessageType.VOICE, MessageType.AUDIO -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Box(Modifier.size(44.dp)) {
                                 GlassAvatar(photoUrl = voiceAvatarUrl, name = voiceAvatarName.ifBlank { message.senderName.ifBlank { "Voice" } }, size = 42.dp)
@@ -290,7 +307,7 @@ fun MessageBubbleV2(
                                 message.voiceDurationSeconds,
                                 message.mediaUrl,
                                 message.waveform,
-                                modifier = Modifier.widthIn(min = 190.dp, max = 250.dp),
+                                modifier = Modifier.weight(1f).widthIn(max = 250.dp),
                                 isOutgoing = isMe
                             )
                         }
@@ -301,31 +318,6 @@ fun MessageBubbleV2(
                     val showText = message.type == MessageType.TEXT ||
                         (caption.isNotBlank() && message.type != MessageType.VOICE)
                     val displayText = if (message.type == MessageType.TEXT) message.text else caption
-                    val inlineMeta = message.type == MessageType.TEXT &&
-                        message.replyToText == null &&
-                        !displayText.contains("\n") &&
-                        displayText.length <= 24 &&
-                        !expanded
-
-                    if (showText && inlineMeta) {
-                        Row(
-                            verticalAlignment = Alignment.Bottom,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text(
-                                displayText,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = contentColor,
-                                maxLines = 1
-                            )
-                            MessageMetaV2(
-                                message = message,
-                                isMe = isMe,
-                                metaColor = metaColor,
-                                reduced = reduced
-                            )
-                        }
-                    } else {
                         if (showText) {
                             Text(
                                 displayText,
@@ -340,11 +332,12 @@ fun MessageBubbleV2(
                             if (collapsedOverflow || expanded) {
                                 Text(
                                     if (expanded) "Read less" else "Read more",
-                                    color = if (isMe) Color.White.copy(alpha = .92f) else config.accentColor,
+                                    color = if (isMe) contentColor else config.accentColor,
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.SemiBold,
                                     modifier = Modifier
-                                        .clickable { expanded = !expanded }
+                                        .defaultMinSize(minHeight = 48.dp)
+                                        .clickable(role = Role.Button) { expanded = !expanded }
                                         .padding(horizontal = 2.dp, vertical = 6.dp)
                                 )
                             }
@@ -357,13 +350,12 @@ fun MessageBubbleV2(
                             reduced = reduced,
                             modifier = Modifier.align(Alignment.End)
                         )
-                    }
                     if (message.status == MessageDeliveryStatus.FAILED) {
                         Text(
                             "Failed • tap to retry",
-                            color = if (isMe) Color.White else MaterialTheme.colorScheme.error,
+                            color = if (isMe) contentColor else MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.align(Alignment.End).clickable(onClick = onRetrySend)
+                            modifier = Modifier.align(Alignment.End).defaultMinSize(minHeight = 48.dp).clickable(role = Role.Button, onClick = onRetrySend).padding(vertical = 12.dp)
                         )
                     }
                 }
@@ -374,20 +366,20 @@ fun MessageBubbleV2(
                     Modifier
                         .padding(top = 2.dp)
                         .clip(reactionShape)
-                        .background(if (config.isDark) Color(0xFF142A31).copy(alpha = .82f) else Color.White.copy(alpha = .76f))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .96f))
                         .border(
                             0.5.dp,
                             if (config.isDark) Color.White.copy(alpha = .08f) else Color.White.copy(alpha = .42f),
                             reactionShape
                         )
                 ) {
-                    Row(Modifier.padding(horizontal = 7.dp, vertical = 3.dp)) {
+                    Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp, vertical = 2.dp)) {
                         message.reactions.forEach { reaction ->
                             Text(
                                 "${reaction.emoji} ${reaction.userIds.size}",
                                 Modifier
                                     .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-                                    .clickable { onReaction(reaction.emoji) }
+                                    .clickable(role = Role.Button) { onReaction(reaction.emoji) }
                                     .padding(horizontal = 8.dp, vertical = 12.dp),
                                 fontSize = 12.sp
                             )
@@ -408,6 +400,9 @@ private fun MessageMetaV2(
     reduced: Boolean,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val timeFormatter = remember(context) { android.text.format.DateFormat.getTimeFormat(context) }
+    val timeLabel = remember(message.createdAt, timeFormatter) { timeFormatter.format(Date(message.createdAt)) }
     Row(
         modifier,
         horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -424,7 +419,7 @@ private fun MessageMetaV2(
             )
         }
         Text(
-            SimpleDateFormat("h:mm", Locale.getDefault()).format(Date(message.createdAt)),
+            timeLabel,
             fontSize = 12.sp,
             color = metaColor
         )
@@ -455,7 +450,7 @@ private fun MessageMetaV2(
                     status.name,
                     Modifier.size(14.dp),
                     tint = if (status == MessageDeliveryStatus.READ) {
-                        Color(0xFF73E4FF)
+                        if (isMe) metaColor else MaterialTheme.colorScheme.primary
                     } else {
                         metaColor
                     }

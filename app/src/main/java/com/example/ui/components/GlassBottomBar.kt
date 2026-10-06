@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -18,9 +19,9 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.People
@@ -34,6 +35,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -60,18 +63,20 @@ fun GlassBottomBar(
   val clicks = listOf(onNavigateToChats, onNavigateToContacts, onNavigateToSettings)
   val selectedIndex = items.indexOfFirst { it.first == selectedRoute }
   val config = LocalLiquidGlass.current
-  val tabShape = liquidRoundedShape(27f)
+  val tabShape = liquidRoundedShape(30f)
 
-  Box(modifier.navigationBarsPadding().padding(horizontal = 14.dp, vertical = 7.dp)) {
+  Box(
+    modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp),
+    contentAlignment = Alignment.Center
+  ) {
     GlassCard(
-      Modifier.fillMaxWidth(),
-      shape = liquidRoundedShape(32f),
-      backgroundColor = if (config.isDark) Color(0xFF12262D).copy(alpha = .62f)
-      else Color.White.copy(alpha = .48f),
-      borderColor = Color.White.copy(alpha = if (config.isDark) .17f else .56f),
-      elevation = 12.dp
+      Modifier.widthIn(max = 480.dp).fillMaxWidth(),
+      shape = liquidRoundedShape(40f),
+      backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = if (config.isDark) .76f else .84f),
+      borderColor = Color.White.copy(alpha = if (config.isDark) .22f else .72f),
+      elevation = 8.dp
     ) {
-      BoxWithConstraints(Modifier.fillMaxWidth().padding(5.dp)) {
+      BoxWithConstraints(Modifier.fillMaxWidth().padding(6.dp)) {
         val itemWidth = maxWidth / items.size
         val selectedOffset by animateDpAsState(
           targetValue = itemWidth * selectedIndex.coerceAtLeast(0),
@@ -84,22 +89,23 @@ fun GlassBottomBar(
             Modifier
               .offset(x = selectedOffset)
               .width(itemWidth)
-              .height(54.dp)
+              .height(60.dp)
               .clip(tabShape)
-              .background(config.accentColor.copy(alpha = if (config.isDark) .78f else .22f))
+              .background(
+                Brush.verticalGradient(listOf(config.accentColor.copy(alpha = .26f), config.accentColor.copy(alpha = .12f)))
+              )
+              .border(1.dp, config.accentColor.copy(alpha = .32f), tabShape)
           )
         }
         Row(Modifier.fillMaxWidth().selectableGroup()) {
           items.forEachIndexed { index, (route, label, icon) ->
             val selected = index == selectedIndex
-            val color = if (selected) {
-              if (config.isDark) Color.White else config.accentColor
-            } else MaterialTheme.colorScheme.onSurfaceVariant
+            val color = if (selected) config.accentColor else MaterialTheme.colorScheme.onSurfaceVariant
             val unread = if (route == "chats") unreadChatsCount.coerceAtLeast(0) else 0
             Column(
               Modifier
                 .weight(1f)
-                .height(54.dp)
+                .height(60.dp)
                 .clip(tabShape)
                 .selectable(selected = selected, role = Role.Tab, onClick = clicks[index])
                 .semantics {
@@ -110,7 +116,7 @@ fun GlassBottomBar(
               verticalArrangement = Arrangement.Center
             ) {
               Box(Modifier.size(26.dp), contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
+                Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(24.dp))
                 GlassBadge(
                   count = unread,
                   color = config.accentColor,
@@ -120,8 +126,8 @@ fun GlassBottomBar(
                     .clearAndSetSemantics { }
                 )
               }
-              Spacer(Modifier.height(1.dp))
-              Text(label, fontSize = 10.sp, color = color, maxLines = 1)
+              Spacer(Modifier.height(3.dp))
+              Text(label, fontSize = 11.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium, color = color, maxLines = 1)
             }
           }
         }

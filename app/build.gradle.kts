@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.liquidchat.vwnxkp"
     minSdk = 24
     targetSdk = 36
-    versionCode = 432
-    versionName = "4.3.2"
+    versionCode = 440
+    versionName = "4.4.0"
 
     fun config(name: String, fallback: String = "") = providers.gradleProperty(name).orElse(providers.environmentVariable(name)).getOrElse(fallback)
     buildConfigField("String", "CLOUDINARY_CLOUD_NAME", "\"${config("CLOUDINARY_CLOUD_NAME", "mthzgqhv")}\"")
@@ -28,7 +28,9 @@ android {
   }
 
   signingConfigs {
-    create("release") {
+    val releasePasswordsPresent = !System.getenv("STORE_PASSWORD").isNullOrBlank() &&
+      !System.getenv("KEY_PASSWORD").isNullOrBlank()
+    if (releasePasswordsPresent) create("release") {
       val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
       storeFile = file(keystorePath)
       storePassword = System.getenv("STORE_PASSWORD")
@@ -46,9 +48,10 @@ android {
   buildTypes {
     release {
       isCrunchPngs = false
-      isMinifyEnabled = false
+      isMinifyEnabled = true
+      isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfig = signingConfigs.getByName("release")
+      signingConfig = signingConfigs.findByName("release")
     }
     debug { signingConfig = signingConfigs.getByName("debugConfig") }
   }

@@ -1,8 +1,7 @@
 package com.example.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,47 +17,50 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Chat
-import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.withFrameNanos
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.components.GlassAvatar
 import com.example.ui.components.GlassCard
+import com.example.ui.components.GlassIconButton
 import com.example.ui.components.GlassTextField
 import com.example.ui.components.LiquidBackground
 import com.example.ui.components.liquidRoundedShape
-import com.example.ui.components.liquidBottomRoundedShape
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
 
@@ -74,240 +76,167 @@ fun SearchScreen(
   val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
   val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
   val searchHistory by viewModel.searchHistory.collectAsStateWithLifecycle()
+  var category by rememberSaveable { mutableStateOf("All") }
   val focus = remember { FocusRequester() }
   val keyboard = LocalSoftwareKeyboardController.current
+  val glass = LocalLiquidGlass.current
   LaunchedEffect(Unit) { withFrameNanos { }; focus.requestFocus(); keyboard?.show() }
-  val glassConfig = LocalLiquidGlass.current
+  val showPeople = category == "All" || category == "People"
+  val showChats = category == "All" || category == "Chats"
+  val showMessages = category == "All" || category == "Messages"
+  val visibleCount = (if (showPeople) searchResults.users.size else 0) +
+    (if (showChats) searchResults.conversations.size else 0) +
+    (if (showMessages) searchResults.messages.size else 0)
 
   LiquidBackground(modifier = modifier) {
     Scaffold(
       containerColor = Color.Transparent,
       topBar = {
-        GlassCard(
-          modifier = Modifier.fillMaxWidth().statusBarsPadding(),
-          shape = liquidBottomRoundedShape(24f),
-          elevation = 8.dp
-        ) {
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(horizontal = 10.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            IconButton(
-              onClick = onBackClick,
-              modifier = Modifier.testTag("search_back_button")
-            ) {
-              Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
+        Column(Modifier.statusBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp)) {
+          Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            GlassIconButton(Icons.AutoMirrored.Filled.ArrowBack, "Back", onBackClick, size = 48.dp, testTag = "search_back_button")
+            Spacer(Modifier.width(14.dp))
+            Column {
+              Text("Search", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+              Text("Find the conversation that matters", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-
+          }
+          GlassCard(Modifier.fillMaxWidth(), shape = liquidRoundedShape(28f), elevation = 2.dp) {
             GlassTextField(
-              value = searchQuery,
-              onValueChange = { viewModel.onSearchQueryChanged(it) },
-              placeholder = "Search messages and people...",
-              modifier = Modifier.weight(1f).focusRequester(focus),
-              leadingIcon = {
-                Icon(Icons.Default.Search, contentDescription = null, tint = glassConfig.accentColor, modifier = Modifier.size(20.dp))
-              },
+              value = searchQuery, onValueChange = { viewModel.onSearchQueryChanged(it) },
+              placeholder = "Name, username or message",
+              modifier = Modifier.fillMaxWidth().focusRequester(focus),
+              leadingIcon = { Icon(Icons.Default.Search, null, tint = glass.accentColor, modifier = Modifier.size(22.dp)) },
               trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                  IconButton(
-                    onClick = { viewModel.clearSearchQuery() },
-                    modifier = Modifier.size(24.dp)
-                  ) {
-                    Icon(Icons.Default.Clear, contentDescription = "Clear", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                  }
+                if (searchQuery.isNotEmpty()) IconButton(onClick = { viewModel.clearSearchQuery() }, modifier = Modifier.size(48.dp)) {
+                  Icon(Icons.Default.Close, "Clear search", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
                 }
               },
+              shape = liquidRoundedShape(28f), minHeight = 56.dp, verticalPadding = 4.dp,
               testTag = "search_screen_input"
             )
           }
-        }
-      }
-    ) { innerPadding ->
-      LazyColumn(
-        modifier = Modifier
-          .fillMaxSize()
-          .padding(innerPadding),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-      ) {
-        if (searchQuery.isBlank()) {
-          item {
-            Column(Modifier.fillMaxWidth().padding(vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-              Text("Search your chats", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-              Text("Type a name, username or message. Message search covers history loaded on this device.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+          Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
+            listOf("All", "People", "Chats", "Messages").forEach { label ->
+              FilterChip(
+                selected = category == label,
+                onClick = { category = label },
+                label = { Text(label, fontWeight = if (category == label) FontWeight.SemiBold else FontWeight.Medium) },
+                shape = liquidRoundedShape(24f), modifier = Modifier.height(48.dp),
+                colors = FilterChipDefaults.filterChipColors(
+                  containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .72f),
+                  labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                  selectedContainerColor = glass.accentColor,
+                  selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                )
+              )
             }
           }
-          // Recent Searches Chips
+        }
+      }
+    ) { padding ->
+      LazyColumn(
+        Modifier.fillMaxSize().padding(padding),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+      ) {
+        if (searchQuery.isBlank()) {
+          item(key = "search-intro", contentType = "intro") {
+            Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+              Text("A name. A word. A memory.", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+              Text("Search people you know and your chats. Message search includes the history loaded on this device.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+          }
           if (searchHistory.isNotEmpty()) {
-            item {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-              ) {
-                Text(
-                  text = "RECENT SEARCHES",
-                  style = MaterialTheme.typography.labelSmall.copy(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp,
-                    letterSpacing = 1.sp
-                  )
-                )
-
-                Text(
-                  text = "Clear All",
-                  style = MaterialTheme.typography.labelSmall.copy(color = glassConfig.accentColor),
-                  modifier = Modifier.clickable { viewModel.clearSearchHistory() }
-                )
+            item(key = "history-header", contentType = "section") {
+              Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Recent searches", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                TextButton(onClick = { viewModel.clearSearchHistory() }) { Text("Clear all") }
               }
             }
-
-            item {
-              FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-              ) {
+            item(key = "history", contentType = "history") {
+              FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 searchHistory.forEach { historyQuery ->
-                  Box(
-                    modifier = Modifier
-                      .clip(liquidRoundedShape(16f))
-                      .background(if (glassConfig.isDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.70f))
-                      .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = .12f), liquidRoundedShape(16f))
-                      .clickable { viewModel.onSearchQueryChanged(historyQuery) }
-                      .padding(horizontal = 14.dp, vertical = 8.dp)
-                  ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                      Icon(Icons.Default.History, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f), modifier = Modifier.size(16.dp))
-                      Spacer(modifier = Modifier.width(6.dp))
-                      Text(historyQuery, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
-                    }
-                  }
+                  AssistChip(
+                    onClick = { viewModel.onSearchQueryChanged(historyQuery) },
+                    label = { Text(historyQuery, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    leadingIcon = { Icon(Icons.Default.History, null, modifier = Modifier.size(18.dp)) },
+                    shape = liquidRoundedShape(24f), modifier = Modifier.height(48.dp).widthIn(max = 280.dp)
+                  )
                 }
               }
             }
           }
         } else {
-          // Search Results Sections
-          if (searchResults.users.isNotEmpty()) {
-            item {
-              Text(
-                text = "PEOPLE & CONTACTS",
-                style = MaterialTheme.typography.labelSmall.copy(color = glassConfig.accentColor, fontWeight = FontWeight.Bold)
-              )
-            }
-            items(searchResults.users, key = { it.uid }) { user ->
-              GlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = liquidRoundedShape(18f),
-                onClick = { onNavigateToProfile(user.uid) }
-              ) {
-                Row(
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                  verticalAlignment = Alignment.CenterVertically
-                ) {
-                  GlassAvatar(photoUrl = user.photoUrl, name = user.displayName, size = 44.dp)
-                  Spacer(modifier = Modifier.width(12.dp))
-                  Column(modifier = Modifier.weight(1f)) {
-                    Text(user.displayName, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                    Text("@${user.username} • ${user.bio}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 1)
+          item(key = "result-count", contentType = "section") {
+            ScreenSectionLabel("${if (category == "All") "Search" else category} results", "$visibleCount ${if (visibleCount == 1) "match" else "matches"}")
+          }
+          if (showPeople && searchResults.users.isNotEmpty()) {
+            item(key = "people-label", contentType = "section") { ScreenSectionLabel("People", searchResults.users.size.toString()) }
+            items(searchResults.users, key = { "person:${it.uid}" }, contentType = { "person" }) { user ->
+              ScreenContentSurface(Modifier.fillMaxWidth(), onClick = { onNavigateToProfile(user.uid) }) {
+                Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 4.dp, top = 14.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                  GlassAvatar(user.photoUrl, user.displayName.ifBlank { "Contact" }, size = 52.dp)
+                  Spacer(Modifier.width(14.dp))
+                  Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(user.displayName.ifBlank { "Contact" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                      if (user.username.isNotBlank()) "@${user.username}" else user.bio.ifBlank { "View profile" },
+                      style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
                   }
-                  IconButton(
-                    onClick = {
-                      val convId = viewModel.getOrCreateConversationId(user.uid)
-                      onNavigateToConversation(convId)
-                    },
-                    modifier = Modifier.size(36.dp)
-                  ) {
-                    Icon(Icons.Default.Chat, contentDescription = "Chat", tint = glassConfig.accentColor, modifier = Modifier.size(20.dp))
+                  IconButton(onClick = { onNavigateToConversation(viewModel.getOrCreateConversationId(user.uid)) }, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Default.Chat, "Message ${user.displayName.ifBlank { "contact" }}", tint = glass.accentColor, modifier = Modifier.size(22.dp))
                   }
                 }
               }
             }
           }
-
-          if (searchResults.conversations.isNotEmpty()) {
-            item {
-              Text(
-                text = "CHATS",
-                style = MaterialTheme.typography.labelSmall.copy(color = glassConfig.accentColor, fontWeight = FontWeight.Bold)
-              )
-            }
-            items(searchResults.conversations, key = { it.id }) { conv ->
-              GlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = liquidRoundedShape(18f),
-                onClick = { onNavigateToConversation(conv.id) }
-              ) {
-                Row(
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                  verticalAlignment = Alignment.CenterVertically
-                ) {
-                  GlassAvatar(photoUrl = conv.otherUser.photoUrl, name = conv.otherUser.displayName, size = 44.dp)
-                  Spacer(modifier = Modifier.width(12.dp))
-                  Column(modifier = Modifier.weight(1f)) {
-                    Text(conv.otherUser.displayName, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                    Text(conv.lastMessageText, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 1)
+          if (showChats && searchResults.conversations.isNotEmpty()) {
+            item(key = "chats-label", contentType = "section") { ScreenSectionLabel("Chats", searchResults.conversations.size.toString()) }
+            items(searchResults.conversations, key = { "chat:${it.id}" }, contentType = { "chat" }) { conversation ->
+              ScreenContentSurface(Modifier.fillMaxWidth(), onClick = { onNavigateToConversation(conversation.id) }) {
+                Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                  GlassAvatar(conversation.otherUser.photoUrl, conversation.otherUser.displayName.ifBlank { "Contact" }, size = 52.dp)
+                  Spacer(Modifier.width(14.dp))
+                  Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(conversation.otherUser.displayName.ifBlank { "Contact" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(conversation.lastMessageText.ifBlank { "Open conversation" }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                   }
                 }
               }
             }
           }
-
-          if (searchResults.messages.isNotEmpty()) {
-            item {
-              Text(
-                text = "MESSAGES",
-                style = MaterialTheme.typography.labelSmall.copy(color = glassConfig.accentColor, fontWeight = FontWeight.Bold)
-              )
-            }
-            items(searchResults.messages, key = { it.id }) { msg ->
-              GlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = liquidRoundedShape(18f),
-                onClick = {
-                  viewModel.requestMessageJump(msg.conversationId, msg.id)
-                  onNavigateToConversation(msg.conversationId)
-                }
-              ) {
-                Row(
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                  verticalAlignment = Alignment.CenterVertically
-                ) {
-                  Icon(Icons.Default.Chat, contentDescription = null, tint = glassConfig.accentColor, modifier = Modifier.size(24.dp))
-                  Spacer(modifier = Modifier.width(12.dp))
-                  Column(modifier = Modifier.weight(1f)) {
-                    Text(msg.senderName, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    Text(msg.text, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+          if (showMessages && searchResults.messages.isNotEmpty()) {
+            item(key = "messages-label", contentType = "section") { ScreenSectionLabel("Messages", searchResults.messages.size.toString()) }
+            items(searchResults.messages, key = { "message:${it.conversationId}:${it.id}" }, contentType = { "message" }) { message ->
+              ScreenContentSurface(Modifier.fillMaxWidth(), onClick = {
+                viewModel.requestMessageJump(message.conversationId, message.id)
+                onNavigateToConversation(message.conversationId)
+              }) {
+                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.Top) {
+                  Box(Modifier.size(44.dp).background(glass.accentColor.copy(alpha = .12f), RoundedCornerShape(16.dp)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Chat, null, tint = glass.accentColor, modifier = Modifier.size(22.dp))
+                  }
+                  Spacer(Modifier.width(14.dp))
+                  Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(message.senderName.ifBlank { "Message" }, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(message.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)
                   }
                 }
               }
             }
           }
-
-          if (searchResults.isEmpty) {
-            item {
-              Box(
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .padding(top = 40.dp),
-                contentAlignment = Alignment.Center
-              ) {
-                Text(
-                  text = "No results found for \"$searchQuery\"",
-                  color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
-                  fontSize = 14.sp
-                )
-              }
+          if (visibleCount == 0) {
+            item(key = "search-empty", contentType = "empty") {
+              ScreenEmptyState(
+                Icons.Default.Search, "No matches yet", "Try another name, username or word from a message.",
+                actionLabel = if (category == "All") "Clear search" else "Search everything",
+                onAction = { if (category == "All") viewModel.clearSearchQuery() else category = "All" }
+              )
             }
           }
         }
