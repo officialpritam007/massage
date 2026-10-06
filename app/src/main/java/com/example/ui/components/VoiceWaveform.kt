@@ -179,9 +179,9 @@ fun VoiceWaveformPlayer(
     }
   }
 
-  val active = if (isOutgoing) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary
+  val active = if (isOutgoing) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
   val inactive = if (isOutgoing) {
-    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .28f)
+    MaterialTheme.colorScheme.onPrimary.copy(alpha = .28f)
   } else {
     MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .28f)
   }
@@ -290,7 +290,7 @@ fun VoiceWaveformPlayer(
         Text(
           formatVoiceTime(if (playing || pos > 0f) (pos / 1000).toInt() else durationSeconds.coerceAtLeast(0)),
           style = MaterialTheme.typography.labelSmall,
-          color = if (isOutgoing) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .78f)
+          color = if (isOutgoing) MaterialTheme.colorScheme.onPrimary.copy(alpha = .78f)
           else MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.weight(1f))
@@ -298,7 +298,7 @@ fun VoiceWaveformPlayer(
           Text(
             formatVoiceTime(duration / 1000),
             style = MaterialTheme.typography.labelSmall,
-            color = if (isOutgoing) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .70f)
+            color = if (isOutgoing) MaterialTheme.colorScheme.onPrimary.copy(alpha = .70f)
             else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .82f)
           )
         }

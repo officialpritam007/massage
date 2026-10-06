@@ -8,8 +8,13 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.SystemClock
 import android.util.Log
-import android.view.Choreographer
+import android.view.Display
+import android.view.FrameMetrics
+import android.view.Window
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -30,6 +35,7 @@ import com.example.data.network.LiquidApi
 import com.example.ui.LiquidChatApp
 import com.example.ui.viewmodel.LiquidChatViewModel
 import kotlinx.coroutines.delay
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
   private var notificationConversation by mutableStateOf<String?>(null)
@@ -44,8 +50,10 @@ class MainActivity : ComponentActivity() {
     StartupCrashStore.markStage(this, "activity_onCreate")
     enableEdgeToEdge()
     WindowCompat.setDecorFitsSystemWindows(window, false)
-    val preferredHz = preferHighestRefreshRate()
-    if (BuildConfig.DEBUG) frameMonitor = DebugFrameMonitor(preferredHz)
+    preferHighestRefreshRate()
+    if (BuildConfig.DEBUG) {
+      frameMonitor = DebugFrameMonitor(window) { currentDisplay()?.refreshRate ?: 60f }
+    }
     notificationConversation = intent.getStringExtra("conversation_id")
 
     val existingCrash = StartupCrashStore.recentCrash(this)
@@ -121,6 +129,7 @@ class MainActivity : ComponentActivity() {
 
   override fun onResume() {
     super.onResume()
+    preferHighestRefreshRate()
     frameMonitor?.start()
   }
 
@@ -129,19 +138,29 @@ class MainActivity : ComponentActivity() {
     super.onPause()
   }
 
-  private fun preferHighestRefreshRate(): Float {
-    val activeDisplay = display ?: return 60f
+  @Suppress("DEPRECATION")
+  private fun currentDisplay(): Display? =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) display ?: windowManager.defaultDisplay
+    else windowManager.defaultDisplay
+
+  private fun preferHighestRefreshRate() {
+    val activeDisplay = currentDisplay() ?: return
     val current = activeDisplay.mode
     val best = activeDisplay.supportedModes
-      .filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
+      .filter {
+        it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight &&
+          it.refreshRate.isFinite() && it.refreshRate > 0f
+      }
       .maxByOrNull { it.refreshRate }
       ?: current
 
     window.attributes = window.attributes.apply {
-      preferredDisplayModeId = best.modeId
+      // Android 14+ supports a seamless refresh-rate hint without pinning the
+      // display mode. Older versions use a mode with the current resolution.
+      // These are preferences: power saving and thermal limits remain in charge.
+      preferredDisplayModeId = if (Build.VERSION.SDK_INT >= 34) 0 else best.modeId
       preferredRefreshRate = best.refreshRate
     }
-    return best.refreshRate
   }
 
   override fun onNewIntent(intent: Intent) {
@@ -152,52 +171,73 @@ class MainActivity : ComponentActivity() {
 }
 
 
-private class DebugFrameMonitor(private val refreshRate: Float) : Choreographer.FrameCallback {
-  private var running = false
-  private var lastFrameNs = 0L
-  private var frameCount = 0
-  private var missedFrames = 0
-  private var totalFrameMs = 0.0
-  private var worstFrameMs = 0.0
-  private val budgetMs = 1000.0 / refreshRate.coerceAtLeast(60f)
-  private val reportEvery = (refreshRate.coerceAtLeast(60f) * 5f).toInt()
+/** Window render measurements, not the interval between artificially requested vsync callbacks. */
+private class DebugFrameMonitor(
+  private val window: Window,
+  private val activeRefreshRate: () -> Float
+) {
+  @Volatile private var listener: Window.OnFrameMetricsAvailableListener? = null
+  private var worker: HandlerThread? = null
 
   fun start() {
-    if (running) return
-    running = true
-    lastFrameNs = 0L
-    Choreographer.getInstance().postFrameCallback(this)
+    if (listener != null) return
+    val thread = HandlerThread("LiquidFrameMetrics").apply { start() }
+    worker = thread
+    var reportStartedAt = SystemClock.elapsedRealtime()
+    val durations = ArrayList<Long>()
+    var missedDeadlines = 0
+    var estimatedOverBudget = 0
+    var droppedReports = 0
+    lateinit var sessionListener: Window.OnFrameMetricsAvailableListener
+    sessionListener = Window.OnFrameMetricsAvailableListener { _, metrics, dropped ->
+      if (listener !== sessionListener) return@OnFrameMetricsAvailableListener
+      droppedReports += dropped
+      // The platform reuses metrics; consume primitive values in this callback.
+      // First draws are startup/layout costs, not animation-jank samples.
+      val totalNs = metrics.getMetric(FrameMetrics.TOTAL_DURATION)
+      if (metrics.getMetric(FrameMetrics.FIRST_DRAW_FRAME) == 1L || totalNs <= 0L) {
+        return@OnFrameMetricsAvailableListener
+      }
+      durations.add(totalNs)
+      val hz = activeRefreshRate().takeIf { it.isFinite() && it > 0f } ?: 60f
+      val deadlineNs = if (Build.VERSION.SDK_INT >= 31) metrics.getMetric(FrameMetrics.DEADLINE) else -1L
+      if (deadlineNs > 0L) {
+        if (totalNs >= deadlineNs) missedDeadlines++
+      } else if (totalNs > 1_000_000_000.0 / hz) {
+        estimatedOverBudget++
+      }
+      val now = SystemClock.elapsedRealtime()
+      if (now - reportStartedAt >= 5_000L) {
+        val sorted = durations.sorted()
+        val p95Ns = sorted[((sorted.size - 1) * .95).toInt()]
+        Log.d(
+          "LiquidPerf",
+          String.format(
+            Locale.US,
+            "windowFrames=%d display=%.1fHz renderAvg=%.2fms p95=%.2fms worst=%.2fms " +
+              "deadlineMisses=%d estimatedOverBudget=%d droppedMetricReports=%d",
+            durations.size, hz, durations.average() / 1_000_000.0,
+            p95Ns / 1_000_000.0, sorted.last() / 1_000_000.0,
+            missedDeadlines, estimatedOverBudget, droppedReports
+          )
+        )
+        durations.clear()
+        missedDeadlines = 0
+        estimatedOverBudget = 0
+        droppedReports = 0
+        reportStartedAt = now
+      }
+    }
+    listener = sessionListener
+    window.addOnFrameMetricsAvailableListener(sessionListener, Handler(thread.looper))
   }
 
   fun stop() {
-    running = false
-    Choreographer.getInstance().removeFrameCallback(this)
-    lastFrameNs = 0L
-  }
-
-  override fun doFrame(frameTimeNanos: Long) {
-    if (!running) return
-    if (lastFrameNs != 0L) {
-      val frameMs = (frameTimeNanos - lastFrameNs) / 1_000_000.0
-      frameCount++
-      totalFrameMs += frameMs
-      worstFrameMs = maxOf(worstFrameMs, frameMs)
-      missedFrames += ((frameMs / budgetMs).toInt() - 1).coerceAtLeast(0)
-
-      if (frameCount >= reportEvery) {
-        Log.d(
-          "LiquidPerf",
-          "target=${"%.0f".format(refreshRate)}Hz avg=${"%.2f".format(totalFrameMs / frameCount)}ms " +
-            "worst=${"%.2f".format(worstFrameMs)}ms missedVsync=$missedFrames"
-        )
-        frameCount = 0
-        missedFrames = 0
-        totalFrameMs = 0.0
-        worstFrameMs = 0.0
-      }
-    }
-    lastFrameNs = frameTimeNanos
-    Choreographer.getInstance().postFrameCallback(this)
+    val registered = listener ?: return
+    listener = null
+    window.removeOnFrameMetricsAvailableListener(registered)
+    worker?.quitSafely()
+    worker = null
   }
 }
 

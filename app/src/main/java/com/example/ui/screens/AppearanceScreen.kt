@@ -19,11 +19,15 @@ import androidx.compose.ui.unit.dp
 import com.example.data.model.AppearanceSettings
 import com.example.ui.components.GlassButton
 import com.example.ui.components.GlassCard
+import com.example.ui.components.GlassHeader
 import com.example.ui.components.LiquidBackground
 import com.example.ui.components.liquidRoundedShape
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
 import kotlin.math.abs
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 
 private data class AppearancePreset(
   val label: String,
@@ -57,7 +61,8 @@ private val cornerPresets = listOf(
 @Composable
 fun AppearanceScreen(viewModel: LiquidChatViewModel, onBackClick: () -> Unit) {
   val appearance by viewModel.appearance.collectAsStateWithLifecycle()
-  val accents = listOf("#00E39C", "#32ADE6", "#007AFF", "#AF52DE", "#34C759")
+  val defaultAccent = if (appearance.isDarkMode) "#78C7FF" else "#0068D9"
+  val accents = listOf(defaultAccent, "#00A38D", "#007AFF", "#AF52DE", "#D98320")
 
   BackHandler(onBack = onBackClick)
 
@@ -71,6 +76,26 @@ fun AppearanceScreen(viewModel: LiquidChatViewModel, onBackClick: () -> Unit) {
         .padding(horizontal = 18.dp, vertical = 16.dp),
       verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+      GlassHeader("Appearance", subtitle = "Make Liquid Chat feel like you", onBackClick = onBackClick)
+      GlassCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+          Text("LIVE PREVIEW", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          Surface(
+            shape = liquidRoundedShape(18f),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            modifier = Modifier.align(Alignment.Start)
+          ) {
+            Text("A little more clarity.", Modifier.padding(14.dp), color = MaterialTheme.colorScheme.onSurface)
+          }
+          Surface(
+            shape = liquidRoundedShape(18f),
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.align(Alignment.End)
+          ) {
+            Text("A little more you.", Modifier.padding(14.dp), color = MaterialTheme.colorScheme.onPrimary)
+          }
+        }
+      }
       AppearanceToggleCard(
         title = "Dark appearance",
         checked = appearance.isDarkMode,
@@ -111,8 +136,10 @@ fun AppearanceScreen(viewModel: LiquidChatViewModel, onBackClick: () -> Unit) {
 
       AppearanceAccentCard(
         accents = accents,
-        selected = appearance.accentColorHex,
-        onSelect = { viewModel.updateAppearance(appearance.copy(accentColorHex = it)) }
+        selected = if (appearance.accentColorHex.isBlank() ||
+          appearance.accentColorHex.uppercase() in setOf("#00E39C", "#78C7FF", "#0068D9")) defaultAccent
+          else appearance.accentColorHex,
+        onSelect = { viewModel.updateAppearance(appearance.copy(accentColorHex = if (it == defaultAccent) "" else it)) }
       )
 
       AppearanceToggleCard(
@@ -137,7 +164,7 @@ fun AppearanceScreen(viewModel: LiquidChatViewModel, onBackClick: () -> Unit) {
               blurAlpha = 0.35f,
               cornerRadiusDp = 30f,
               borderStrength = 0.70f,
-              accentColorHex = "#00E39C",
+              accentColorHex = "",
               isReducedMotion = appearance.isReducedMotion,
               isReducedTransparency = appearance.isReducedTransparency
             )
@@ -166,7 +193,8 @@ private fun AppearanceGlassCard(content: @Composable ColumnScope.() -> Unit) {
     } else {
       Color.White.copy(alpha = .72f)
     },
-    elevation = 5.dp
+    elevation = 0.dp,
+    enableBackdrop = false
   ) {
     Column(
       Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
@@ -232,7 +260,7 @@ private fun AppearancePresetCard(
         val active = selected == preset.label
         Surface(
           onClick = { onSelected(preset.value) },
-          modifier = Modifier.weight(1f),
+          modifier = Modifier.weight(1f).heightIn(min = 48.dp),
           shape = liquidRoundedShape(14f),
           color = if (active) {
             glass.accentColor.copy(alpha = if (glass.isDark) .25f else .18f)
@@ -277,6 +305,14 @@ private fun AppearanceAccentCard(
       verticalAlignment = Alignment.CenterVertically
     ) {
       accents.forEach { hex ->
+        val active = selected.equals(hex, ignoreCase = true)
+        val label = when (hex) {
+          "#78C7FF", "#0068D9" -> "Ocean"
+          "#00A38D" -> "Teal"
+          "#007AFF" -> "Blue"
+          "#AF52DE" -> "Violet"
+          else -> "Amber"
+        }
         val color = runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrDefault(Color.Blue)
         Surface(
           onClick = { onSelect(hex) },
@@ -287,7 +323,10 @@ private fun AppearanceAccentCard(
             if (selected.equals(hex, ignoreCase = true)) MaterialTheme.colorScheme.onSurface
             else Color.White.copy(alpha = .35f)
           ),
-          modifier = Modifier.size(42.dp)
+          modifier = Modifier.size(48.dp).semantics {
+            contentDescription = "$label accent"
+            this.selected = active
+          }
         ) {}
       }
     }

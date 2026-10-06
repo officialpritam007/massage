@@ -98,6 +98,9 @@ class LiquidChatViewModel(
   fun setConversationArchived(conversationId: String, archived: Boolean) = repository.setConversationArchived(conversationId, archived)
   fun deleteChatForMe(conversationId: String) = repository.deleteChatForMe(conversationId)
 
+  fun resetPassword(email: String, onResult: (Result<Unit>) -> Unit) =
+    repository.resetPassword(email, onResult)
+
   fun uploadChatMedia(
     conversationId: String,
     uri: Uri,

@@ -63,12 +63,10 @@ jobs:
         run: |
           printf '%s\n' 'MAPS_API_KEY=' > local.properties
 
-      - name: Install Gradle
+      - name: Verify Gradle wrapper
         run: |
-          wget -q https://services.gradle.org/distributions/gradle-9.3.1-bin.zip -O /tmp/gradle.zip
-          unzip -q /tmp/gradle.zip -d /tmp
-          echo "/tmp/gradle-9.3.1/bin" >> "$GITHUB_PATH"
-          /tmp/gradle-9.3.1/bin/gradle --version
+          chmod +x gradlew
+          ./gradlew --version
 
       - name: Run Firestore security-rule integration tests
         run: |
@@ -80,15 +78,25 @@ jobs:
 
       - name: Run unit tests
         run: |
-          /tmp/gradle-9.3.1/bin/gradle testDebugUnitTest --no-daemon --stacktrace
+          ./gradlew testDebugUnitTest --no-daemon --stacktrace
 
       - name: Build Debug APK
         run: |
-          /tmp/gradle-9.3.1/bin/gradle assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Verify optimized release assembly
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: liquid-chat-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Upload unsigned release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: liquid-chat-unsigned-release
+          path: app/build/outputs/apk/release/*unsigned.apk
           if-no-files-found: error

@@ -31,7 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
 @Composable
-private fun rememberValidatedNetwork(): Boolean {
+internal fun rememberValidatedNetwork(): Boolean {
   val context = LocalContext.current
   val manager = remember(context) {
     context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -63,13 +63,13 @@ private fun rememberValidatedNetwork(): Boolean {
 }
 
 @Composable
-fun NetworkStatusBanner(modifier: Modifier = Modifier) {
-  val online = rememberValidatedNetwork()
+fun NetworkStatusBanner(modifier: Modifier = Modifier, online: Boolean = rememberValidatedNetwork()) {
+  val reducedMotion = com.example.ui.theme.LocalLiquidGlass.current.isReducedMotion
   AnimatedVisibility(
     visible = !online,
     modifier = modifier,
-    enter = fadeIn() + slideInVertically { -it / 2 },
-    exit = fadeOut() + slideOutVertically { -it / 2 }
+    enter = if (reducedMotion) androidx.compose.animation.EnterTransition.None else fadeIn() + slideInVertically { -it / 2 },
+    exit = if (reducedMotion) androidx.compose.animation.ExitTransition.None else fadeOut() + slideOutVertically { -it / 2 }
   ) {
     GlassCard {
       Row(

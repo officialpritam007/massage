@@ -7,10 +7,13 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.lerp
 
 /** Shared design tokens for the app-wide Liquid Glass material. */
+@Immutable
 data class LiquidGlassConfig(
   val glassIntensity: Float = 0.75f,
   val blurAlpha: Float = 0.35f,
@@ -26,60 +29,65 @@ data class LiquidGlassConfig(
 val LocalLiquidGlass = compositionLocalOf { LiquidGlassConfig() }
 
 private val DarkColorScheme = darkColorScheme(
-  primary = Color(0xFF00E39C),
-  onPrimary = Color(0xFF001B14),
-  primaryContainer = Color(0xFF005F49),
-  onPrimaryContainer = Color(0xFFB6FFE7),
-  secondary = Color(0xFF72D8FF),
+  primary = CyanAccent,
+  onPrimary = Color(0xFF08243C),
+  primaryContainer = Color(0xFF163E62),
+  onPrimaryContainer = Color(0xFFD5EBFF),
+  secondary = Color(0xFF53D8C4),
   onSecondary = Color(0xFF00151C),
   tertiary = Color(0xFFA98CFF),
-  background = Color(0xFF020508),
-  onBackground = Color(0xFFF8FFFE),
-  surface = Color(0xFF0B171D),
-  onSurface = Color(0xFFF8FFFE),
-  surfaceVariant = Color(0xFF172930),
-  onSurfaceVariant = Color(0xFFB3C2C9),
-  outline = Color(0xFF5D7A82),
+  background = MidnightDark,
+  onBackground = TextPrimary,
+  surface = SlateDark,
+  onSurface = TextPrimary,
+  surfaceVariant = Color(0xFF1D2E46),
+  onSurfaceVariant = TextSecondary,
+  outline = Color(0xFF8192AB),
   error = Color(0xFFFF8D9B),
   onError = Color(0xFF35050D)
 )
 
 private val LightColorScheme = lightColorScheme(
-  primary = Color(0xFF008D70),
+  primary = Color(0xFF0068D9),
   onPrimary = Color.White,
-  primaryContainer = Color(0xFFB9F7E8),
-  onPrimaryContainer = Color(0xFF00382C),
-  secondary = Color(0xFF0A7FA4),
+  primaryContainer = Color(0xFFDCEAFF),
+  onPrimaryContainer = Color(0xFF153C69),
+  secondary = Color(0xFF007B70),
   onSecondary = Color.White,
   tertiary = VioletAccent,
-  background = Color(0xFFF3F8F8),
-  onBackground = Color(0xFF0A191C),
-  surface = Color(0xFFF8FCFC),
-  onSurface = Color(0xFF0A191C),
-  surfaceVariant = Color(0xFFE5F0F0),
-  onSurfaceVariant = Color(0xFF496168),
-  outline = Color(0xFF82969C)
+  background = Color(0xFFF2F6FC),
+  onBackground = TextPrimaryLight,
+  surface = Color(0xFFFAFCFF),
+  onSurface = TextPrimaryLight,
+  surfaceVariant = Color(0xFFE6EDF7),
+  onSurfaceVariant = TextSecondaryLight,
+  outline = Color(0xFF798BA5)
 )
 
 @Composable
 fun LiquidChatTheme(
   darkTheme: Boolean = true,
-  glassConfig: LiquidGlassConfig = LiquidGlassConfig(isDark = darkTheme),
+  glassConfig: LiquidGlassConfig = LiquidGlassConfig(
+    isDark = darkTheme,
+    accentColor = if (darkTheme) CyanAccent else Color(0xFF0068D9)
+  ),
   content: @Composable () -> Unit
 ) {
   val base = if (darkTheme) DarkColorScheme else LightColorScheme
+  val accent = resolveLiquidAccent(glassConfig.accentColor, base.surface)
   val colorScheme = base.copy(
-    primary = glassConfig.accentColor,
-    onPrimary = if (glassConfig.accentColor.luminance() > .179f) Color.Black else Color.White
+    primary = accent,
+    onPrimary = if (accent.luminance() > .179f) Color.Black else Color.White
   )
   // Preserve the user's glass toggle and sanitize persisted values so malformed
   // legacy settings cannot produce broken corners, excessive blur or invisible rims.
   val resolvedConfig = glassConfig.copy(
     isDark = darkTheme,
-    glassIntensity = glassConfig.glassIntensity.coerceIn(0.35f, 1f),
-    blurAlpha = glassConfig.blurAlpha.coerceIn(0f, 0.65f),
-    cornerRadiusDp = glassConfig.cornerRadiusDp.coerceIn(12f, 56f),
-    borderStrength = glassConfig.borderStrength.coerceIn(0.20f, 1f)
+    accentColor = accent,
+    glassIntensity = glassConfig.glassIntensity.finiteOr(.75f).coerceIn(0.35f, 1f),
+    blurAlpha = glassConfig.blurAlpha.finiteOr(.35f).coerceIn(0f, 0.65f),
+    cornerRadiusDp = glassConfig.cornerRadiusDp.finiteOr(30f).coerceIn(12f, 56f),
+    borderStrength = glassConfig.borderStrength.finiteOr(.7f).coerceIn(0.20f, 1f)
   )
 
   CompositionLocalProvider(LocalLiquidGlass provides resolvedConfig) {
@@ -89,6 +97,25 @@ fun LiquidChatTheme(
       content = content
     )
   }
+}
+
+private fun Float.finiteOr(fallback: Float) = if (isFinite()) this else fallback
+
+/** Accent labels share the chosen hue while remaining readable in either appearance. */
+internal fun resolveLiquidAccent(candidate: Color, surface: Color): Color {
+  val opaque = candidate.copy(alpha = 1f)
+  val target = if (surface.luminance() < .179f) Color.White else Color.Black
+  fun contrast(color: Color): Float {
+    val first = color.luminance()
+    val second = surface.luminance()
+    return (maxOf(first, second) + .05f) / (minOf(first, second) + .05f)
+  }
+  if (contrast(opaque) >= 4.5f) return opaque
+  for (step in 1..40) {
+    val adjusted = lerp(opaque, target, step / 40f)
+    if (contrast(adjusted) >= 4.5f) return adjusted
+  }
+  return target
 }
 
 @Composable

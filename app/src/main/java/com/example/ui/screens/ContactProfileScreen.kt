@@ -88,9 +88,11 @@ fun ContactProfileScreen(
     val context = LocalContext.current
 
     val user = if (userId == me.uid) me
-    else users.find { it.uid == userId } ?: User(uid = userId, displayName = "Contact")
+    else users.find { it.uid == userId }
+        ?: conversations.firstOrNull { it.otherUser.uid == userId }?.otherUser
+        ?: User(uid = userId, displayName = "Contact")
 
-    val conversation = conversations.find { user.uid in it.participantIds }
+    val conversation = if (userId == me.uid) null else conversations.find { it.otherUser.uid == userId }
 
     LaunchedEffect(conversation?.id) {
         conversation?.id?.let { viewModel.observeConversation(it) }
@@ -120,17 +122,14 @@ fun ContactProfileScreen(
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = liquidRoundedShape(32f),
-                backgroundColor = if (glass.isDark) {
-                    Color(0xFF142A31).copy(alpha = .76f)
-                } else {
-                    Color.White.copy(alpha = .58f)
-                },
-                elevation = 7.dp
+                backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = .94f),
+                elevation = 0.dp,
+                enableBackdrop = false
             ) {
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        .animateContentSize(spring(dampingRatio = .78f, stiffness = 390f))
+                        .then(if (glass.isReducedMotion) Modifier else Modifier.animateContentSize(spring(dampingRatio = .78f, stiffness = 390f)))
                         .padding(horizontal = 20.dp, vertical = 22.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -253,7 +252,8 @@ fun ContactProfileScreen(
                 GlassCard(
                     modifier = Modifier.fillMaxWidth(),
                     shape = liquidRoundedShape(26f),
-                    elevation = 1.dp
+                    elevation = 0.dp,
+                    enableBackdrop = false
                 ) {
                     Column(
                         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
@@ -266,12 +266,12 @@ fun ContactProfileScreen(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            "Messages are available only to conversation participants through Firebase security rules.",
+                            "Only you and this contact can read this chat in the app. Messages are not end-to-end encrypted.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            "Recent chats are cached locally so reopening a conversation is instant.",
+                            "Shared media uses delivery links. Anyone with a copied link may be able to open it.",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -291,7 +291,8 @@ fun ContactProfileScreen(
                 GlassCard(
                     modifier = Modifier.fillMaxWidth(),
                     shape = liquidRoundedShape(26f),
-                    elevation = 0.dp
+                    elevation = 0.dp,
+                    enableBackdrop = false
                 ) {
                     Text(
                         "No shared media yet",
@@ -320,7 +321,8 @@ fun ContactProfileScreen(
                 GlassCard(
                     Modifier.fillMaxWidth(),
                     shape = liquidRoundedShape(28f),
-                    elevation = 1.dp
+                    elevation = 0.dp,
+                    enableBackdrop = false
                 ) {
                     Column(Modifier.fillMaxWidth().padding(8.dp)) {
                         conversation?.let { current ->
@@ -416,7 +418,8 @@ private fun ProfileInfoRow(
         modifier = Modifier.fillMaxWidth(),
         shape = liquidRoundedShape(20f),
         backgroundColor = if (glass.isDark) Color.White.copy(alpha = .075f) else Color.White.copy(alpha = .58f),
-        elevation = 0.dp
+        elevation = 0.dp,
+        enableBackdrop = false
     ) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
@@ -435,7 +438,6 @@ private fun ProfileInfoRow(
                 Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(value, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(21.dp))
         }
     }
 }
@@ -453,9 +455,9 @@ private fun SharedMediaCard(
             else -> Modifier.size(116.dp)
         },
         shape = liquidRoundedShape(24f),
-        backgroundColor = if (glass.isDark) Color(0xFF142A31).copy(alpha = .70f)
-        else Color.White.copy(alpha = .58f),
-        elevation = 1.dp,
+        backgroundColor = MaterialTheme.colorScheme.surface,
+        elevation = 0.dp,
+        enableBackdrop = false,
         onClick = onClick
     ) {
         when (message.type) {

@@ -8,6 +8,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.media.AudioAttributes
+import android.media.RingtoneManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -73,20 +75,35 @@ class MessageNotificationWorker(context: Context, params: WorkerParameters) : Co
       if (!current()) return Result.success()
       if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return Result.success()
       val manager = applicationContext.getSystemService(NotificationManager::class.java)
-      if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(NotificationChannel("messages", "Messages", NotificationManager.IMPORTANCE_HIGH))
+      val vibrate = settings?.get("vibration") != false
+      val channelId = if (Build.VERSION.SDK_INT >= 26) {
+        val selected = ensureMessageNotificationChannel(manager, vibrate)
+        // Respect an explicitly blocked legacy Messages channel when introducing
+        // the no-vibration variant rather than bypassing the user's OS choice.
+        if (manager.getNotificationChannel("messages")?.importance == NotificationManager.IMPORTANCE_NONE) {
+          return Result.success()
+        }
+        selected
+      } else "messages"
       val intent = Intent(applicationContext, MainActivity::class.java)
         .putExtra("conversation_id", cid)
         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
       val number = "$account:$cid:$id".hashCode()
       val pending = PendingIntent.getActivity(applicationContext, number, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
       val text = NotificationText.body(message.getString("type") ?: "TEXT", messageText, preview)
-      val notification = NotificationCompat.Builder(applicationContext, "messages")
+      val builder = NotificationCompat.Builder(applicationContext, channelId)
         .setSmallIcon(R.drawable.ic_stat_message)
         .setContentTitle(if (preview) peer.getString("displayName").orEmpty().ifBlank { "Liquid Chat" } else "Liquid Chat")
         .setContentText(text).setStyle(NotificationCompat.BigTextStyle().bigText(text))
         .setContentIntent(pending).setAutoCancel(true).setOnlyAlertOnce(true)
         .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-        .setSilent(settings?.get("vibration") == false).build()
+        .setPriority(NotificationCompat.PRIORITY_HIGH)
+      if (Build.VERSION.SDK_INT < 26) {
+        // Vibration and sound are independent preferences. setSilent(true)
+        // suppresses both, so it cannot implement a vibration-only toggle.
+        builder.setDefaults(NotificationCompat.DEFAULT_SOUND or if (vibrate) NotificationCompat.DEFAULT_VIBRATE else 0)
+      }
+      val notification = builder.build()
       if (current()) {
         NotificationManagerCompat.from(applicationContext).notify(number, notification)
         prefs.edit().putString(done, revision).commit()
@@ -112,4 +129,32 @@ class MessageNotificationWorker(context: Context, params: WorkerParameters) : Co
       WorkManager.getInstance(context).enqueueUniqueWork("notify:$account:$cid:$id", ExistingWorkPolicy.KEEP, request)
     }
   }
+}
+
+/** Channel behavior is immutable after creation; Android settings remain authoritative. */
+@androidx.annotation.RequiresApi(26)
+internal fun ensureMessageNotificationChannel(manager: NotificationManager, vibrate: Boolean): String {
+  val regular = manager.getNotificationChannel("messages") ?: NotificationChannel(
+    "messages", "Messages", NotificationManager.IMPORTANCE_HIGH
+  ).apply {
+    enableVibration(true)
+    setSound(
+      RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
+      AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
+    )
+  }.also { manager.createNotificationChannel(it) }
+  if (vibrate) return regular.id
+
+  val id = "messages_no_vibration"
+  if (manager.getNotificationChannel(id) == null) {
+    manager.createNotificationChannel(NotificationChannel(id, "Messages without vibration", regular.importance).apply {
+      description = "Messages when vibration is disabled in Liquid Chat"
+      enableVibration(false)
+      setSound(regular.sound, regular.audioAttributes)
+      lockscreenVisibility = regular.lockscreenVisibility
+      setShowBadge(regular.canShowBadge())
+    })
+  }
+  return id
 }

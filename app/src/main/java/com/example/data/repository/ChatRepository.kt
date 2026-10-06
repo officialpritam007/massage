@@ -10,6 +10,7 @@ import com.example.data.model.*
 import com.example.data.network.LiquidApi
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthException
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.firestore.*
@@ -103,17 +104,28 @@ class ChatRepository(
   private val syncRecoveryAttempts = mutableMapOf<String, Int>()
   private data class QueuedMediaUpload(
     val id: String = UUID.randomUUID().toString(),
+    val account: String,
     val conversationId: String,
     val uri: Uri,
     val type: MessageType,
     val onResult: (Result<String>) -> Unit
-  )
+  ) {
+    val key get() = MediaUploadRetryKey(account, conversationId, uri.toString(), type)
+  }
 
   private var uploadJob: Job? = null
   private val uploadQueue = ArrayDeque<QueuedMediaUpload>()
   private var activeUpload: QueuedMediaUpload? = null
-  private var failedUpload: QueuedMediaUpload? = null
-  private var retryUpload: (() -> Unit)? = null
+  private val uploadRetry = MediaUploadRetryStore<QueuedMediaUpload> { it.key }
+  private val suppressedUploadRetries = mutableSetOf<String>()
+  private var uploadAccount = uid
+  private val uploadAuthListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+    val account = firebaseAuth.currentUser?.uid.orEmpty()
+    if (uploadAccount != account) {
+      uploadAccount = account
+      resetMediaUploads()
+    }
+  }
   private var resumed = false
 
   private val _currentUser = MutableStateFlow(User())
@@ -136,6 +148,7 @@ class ChatRepository(
   val searchHistory = _searchHistory.asStateFlow()
   private val _error = MutableStateFlow<String?>(null)
   val error = _error.asStateFlow()
+  private var errorUploadId: String? = null
   private val _syncWarning = MutableStateFlow<String?>(null)
   val syncWarning = _syncWarning.asStateFlow()
   private val _loading = MutableStateFlow(true)
@@ -322,6 +335,7 @@ class ChatRepository(
   }
 
   init {
+    auth.addAuthStateListener(uploadAuthListener)
     val pendingAccount = deletionPrefs.getString("account", null)
     if (!pendingAccount.isNullOrBlank()) {
       _themeReady.value = true
@@ -349,7 +363,16 @@ class ChatRepository(
     }
   }
 
-  fun clearError() { _error.value = null }
+  private fun publishError(message: String?, uploadId: String? = null) {
+    errorUploadId = uploadId
+    _error.value = message
+  }
+
+  private fun clearUploadError(uploadId: String) {
+    if (errorUploadId == uploadId) publishError(null)
+  }
+
+  fun clearError() { publishError(null) }
   fun isUserLoggedIn() = auth.currentUser != null
 
   private fun friendlyError(t: Throwable, fallback: String = "Operation failed"): String {
@@ -475,7 +498,7 @@ class ChatRepository(
       try { block() } catch (t: Throwable) {
         if (t is CancellationException) throw t
         if (firestoreCode(t) == FirebaseFirestoreException.Code.RESOURCE_EXHAUSTED) reportSnapshotFailure("Sync", t)
-        _error.value = friendlyError(t)
+        publishError(friendlyError(t))
       }
     }
     mutationJobs += job
@@ -511,11 +534,7 @@ class ChatRepository(
     val account = uid
     stopSync()
     appearanceJob?.cancel()
-    uploadJob?.cancel()
-    uploadQueue.clear()
-    activeUpload = null
-    failedUpload = null
-    retryUpload = null
+    resetMediaUploads()
     if (account.isNotBlank()) {
       runCatching { LiquidChatDatabase.clearForLogout(LiquidApi.context) }
       runCatching {
@@ -548,7 +567,7 @@ class ChatRepository(
     _privacy.value = PrivacySettings()
     _notifications.value = NotificationSettings()
     _searchHistory.value = emptyList()
-    _error.value = null
+    publishError(null)
     _syncWarning.value = null
     syncRecoveryAttempts.clear()
     _loading.value = false
@@ -702,14 +721,33 @@ class ChatRepository(
     _currentUser.value
   }
 
-  fun resetPassword(email: String) = runAction {
-    auth.sendPasswordResetEmail(email.trim()).await()
-    _error.value = "Password reset email sent"
+  fun resetPassword(email: String) = resetPassword(email) { result ->
+    result.exceptionOrNull()?.let { publishError(it.message) }
+  }
+
+  fun resetPassword(email: String, onResult: (Result<Unit>) -> Unit) {
+    scope.launch {
+      val result = try {
+        val completed = withTimeoutOrNull(15_000L) {
+          auth.sendPasswordResetEmail(email.trim()).await()
+          true
+        }
+        if (completed == true) Result.success(Unit)
+        else Result.failure(IllegalStateException("Reset request timed out. Check your connection and try again."))
+      } catch (cancelled: CancellationException) {
+        throw cancelled
+      } catch (failure: Exception) {
+        val safeMessage = passwordResetErrorMessage((failure as? FirebaseAuthException)?.errorCode)
+        if (safeMessage == null) Result.success(Unit)
+        else Result.failure(IllegalStateException(safeMessage))
+      }
+      onResult(result)
+    }
   }
 
   fun verifyEmail() = runAction {
     auth.currentUser?.sendEmailVerification()?.await()
-    _error.value = "Verification email sent"
+    publishError("Verification email sent")
   }
 
   fun logout(password: String = "", googleIdToken: String? = null, onResult: (Result<Unit>) -> Unit = {}) {
@@ -741,6 +779,8 @@ class ChatRepository(
   fun close() {
     setPresence(false)
     stopSync()
+    auth.removeAuthStateListener(uploadAuthListener)
+    resetMediaUploads()
     scope.cancel()
   }
 
@@ -994,6 +1034,7 @@ class ChatRepository(
       writePresenceForConversation(cid, false, force = true)
       visibleConversation = null
     }
+    if (!visible) discardConversationUploadRetries(cid)
   }
 
   suspend fun refreshMessageFromPush(cid: String, messageId: String) {
@@ -1027,6 +1068,9 @@ class ChatRepository(
   }
 
   fun stopOpenConversationObservers() {
+    uploadRetry.clear()?.let { clearUploadError(it.id) }
+    activeUpload?.let { suppressedUploadRetries += it.id }
+    uploadQueue.forEach { suppressedUploadRetries += it.id }
     messageListeners.values.forEach { it.remove() }
     messageListeners.clear()
     decodeJobs.values.forEach { it.cancel() }
@@ -2253,12 +2297,31 @@ class ChatRepository(
     type: MessageType,
     onResult: (Result<String>) -> Unit = {}
   ) {
+    val account = uid
+    if (uploadAccount != account) {
+      uploadAccount = account
+      resetMediaUploads()
+    }
+    if (account.isBlank()) {
+      onResult(Result.failure(IllegalStateException("Please sign in before uploading")))
+      return
+    }
     if (deletingAccount || cleanupQueued) {
       onResult(Result.failure(IllegalStateException("Permanent account deletion is pending")))
       return
     }
+    val selection = MediaUploadRetryKey(account, cid, uri.toString(), type)
+    if (activeUpload?.key == selection || uploadQueue.any { it.key == selection }) {
+      onResult(Result.failure(IllegalStateException("This attachment is already uploading")))
+      return
+    }
+    // A fresh attempt replaces the failed callback for this exact selection.
+    // Otherwise a later Retry could send the old caption/message a second time.
+    uploadRetry.remove(selection)
+      ?.let { clearUploadError(it.id) }
     uploadQueue.addLast(
       QueuedMediaUpload(
+        account = account,
         conversationId = cid,
         uri = uri,
         type = type,
@@ -2280,6 +2343,7 @@ class ChatRepository(
     _upload.value = 0f
     uploadJob = scope.launch {
       val result = runCatching {
+        check(uid == queued.account) { "Upload owner session changed" }
         val cid = queued.conversationId
         if (_conversations.value.none { it.id == cid }) {
           val peer = pendingPeers[cid]?.uid?.takeIf { it.isNotBlank() }
@@ -2288,34 +2352,34 @@ class ChatRepository(
         }
         LiquidApi.upload(queued.uri, cid) { progress ->
           scope.launch {
-            if (activeUpload?.id == queued.id) _upload.value = progress
+            if (uid == queued.account && activeUpload?.id == queued.id) _upload.value = progress
           }
         }
       }
 
-      val failure = result.exceptionOrNull()
-      if (failure != null && failure !is CancellationException) {
-        _error.value = friendlyError(failure)
-        failedUpload = queued
-        retryUpload = {
-          val retry = failedUpload
-          if (retry != null && uploadQueue.none { it.id == retry.id } && activeUpload?.id != retry.id) {
-            failedUpload = null
-            retryUpload = null
-            uploadQueue.addFirst(retry)
-            pumpMediaUploads()
+      try {
+        // Logout/account replacement cancels every callback, including a late
+        // successful upload that would otherwise send as the new account.
+        if (uid == queued.account && scope.isActive && activeUpload?.id == queued.id) {
+          val failure = result.exceptionOrNull()
+          if (failure != null && failure !is CancellationException && queued.id !in suppressedUploadRetries) {
+            uploadRetry.record(queued)
+            publishError(friendlyError(failure), queued.id)
+          } else if (result.isSuccess) {
+            uploadRetry.remove(queued.key)?.let { clearUploadError(it.id) }
           }
+          queued.onResult(result)
         }
-      } else if (result.isSuccess && failedUpload?.id == queued.id) {
-        failedUpload = null
-        retryUpload = null
+      } finally {
+        suppressedUploadRetries -= queued.id
+        if (activeUpload?.id == queued.id) {
+          activeUpload = null
+          uploadJob = null
+          _upload.value = null
+          pumpMediaUploads()
+        }
       }
-
-      queued.onResult(result)
-      if (activeUpload?.id == queued.id) activeUpload = null
-      uploadJob = null
-      _upload.value = null
-      pumpMediaUploads()
+      result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
     }
   }
 
@@ -2323,8 +2387,64 @@ class ChatRepository(
     uploadJob?.cancel(CancellationException("Upload cancelled"))
   }
 
-  fun hasUploadRetry() = retryUpload != null && activeUpload == null
-  fun retryUpload() { retryUpload?.invoke() }
+  fun cancelUpload(cid: String, uri: Uri, type: MessageType): Boolean {
+    val key = MediaUploadRetryKey(uid, cid, uri.toString(), type)
+    if (activeUpload?.key == key) {
+      cancelUpload()
+      return true
+    }
+    val queued = uploadQueue.firstOrNull { it.key == key } ?: return false
+    uploadQueue.remove(queued)
+    suppressedUploadRetries -= queued.id
+    queued.onResult(Result.failure(CancellationException("Upload cancelled")))
+    return true
+  }
+
+  fun cancelUploadRetry(cid: String, uri: Uri, type: MessageType) {
+    val key = MediaUploadRetryKey(uid, cid, uri.toString(), type)
+    uploadRetry.remove(key)?.let { clearUploadError(it.id) }
+    activeUpload?.takeIf { it.key == key }?.let { suppressedUploadRetries += it.id }
+    uploadQueue.filter { it.key == key }.forEach { suppressedUploadRetries += it.id }
+  }
+
+  private fun discardConversationUploadRetries(cid: String) {
+    uploadRetry.pending?.takeIf { it.account == uid && it.conversationId == cid }?.let {
+      uploadRetry.remove(it.key)
+      clearUploadError(it.id)
+    }
+    activeUpload?.takeIf { it.conversationId == cid }?.let { suppressedUploadRetries += it.id }
+    uploadQueue.filter { it.conversationId == cid }.forEach { suppressedUploadRetries += it.id }
+  }
+
+  private fun resetMediaUploads() {
+    activeUpload = null
+    uploadQueue.clear()
+    uploadRetry.clear()?.let { clearUploadError(it.id) }
+    suppressedUploadRetries.clear()
+    uploadJob?.cancel(CancellationException("Upload session ended"))
+    uploadJob = null
+    _upload.value = null
+  }
+
+  fun hasUploadRetry() = uploadRetry.pending?.account == uid && activeUpload == null
+
+  fun hasUploadRetry(cid: String, uri: Uri, type: MessageType) =
+    activeUpload == null && uploadRetry.matches(MediaUploadRetryKey(uid, cid, uri.toString(), type))
+
+  fun retryUpload(cid: String, uri: Uri, type: MessageType): Boolean {
+    if (activeUpload != null || deletingAccount || cleanupQueued) return false
+    val queued = uploadRetry.remove(MediaUploadRetryKey(uid, cid, uri.toString(), type)) ?: return false
+    clearUploadError(queued.id)
+    suppressedUploadRetries -= queued.id
+    uploadQueue.addFirst(queued)
+    pumpMediaUploads()
+    return true
+  }
+
+  fun retryUpload() {
+    val queued = uploadRetry.pending ?: return
+    retryUpload(queued.conversationId, queued.uri, queued.type)
+  }
 
 
   fun uploadProfilePhoto(uri: Uri, onResult: (Result<String>) -> Unit = {}) {
@@ -2832,7 +2952,7 @@ class ChatRepository(
         "createdAt" to System.currentTimeMillis()
       )
     ).await()
-    _error.value = "Report submitted"
+    publishError("Report submitted")
   }
 
   fun hasGoogleProvider() = auth.currentUser?.providerData?.any { it.providerId == "google.com" } == true
@@ -2846,6 +2966,7 @@ class ChatRepository(
     if (accepted) editor.putBoolean("requestAccepted", true)
     check(editor.commit()) { "Unable to remember pending deletion" }
     cleanupQueued = true
+    resetMediaUploads()
     _deletionPending.value = true
     stopSync()
     _currentUser.value = User(uid = account)
@@ -2979,7 +3100,7 @@ class ChatRepository(
       if (!cleanupQueued && uid.isNotBlank()) startSync()
       if (it is CancellationException) throw it
       _deletionStatus.value = it.message
-      _error.value = friendlyError(it)
+      publishError(friendlyError(it))
     }
     return result
   }
@@ -2991,4 +3112,29 @@ class ChatRepository(
   }
 
   fun clearSearchHistory() { _searchHistory.value = emptyList() }
+}
+
+/** Exact identity prevents cross-account or different-selection retry callbacks. */
+internal data class MediaUploadRetryKey(
+  val account: String,
+  val conversationId: String,
+  val uri: String,
+  val type: MessageType
+)
+
+internal class MediaUploadRetryStore<T>(private val keyOf: (T) -> MediaUploadRetryKey) {
+  var pending: T? = null
+    private set
+
+  fun record(value: T) { pending = value }
+  fun matches(key: MediaUploadRetryKey): Boolean = pending?.let { keyOf(it) == key } == true
+  fun remove(key: MediaUploadRetryKey): T? = if (matches(key)) clear() else null
+  fun clear(): T? = pending.also { pending = null }
+}
+
+/** Never reveal whether an address belongs to an existing or disabled account. */
+internal fun passwordResetErrorMessage(errorCode: String?): String? = when (errorCode) {
+  "ERROR_USER_NOT_FOUND", "ERROR_USER_DISABLED" -> null
+  "ERROR_INVALID_EMAIL" -> "Enter a valid email address."
+  else -> "Unable to request reset instructions. Check your connection and try again."
 }

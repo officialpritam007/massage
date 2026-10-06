@@ -1,6 +1,12 @@
-# Liquid Chat 4.3.1
+# Liquid Chat 4.4.0
 
 A Kotlin/Jetpack Compose **1-to-1 realtime messaging app** using a zero-paid-backend architecture.
+
+The 4.4 redesign uses ocean-toned Liquid Glass controls, readable message surfaces,
+floating navigation, categorized search and a live appearance preview. It also fixes
+attachment retry ownership, reply/history scrolling, password-reset feedback,
+minimum-Android refresh-rate compatibility and notification sound/vibration separation.
+See [REDESIGN_4_4_0.md](REDESIGN_4_4_0.md) for verification and release gates.
 
 **Developer:** Pritam Pal · **Support:** officialpritam07@gmail.com  
 © 2026 Pritam Pal
