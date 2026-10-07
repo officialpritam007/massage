@@ -5,6 +5,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.model.*
 import com.example.data.repository.ChatRepository
+import com.example.data.repository.preserveMessageDelivery
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -20,23 +25,9 @@ class LiquidChatViewModel(
   // Preserve delivery monotonicity in the UI while still accepting every other field update.
   val messages: StateFlow<Map<String, List<Message>>> = repository.messages
     .scan(repository.messages.value) { previous, current ->
-      current.mapValues { (conversationId, list) ->
-        val oldById = previous[conversationId].orEmpty().associateBy { it.id }
-        list.map { message ->
-          val old = oldById[message.id]
-          if (
-            message.status != MessageDeliveryStatus.FAILED &&
-            old != null &&
-            old.status != MessageDeliveryStatus.FAILED &&
-            deliveryRank(old.status) > deliveryRank(message.status)
-          ) {
-            message.copy(status = old.status)
-          } else {
-            message
-          }
-        }
-      }
+      preserveMessageDelivery(previous, current)
     }
+    .flowOn(Dispatchers.Default)
     .stateIn(viewModelScope, SharingStarted.Eagerly, repository.messages.value)
 
   val appearance: StateFlow<AppearanceSettings> = repository.appearance
@@ -69,7 +60,13 @@ class LiquidChatViewModel(
     if (_messageJump.value == (conversationId to messageId)) _messageJump.value = null
   }
 
-  val searchResults = combine(searchQuery, users, conversations, messages) { query, uList, cList, mMaps ->
+  @OptIn(FlowPreview::class)
+  private val settledSearchQuery = searchQuery
+    .map { it.trim() }
+    .debounce { if (it.isEmpty()) 0L else 180L }
+    .distinctUntilChanged()
+
+  val searchResults = combine(settledSearchQuery, users, conversations, messages) { query, uList, cList, mMaps ->
     if (query.isBlank()) SearchResults()
     else {
       val trimmed = query.trim()
@@ -80,18 +77,32 @@ class LiquidChatViewModel(
         conversations = cList.filter {
           it.otherUser.displayName.contains(trimmed, true) || it.lastMessageText.contains(trimmed, true)
         },
-        messages = mMaps.values.flatten().filter { it.text.contains(trimmed, true) }
+        messages = mMaps.values.asSequence().flatMap { it.asSequence() }
+          .filter { it.text.contains(trimmed, true) }.toList()
       )
     }
-  }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SearchResults())
+  }.flowOn(Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SearchResults())
+
+  private var searchHistoryJob: Job? = null
 
   fun onSearchQueryChanged(newQuery: String) {
     _searchQuery.value = newQuery
-    if (newQuery.isNotBlank()) repository.addSearchHistory(newQuery)
+    searchHistoryJob?.cancel()
+    val searchAccount = currentUser.value.uid
+    if (newQuery.isNotBlank()) searchHistoryJob = viewModelScope.launch {
+      delay(350L)
+      if (searchAccount.isNotBlank() && currentUser.value.uid == searchAccount && !deletionPending.value) {
+        repository.addSearchHistory(newQuery.trim())
+      }
+    }
   }
 
-  fun clearSearchQuery() { _searchQuery.value = "" }
-  fun clearSearchHistory() = repository.clearSearchHistory()
+  fun clearSearchQuery() { onSearchQueryChanged("") }
+  fun clearSearchHistory() {
+    searchHistoryJob?.cancel()
+    repository.clearSearchHistory()
+  }
   fun setConversationMuted(conversationId: String, muted: Boolean) = repository.setConversationMuted(conversationId, muted)
   fun setDisappearingMessages(conversationId: String, seconds: Long) = repository.setDisappearingMessages(conversationId, seconds)
   fun setConversationWallpaper(conversationId: String, index: Int) = repository.setConversationWallpaper(conversationId, index)
@@ -158,6 +169,8 @@ class LiquidChatViewModel(
   ): Result<User> = repository.registerWithEmail(email, pass, fullName, username, phoneNumber)
 
   fun logout(password: String = "", googleIdToken: String? = null, onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
+    clearSearchQuery()
+    _messageJump.value = null
     repository.logout(password, googleIdToken) { result ->
       onResult(result.isSuccess, result.exceptionOrNull()?.message)
     }
@@ -167,6 +180,8 @@ class LiquidChatViewModel(
   fun hasGoogleProvider() = repository.hasGoogleProvider()
 
   fun deleteAccount(password: String = "", googleIdToken: String? = null, onResult: (Boolean, String?) -> Unit) {
+    clearSearchQuery()
+    _messageJump.value = null
     viewModelScope.launch {
       val result = repository.deleteAccount(password, googleIdToken)
       onResult(result.isSuccess, result.exceptionOrNull()?.message)
@@ -185,13 +200,6 @@ class LiquidChatViewModel(
   fun blockUser(userId: String) = repository.blockUser(userId)
   fun unblockUser(userId: String) = repository.unblockUser(userId)
 
-  private fun deliveryRank(status: MessageDeliveryStatus): Int = when (status) {
-    MessageDeliveryStatus.FAILED -> -1
-    MessageDeliveryStatus.SENDING -> 0
-    MessageDeliveryStatus.SENT -> 1
-    MessageDeliveryStatus.DELIVERED -> 2
-    MessageDeliveryStatus.READ -> 3
-  }
 }
 
 data class SearchResults(

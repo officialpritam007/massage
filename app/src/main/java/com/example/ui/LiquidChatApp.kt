@@ -163,19 +163,19 @@ fun LiquidChatApp(
         startDestination = startDestination,
         enterTransition = {
           if (appearance.isReducedMotion) EnterTransition.None
-          else slideInHorizontally(tween(220)) { it / 7 } + fadeIn(tween(150))
+          else fadeIn(tween(120))
         },
         exitTransition = {
           if (appearance.isReducedMotion) ExitTransition.None
-          else slideOutHorizontally(tween(180)) { -it / 10 } + fadeOut(tween(120))
+          else fadeOut(tween(90))
         },
         popEnterTransition = {
           if (appearance.isReducedMotion) EnterTransition.None
-          else slideInHorizontally(tween(220)) { -it / 7 } + fadeIn(tween(150))
+          else fadeIn(tween(120))
         },
         popExitTransition = {
           if (appearance.isReducedMotion) ExitTransition.None
-          else slideOutHorizontally(tween(180)) { it / 10 } + fadeOut(tween(120))
+          else fadeOut(tween(90))
         }
     ) {
       composable(Screen.Auth.route) {
@@ -208,7 +208,6 @@ fun LiquidChatApp(
             }
           },
           onNavigateToSearch = { navigateOnce(Screen.Search.route) },
-          onNavigateToAppearance = { navigateOnce(Screen.Appearance.route) },
           onNavigateToProfile = { navigateOnce(Screen.ContactProfile.createRoute(it)) },
           initialTab = homeTab,
           onHomeTabSelected = { homeTab = it }

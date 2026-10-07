@@ -54,7 +54,6 @@ class MainScreensSmokeTest {
             onNavigateToSettings = {},
             onNavigateToContacts = {},
             onNavigateToSearch = {},
-            onNavigateToAppearance = {},
             onNavigateToProfile = {}
           )
         }

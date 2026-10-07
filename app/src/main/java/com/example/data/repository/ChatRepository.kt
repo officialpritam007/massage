@@ -60,6 +60,9 @@ class ChatRepository(
   private val lastTyping = mutableMapOf<String, Long>()
   private val typingValues = mutableMapOf<String, Boolean>()
   private val presenceGate = PresenceWriteGate()
+  private val messageExpirySchedule = MessageExpirySchedule()
+  private var conversationSyncGeneration = 0L
+  private var conversationListServerConfirmed = false
   private val pendingAppearance = PendingSetting<AppearanceSettings>()
   private var appearanceDirty = false
   private var contactsJob: Job? = null
@@ -250,11 +253,17 @@ class ChatRepository(
 
   private suspend fun hydrateConversationListCache(account: String) {
     if (account.isBlank()) return
+    val generation = conversationSyncGeneration
     val cached = withContext(Dispatchers.IO) {
       LiquidChatDatabase.getDatabase(LiquidApi.context).conversationDao().getAllConversationsOnce()
-    }.map { it.toModel(account) }
-    if (uid == account && cached.isNotEmpty()) {
-      val merged = (_conversations.value + cached)
+        .map { it.toModel(account) }
+    }
+    // A server snapshot may arrive while Room is loading. Its complete list must
+    // win, including removals; an older cache must not restore deleted threads.
+    if (uid == account && generation == conversationSyncGeneration &&
+      !conversationListServerConfirmed && cached.isNotEmpty()
+    ) {
+      val merged = (cached + _conversations.value)
         .associateBy { it.id }
         .values
         .sortedByDescending { it.lastMessageTime }
@@ -266,17 +275,23 @@ class ChatRepository(
 
   private suspend fun hydrateMessageCache(cid: String, account: String) {
     if (account.isBlank() || cid.isBlank()) return
+    val generation = conversationSyncGeneration
+    val cutoff = deletedBefore[cid] ?: prefs.getLong("deletedBefore:$account:$cid", 0L)
     val cached = withContext(Dispatchers.IO) {
-      LiquidChatDatabase.getDatabase(LiquidApi.context).messageDao().getMessagesForConversationOnce(cid)
-    }.map { it.toModel() }
-      .filter {
-        val cutoff = deletedBefore[cid] ?: prefs.getLong("deletedBefore:$account:$cid", 0L)
-        it.createdAt > cutoff && (it.expiresAt == null || it.expiresAt > System.currentTimeMillis())
-      }
-      .distinctBy { it.id }
-      .sortedBy { it.createdAt }
+      val entities = LiquidChatDatabase.getDatabase(LiquidApi.context).messageDao().getMessagesForConversationOnce(cid)
+      val now = System.currentTimeMillis()
+      entities.asSequence()
+        .map { it.toModel() }
+        .filter { it.createdAt > cutoff && (it.expiresAt == null || it.expiresAt > now) }
+        .distinctBy { it.id }
+        .sortedBy { it.createdAt }
+        .toList()
+    }
 
-    if (uid == account && cached.isNotEmpty()) {
+    if (uid == account && generation == conversationSyncGeneration &&
+      cutoff == (deletedBefore[cid] ?: prefs.getLong("deletedBefore:$account:$cid", 0L)) &&
+      !deletingAccount && !cleanupQueued && cached.isNotEmpty()
+    ) {
       _messages.update { map ->
         val merged = (cached + map[cid].orEmpty())
           .associateBy { it.id }
@@ -335,11 +350,6 @@ class ChatRepository(
           .onFailure { reportSnapshotFailure("Session metadata", it) }
         if (!cleanupQueued) {
           val account = uid
-          runCatching { hydrateConversationListCache(account) }
-            .onFailure {
-              if (it is CancellationException) throw it
-              reportSnapshotFailure("Local chat cache", it)
-            }
           if (uid == account && account.isNotBlank()) startSync()
         }
       }
@@ -745,6 +755,9 @@ class ChatRepository(
   }
 
   private fun stopSync() {
+    conversationSyncGeneration++
+    conversationListServerConfirmed = false
+    messageExpirySchedule.reset()
     receipts.clear()
     listeners.forEach { it.remove() }
     listeners.clear()
@@ -787,16 +800,26 @@ class ChatRepository(
       _loading.value = false
       return
     }
-    _loading.value = true
-    _currentUser.value = User(uid = account, email = auth.currentUser?.email.orEmpty())
+    _loading.value = _conversations.value.isEmpty()
+    if (_currentUser.value.uid != account) {
+      _currentUser.value = User(uid = account, email = auth.currentUser?.email.orEmpty())
+    }
     quotaPausedUntil = prefs.getLong("quotaUntil:$account", 0L)
     restoreAppearance(account)
+    val generation = conversationSyncGeneration
 
     scope.launch { runCatching { com.example.notifications.NotificationTokenStore.register(LiquidApi.context) } }
     scope.launch { runCatching { migratePublicPresence(account) } }
-    scope.launch { hydrateConversationListCache(account) }
+    scope.launch {
+      runCatching { hydrateConversationListCache(account) }
+        .onFailure {
+          if (it is CancellationException) throw it
+          reportSnapshotFailure("Local chat cache", it)
+        }
+    }
 
     listeners += db.document("users/$account").addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
+      if (uid != account || generation != conversationSyncGeneration || deletingAccount || cleanupQueued) return@addSnapshotListener
       if (error != null) {
         scheduleSyncRecovery("Profile", error)
         return@addSnapshotListener
@@ -860,6 +883,7 @@ class ChatRepository(
     listeners += db.collection("conversations")
       .whereArrayContains("participantIds", account)
       .addSnapshotListener { snapshot, error ->
+        if (uid != account || generation != conversationSyncGeneration || deletingAccount || cleanupQueued) return@addSnapshotListener
         _loading.value = false
         if (error != null) {
           scheduleSyncRecovery("Chats", error)
@@ -877,6 +901,7 @@ class ChatRepository(
             decoded.sortedByDescending { it.lastMessageTime }
           }
           if (!snapshot.metadata.isFromCache) {
+            conversationListServerConfirmed = true
             val confirmed = snapshot.documents.map { it.id }.toSet()
             serverConfirmedConversations.retainAll(confirmed)
             serverConfirmedConversations.addAll(confirmed)
@@ -1293,6 +1318,9 @@ class ChatRepository(
   }
 
   private fun attachConversation(cid: String) {
+    val account = uid
+    val generation = conversationSyncGeneration
+    if (account.isBlank() || deletingAccount || cleanupQueued) return
     if (resumed && visibleConversation == cid) {
       writePresenceForConversation(cid, true, force = true)
     }
@@ -1318,18 +1346,18 @@ class ChatRepository(
       .orderBy("createdAt", Query.Direction.DESCENDING)
       .limit(recentLimit + 1)
       .addSnapshotListener { snapshot, error ->
+        if (uid != account || generation != conversationSyncGeneration || deletingAccount || cleanupQueued) return@addSnapshotListener
         if (error != null) {
           _historyLoading.update { it + (cid to false) }
           scheduleSyncRecovery("Messages", error)
           return@addSnapshotListener
         }
         if (snapshot != null) {
-          val account = uid
           val syncMutex = messageSyncMutexes.getOrPut(cid) { kotlinx.coroutines.sync.Mutex() }
           decodeJobs[cid] = scope.launch {
             syncMutex.lock()
             try {
-              if (uid != account) return@launch
+              if (uid != account || generation != conversationSyncGeneration) return@launch
 
               val pageDocuments = snapshot.documents.take(recentLimit.toInt())
               val extraDocument = snapshot.documents.getOrNull(recentLimit.toInt())
@@ -1361,7 +1389,7 @@ class ChatRepository(
                 }.filterNot { message -> (cid + ":" + message.id) in deleteTombstones }
                   .sortedBy { it.createdAt }
 
-                if (uid != account) return@launch
+                if (uid != account || generation != conversationSyncGeneration) return@launch
                 val sourceIds = pageDocuments.map { it.id }.toSet()
                 val recentIds = recent.asSequence().map { it.id }.toSet()
                 val oldestRecentTime = recent.firstOrNull()?.createdAt ?: Long.MAX_VALUE
@@ -1409,7 +1437,7 @@ class ChatRepository(
                         runCatching { toMessage(cid, change.document, account) }.getOrNull()
                       }?.takeUnless { message -> (cid + ":" + message.id) in deleteTombstones }
 
-                      if (uid != account) return@launch
+                      if (uid != account || generation != conversationSyncGeneration) return@launch
                       if (decoded == null) {
                         if (byId.remove(id) != null) {
                           changed = true
@@ -1635,6 +1663,7 @@ class ChatRepository(
 
   private fun expireMessages() {
     val now = System.currentTimeMillis()
+    if (!messageExpirySchedule.hasExpired(_messages.value, now)) return
     val changed = mutableMapOf<String, List<Message>>()
     val expired = mutableListOf<Pair<String, Message>>()
     _messages.update { map ->

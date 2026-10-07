@@ -15,11 +15,9 @@ import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.Whatshot
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -49,7 +47,6 @@ import com.example.ui.components.*
 import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -71,7 +68,6 @@ fun SettingsScreen(
   val appearance by viewModel.appearance.collectAsStateWithLifecycle()
   val blocked by viewModel.blockedUserIds.collectAsStateWithLifecycle()
   val users by viewModel.users.collectAsStateWithLifecycle()
-  val messages by viewModel.messages.collectAsStateWithLifecycle()
   val conversations by viewModel.conversations.collectAsStateWithLifecycle()
   val deletionStatus by viewModel.deletionStatus.collectAsStateWithLifecycle()
   val deletionPending by viewModel.deletionPending.collectAsStateWithLifecycle()
@@ -161,7 +157,6 @@ fun SettingsScreen(
     photoDeleting = true
     photoDeleteFailed = false
     scope.launch {
-      delay(if (glass.isReducedMotion) 80 else 420)
       val result = viewModel.repository.removeProfilePhoto()
       photoDeleting = false
       if (result.isSuccess) locallyRemovedPhoto = true else photoDeleteFailed = true
@@ -190,14 +185,14 @@ fun SettingsScreen(
           .padding(horizontal = 18.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
       ) {
-        GlassHeader("Settings", subtitle = "Liquid Chat", onBackClick = onBackClick)
+        GlassHeader("Settings", onBackClick = onBackClick)
 
         GlassCard(
           modifier = Modifier.fillMaxWidth(),
           shape = liquidRoundedShape(28f),
           backgroundColor = if (glass.isDark) Color(0xFF142C34).copy(alpha = .82f) else Color.White.copy(alpha = .70f),
           borderColor = if (glass.isDark) Color(0xFF142C34).copy(alpha = .82f) else Color.White.copy(alpha = .70f),
-          elevation = 7.dp
+          elevation = 1.dp
         ) {
           Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -272,35 +267,10 @@ fun SettingsScreen(
           }
         }
 
-        val sentCount = messages.values.sumOf { list -> list.count { it.senderId == me.uid } }
-        val activeDays = (((System.currentTimeMillis() - me.createdAt).coerceAtLeast(0L) / 86_400_000L) + 1L).coerceAtMost(999L)
-        val contactCount = conversationsCountForSettings(messages, users)
-
-        GlassCard(
-          modifier = Modifier.fillMaxWidth(),
-          shape = liquidRoundedShape(24f),
-          backgroundColor = if (glass.isDark) Color(0xFF10252D).copy(alpha = .60f) else Color.White.copy(alpha = .58f),
-          borderColor = Color.White.copy(alpha = if (glass.isDark) .13f else .58f),
-          elevation = 4.dp
-        ) {
-          Row(
-            Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            SettingsStat(Icons.Default.Whatshot, activeDays.toString(), "Days active", Color(0xFFFF9F0A), Modifier.weight(1f))
-            SettingsMetricDivider()
-            SettingsStat(Icons.Default.ChatBubbleOutline, sentCount.toString(), "Sent messages", glass.accentColor, Modifier.weight(1f))
-            SettingsMetricDivider()
-            SettingsStat(Icons.Default.People, contactCount.toString(), "Contacts", Color(0xFF007AFF), Modifier.weight(1f))
-          }
-        }
-
         SettingsSection("SETTINGS") {
           ProfessionalSettingItem(Icons.Default.Person, "Account", "Display name, username, phone", Color(0xFF007AFF)) { dialog = "Profile" }
           SettingDivider()
           ProfessionalSettingItem(Icons.Default.Lock, "Privacy", "Last seen, read receipts, online status", Color(0xFF34C759)) { dialog = "Privacy" }
-          SettingDivider()
-          ProfessionalSettingItem(Icons.Default.ChatBubbleOutline, "Chats", "Wallpapers and conversation shortcuts", Color(0xFF30D158)) { onNavigateToHomeTab("All") }
           SettingDivider()
           ProfessionalSettingItem(Icons.Default.Notifications, "Notifications", "Alerts, vibration and message previews", Color(0xFFFF3B30)) { dialog = "Notifications" }
         }
@@ -309,12 +279,12 @@ fun SettingsScreen(
           ProfessionalSettingItem(
             Icons.Default.Palette,
             "Appearance",
-            "Liquid Glass, accent palettes and motion",
+            "Theme, accent color and motion",
             Color(0xFFAF52DE),
             value = if (appearance.isDarkMode) "Dark" else "Light"
           ) { onNavigateToAppearance() }
           SettingDivider()
-          ProfessionalSettingItem(Icons.Default.Storage, "Storage and Data", "Network usage and cache cleaner", Color(0xFF32ADE6)) {
+          ProfessionalSettingItem(Icons.Default.Storage, "Storage and Data", "Manage locally cached media", Color(0xFF32ADE6)) {
             scope.launch {
               cacheSize = withContext(Dispatchers.IO) {
                 context.cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
@@ -326,8 +296,10 @@ fun SettingsScreen(
 
         SettingsSection("SUPPORT") {
           ProfessionalSettingItem(Icons.Default.HelpOutline, "Help & Support", "FAQ and direct developer contact", Color(0xFFFF9500)) { dialog = "About & Support" }
-          SettingDivider()
-          ProfessionalSettingItem(Icons.Default.DeveloperMode, "Developer Diagnostics", "Realtime sync, cache and quotas", Color(0xFF5856D6)) { onNavigateToDiagnostics() }
+          if (BuildConfig.DEBUG) {
+            SettingDivider()
+            ProfessionalSettingItem(Icons.Default.DeveloperMode, "Developer Diagnostics", "Realtime sync, cache and quotas", Color(0xFF5856D6)) { onNavigateToDiagnostics() }
+          }
         }
 
         SettingsSection("ACCOUNT ACTIONS") {
@@ -345,16 +317,6 @@ fun SettingsScreen(
             "Liquid Chat v" + BuildConfig.VERSION_NAME,
             color = glass.accentColor.copy(alpha = .86f),
             style = MaterialTheme.typography.labelLarge
-          )
-          Text(
-            "Firebase Auth + Firestore + Cloudinary • free-tier architecture",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.labelSmall
-          )
-          Text(
-            "Messages sync through Firebase with a persistent local cache",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.labelSmall
           )
         }
 
@@ -580,43 +542,6 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun SettingsStat(
-  icon: ImageVector,
-  value: String,
-  label: String,
-  color: Color,
-  modifier: Modifier = Modifier
-) {
-  Column(
-    modifier = modifier.padding(horizontal = 6.dp),
-    horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.spacedBy(4.dp)
-  ) {
-    Box(
-      Modifier
-        .size(36.dp)
-        .clip(androidx.compose.foundation.shape.RoundedCornerShape(11.dp))
-        .background(color.copy(alpha = .16f)),
-      contentAlignment = Alignment.Center
-    ) {
-      Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(19.dp))
-    }
-    Text(value, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
-    Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-  }
-}
-
-@Composable
-private fun SettingsMetricDivider() {
-  Box(
-    Modifier
-      .width(1.dp)
-      .height(32.dp)
-      .background(MaterialTheme.colorScheme.onSurface.copy(alpha = .10f))
-  )
-}
-
-@Composable
 private fun ProfileGlassAction(
   text: String,
   modifier: Modifier = Modifier,
@@ -728,13 +653,6 @@ private fun SettingDivider() {
     thickness = .5.dp,
     color = MaterialTheme.colorScheme.onSurface.copy(alpha = .10f)
   )
-}
-
-private fun conversationsCountForSettings(
-  messages: Map<String, List<com.example.data.model.Message>>,
-  users: List<com.example.data.model.User>
-): Int {
-  return maxOf(users.count { it.uid.isNotBlank() }, messages.keys.count()).coerceAtLeast(0)
 }
 
 @Composable

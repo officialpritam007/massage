@@ -1,5 +1,68 @@
 package com.example.data.repository
 
+import com.example.data.model.Message
+import com.example.data.model.MessageDeliveryStatus
+
+/** Reconcile only changed threads; unchanged cached history keeps its list and row instances. */
+internal fun preserveMessageDelivery(
+  previous: Map<String, List<Message>>,
+  current: Map<String, List<Message>>
+): Map<String, List<Message>> {
+  if (previous === current) return current
+  var reconciled: MutableMap<String, List<Message>>? = null
+  current.forEach { (conversationId, messages) ->
+    val old = previous[conversationId] ?: return@forEach
+    if (old === messages || old.isEmpty() || messages.isEmpty()) return@forEach
+    val oldById = old.associateBy { it.id }
+    var changed: MutableList<Message>? = null
+    messages.forEachIndexed { index, message ->
+      val prior = oldById[message.id]
+      if (prior != null && prior.senderId == message.senderId &&
+        prior.status != MessageDeliveryStatus.FAILED && message.status != MessageDeliveryStatus.FAILED &&
+        deliveryRank(prior.status) > deliveryRank(message.status)
+      ) {
+        val updated = changed ?: messages.toMutableList().also { changed = it }
+        updated[index] = message.copy(status = prior.status)
+      }
+    }
+    changed?.let { updated ->
+      val result = reconciled ?: current.toMutableMap().also { reconciled = it }
+      result[conversationId] = updated
+    }
+  }
+  return reconciled ?: current
+}
+
+private fun deliveryRank(status: MessageDeliveryStatus): Int = when (status) {
+  MessageDeliveryStatus.FAILED -> -1
+  MessageDeliveryStatus.SENDING -> 0
+  MessageDeliveryStatus.SENT -> 1
+  MessageDeliveryStatus.DELIVERED -> 2
+  MessageDeliveryStatus.READ -> 3
+}
+
+/** An idle heartbeat need not rebuild all cached history before the next expiry deadline. */
+internal class MessageExpirySchedule {
+  private var lastMessages: Map<String, List<Message>>? = null
+  private var nextExpiry: Long? = null
+
+  fun reset() {
+    lastMessages = null
+    nextExpiry = null
+  }
+
+  fun hasExpired(messages: Map<String, List<Message>>, now: Long): Boolean {
+    if (lastMessages !== messages) {
+      lastMessages = messages
+      nextExpiry = messages.values.asSequence()
+        .flatMap { it.asSequence() }
+        .mapNotNull { it.expiresAt }
+        .minOrNull()
+    }
+    return nextExpiry?.let { it <= now } ?: false
+  }
+}
+
 /** A delayed server snapshot must not overwrite a newer unsaved local preference. */
 internal class PendingSetting<T> {
   private var pending: T? = null

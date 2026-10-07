@@ -118,7 +118,7 @@ fun CameraScreen(
     if (previewDeleting) return
     previewDeleting = true
     scope.launch {
-      delay(if (glass.isReducedMotion) 80 else 420)
+      delay(if (glass.isReducedMotion) 0 else 140)
       if (uri.scheme == "file") runCatching { uri.path?.let(::File)?.delete() }
       capturedPhotoUri = null
       captionText = ""

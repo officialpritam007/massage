@@ -44,7 +44,8 @@ fun PrivateImage(
 
   Box(
     modifier = modifier
-      .then(if (preview) Modifier.height(if (failed || imageFailed) 92.dp else if (resolved == null) 88.dp else 190.dp) else Modifier)
+      // Reserve the photo's final size so loading and retries do not move nearby messages.
+      .then(if (preview) Modifier.height(190.dp) else Modifier)
       .clip(RoundedCornerShape(18.dp))
       .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)),
     contentAlignment = Alignment.Center

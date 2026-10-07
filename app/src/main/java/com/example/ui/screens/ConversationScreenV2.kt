@@ -14,10 +14,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
@@ -61,10 +59,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreHoriz
-import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
@@ -82,7 +78,6 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -131,13 +126,11 @@ import com.example.ui.theme.LocalLiquidGlass
 import com.example.ui.viewmodel.LiquidChatViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
@@ -198,10 +191,18 @@ fun ConversationScreenV2(
     val messageJump by viewModel.messageJump.collectAsStateWithLifecycle()
     val config = LocalLiquidGlass.current
     val repo = viewModel.repository
-    val historyHasOlder by repo.historyHasOlder.collectAsStateWithLifecycle()
-    val historyLoading by repo.historyLoading.collectAsStateWithLifecycle()
-    val canLoadOlder = historyHasOlder[conversationId] == true
-    val loadingOlder = historyLoading[conversationId] == true
+    val olderHistoryFlow = remember(repo, conversationId) {
+        repo.historyHasOlder.map { it[conversationId] == true }.distinctUntilChanged()
+    }
+    val historyLoadingFlow = remember(repo, conversationId) {
+        repo.historyLoading.map { it[conversationId] == true }.distinctUntilChanged()
+    }
+    val canLoadOlder by olderHistoryFlow.collectAsStateWithLifecycle(
+        initialValue = repo.historyHasOlder.value[conversationId] == true
+    )
+    val loadingOlder by historyLoadingFlow.collectAsStateWithLifecycle(
+        initialValue = repo.historyLoading.value[conversationId] == true
+    )
 
     val other = conversation?.otherUser ?: repo.peerForConversation(conversationId) ?: User(displayName = "Contact")
 
@@ -211,11 +212,13 @@ fun ConversationScreenV2(
     val focus = LocalFocusManager.current
     val density = LocalDensity.current
     val clipboard = LocalClipboardManager.current
-    val imeBottom = WindowInsets.ime.getBottom(density)
+    val imeInsets = WindowInsets.ime
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
-    var text by rememberSaveable(conversationId) { mutableStateOf(repo.draft(conversationId)) }
+    // Read the draft only inside the composer. Typing should not invalidate the
+    // screen's message list, header, history checks or unread calculations.
+    val composerText = rememberSaveable(conversationId) { mutableStateOf(repo.draft(conversationId)) }
     var reply by remember { mutableStateOf<Message?>(null) }
     var actionMessage by remember { mutableStateOf<Message?>(null) }
     var editMessage by remember { mutableStateOf<Message?>(null) }
@@ -287,7 +290,7 @@ fun ConversationScreenV2(
         voiceDraftDeleting = true
         voiceDraftDeleteFailed = false
         scope.launch {
-            delay(if (config.isReducedMotion) 90 else 520)
+            delay(if (config.isReducedMotion) 0 else 140)
             val removed = !draft.file.exists() || draft.file.delete()
             if (removed) {
                 if (voiceDraft?.file == draft.file) voiceDraft = null
@@ -434,13 +437,15 @@ fun ConversationScreenV2(
             delay(120)
         }
     }
-    LaunchedEffect(text) {
-        repo.saveDraft(conversationId, text)
-        if (text.isNotBlank()) {
-            repo.setTyping(conversationId, true)
-            delay(2600)
+    LaunchedEffect(conversationId, composerText) {
+        snapshotFlow { composerText.value }.collectLatest { draft ->
+            repo.saveDraft(conversationId, draft)
+            if (draft.isNotBlank()) {
+                repo.setTyping(conversationId, true)
+                delay(2600)
+            }
+            repo.setTyping(conversationId, false)
         }
-        repo.setTyping(conversationId, false)
     }
     LaunchedEffect(messages.size, conversation?.unreadCount) {
         if (unreadAnchorId == null) {
@@ -508,7 +513,7 @@ fun ConversationScreenV2(
         deletingId = message.id
         deleteRetry = null
         scope.launch {
-            delay(if (config.isReducedMotion) 70 else 300)
+            delay(if (config.isReducedMotion) 0 else 140)
             locallyHiddenDeletes = locallyHiddenDeletes + message.id
             deletingId = null
 
@@ -530,14 +535,18 @@ fun ConversationScreenV2(
     }
 
     val filtered = remember(messages, query) {
-        messages.filter { query.isBlank() || it.text.contains(query, ignoreCase = true) }
+        if (query.isBlank()) messages
+        else messages.filter { it.text.contains(query, ignoreCase = true) }
     }
     val rows = remember(filtered, locallyHiddenDeletes) {
-        filtered.filterNot { it.id in locallyHiddenDeletes }
+        if (locallyHiddenDeletes.isEmpty()) filtered
+        else filtered.filterNot { it.id in locallyHiddenDeletes }
     }
-    val latestRemoteId = rows.lastOrNull { it.senderId != me.uid && !it.isDeleted }?.id
+    val latestRemoteId = remember(rows, me.uid) {
+        rows.lastOrNull { it.senderId != me.uid && !it.isDeleted }?.id
+    }
 
-    LaunchedEffect(messages.map { it.id }, locallyHiddenDeletes) {
+    LaunchedEffect(messages, locallyHiddenDeletes) {
         if (locallyHiddenDeletes.isEmpty()) return@LaunchedEffect
         val liveIds = messages.asSequence().map { it.id }.toSet()
         val confirmedGone = locallyHiddenDeletes.filterNot { it in liveIds }.toSet()
@@ -578,36 +587,44 @@ fun ConversationScreenV2(
                 if (!atTop || historyAnchorId != null) return@collect
 
                 historyLoadGestureConsumed = true
-                val firstVisible = listState.layoutInfo.visibleItemsInfo.firstOrNull { item ->
-                    rows.any { it.id == item.key }
+                val firstVisible = listState.layoutInfo.visibleItemsInfo.firstOrNull {
+                    it.contentType is MessageType
                 }
                 historyAnchorId = firstVisible?.key as? String
-                historyAnchorOffset = firstVisible?.offset ?: 0
+                historyAnchorOffset = -(firstVisible?.offset ?: 0)
                 repo.loadOlder(conversationId)
             }
     }
 
-    LaunchedEffect(imeBottom) {
-        if (!stickToBottom || rows.isEmpty()) return@LaunchedEffect
-        // Keyboard movement should only keep the viewport pinned; it must not compete
-        // with the new-message effect above.
-        delay(16)
-        val target = (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
-        listState.scrollToItem(target)
+    val followKeyboardCurrent by rememberUpdatedState(stickToBottom && rows.isNotEmpty())
+    LaunchedEffect(imeInsets, density, listState) {
+        // Observe animation insets in the effect, not during screen composition.
+        // Coalesce animation frames before correcting the newest-message position.
+        snapshotFlow { imeInsets.getBottom(density) }.collectLatest {
+            if (!followKeyboardCurrent) return@collectLatest
+            delay(32)
+            val target = (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
+            listState.scrollToItem(target)
+        }
     }
 
-    LaunchedEffect(messageJump, rows.size, conversationId) {
+    LaunchedEffect(searchHighlightId) {
+        val highlightedId = searchHighlightId ?: return@LaunchedEffect
+        delay(if (config.isReducedMotion) 250 else 900)
+        if (searchHighlightId == highlightedId) searchHighlightId = null
+    }
+
+    LaunchedEffect(messageJump, rows.size, conversationId, loadingOlder) {
         val jump = messageJump
         if (jump?.first != conversationId) return@LaunchedEffect
         val messageId = jump.second
         val target = rows.indexOfFirst { it.id == messageId }
         if (target >= 0) {
             delay(90)
-            if (config.isReducedMotion) listState.scrollToItem(target + 1)
-            else listState.animateScrollToItem(target + 1)
+            val itemIndex = target + if (loadingOlder) 1 else 0
+            if (config.isReducedMotion) listState.scrollToItem(itemIndex)
+            else listState.animateScrollToItem(itemIndex)
             searchHighlightId = messageId
-            delay(if (config.isReducedMotion) 250 else 900)
-            if (searchHighlightId == messageId) searchHighlightId = null
             viewModel.clearMessageJump(conversationId, messageId)
         }
     }
@@ -700,6 +717,7 @@ fun ConversationScreenV2(
                 }
             },
             bottomBar = {
+                var text by composerText
                 Column(
                     Modifier.imePadding().navigationBarsPadding().padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -766,7 +784,7 @@ fun ConversationScreenV2(
                                 if (!attachmentDeleting) {
                                     attachmentDeleting = true
                                     scope.launch {
-                                        delay(if (config.isReducedMotion) 90 else 520)
+                                        delay(if (config.isReducedMotion) 0 else 140)
                                         pendingAttachment = null
                                         attachmentCaption = ""
                                         attachmentDeleting = false
@@ -812,10 +830,6 @@ fun ConversationScreenV2(
                         Column(
                             Modifier
                                 .fillMaxWidth()
-                                .animateContentSize(
-                                    if (config.isReducedMotion) tween(0)
-                                    else spring(dampingRatio = .76f, stiffness = 420f)
-                                )
                         ) {
                             reply?.let { target ->
                                 Row(
@@ -892,12 +906,6 @@ fun ConversationScreenV2(
                                 ) { blank ->
                                     if (blank) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
-                                            GlassIconButton(
-                                                Icons.Default.PhotoCamera,
-                                                "Camera",
-                                                { onNavigateToCamera() },
-                                                size = 36.dp
-                                            )
                                             var dx by remember { mutableFloatStateOf(0f) }
                                             var dy by remember { mutableFloatStateOf(0f) }
                                             val micX = if (recording && !locked) dx.coerceIn(-120f, 0f) else 0f
@@ -1047,13 +1055,16 @@ fun ConversationScreenV2(
                                     actionMessage?.id == message.id ||
                                     deleteTarget?.first?.id == message.id ||
                                     editMessage?.id == message.id,
-                                voiceAvatarUrl = if (message.senderId == me.uid) me.photoUrl else other.photoUrl,
-                                voiceAvatarName = if (message.senderId == me.uid) me.displayName else other.displayName,
                                 onLongClick = { actionMessage = message; haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
                                 onReply = { reply = message; haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
                                 onReplyPreviewClick = { replyId ->
                                     val target = rows.indexOfFirst { it.id == replyId }
-                                    if (target >= 0) scope.launch { listState.animateScrollToItem(target + 1) }
+                                    if (target >= 0) scope.launch {
+                                        val itemIndex = target + if (loadingOlder) 1 else 0
+                                        if (config.isReducedMotion) listState.scrollToItem(itemIndex)
+                                        else listState.animateScrollToItem(itemIndex)
+                                        searchHighlightId = replyId
+                                    }
                                 },
                                 onMedia = { viewer = message },
                                 onReaction = { emoji -> viewModel.addReaction(conversationId, message.id, emoji) },
@@ -1072,11 +1083,11 @@ fun ConversationScreenV2(
                             enter = fadeIn(tween(if (config.isReducedMotion) 0 else 110)),
                             exit = fadeOut(tween(if (config.isReducedMotion) 0 else 90))
                         ) {
-                            TypingMorphBubbleV2(null, config.isReducedMotion)
+                            TypingBubbleV2(config.isReducedMotion)
                         }
                     }
                 }
-                if (!stickToBottom && listState.layoutInfo.totalItemsCount > 0) {
+                if (!stickToBottom && rows.isNotEmpty()) {
                     SmallFloatingActionButton(onClick = {
                         stickToBottom = true
                         scope.launch { listState.animateScrollToItem((listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)) }
@@ -1159,7 +1170,7 @@ private fun UnreadSeparatorV2() {
 }
 
 @Composable
-private fun TypingMorphBubbleV2(message: Message?, reduced: Boolean) {
+private fun TypingBubbleV2(reduced: Boolean) {
     val config = LocalLiquidGlass.current
     val shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp, bottomStart = 7.dp, bottomEnd = 22.dp)
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
@@ -1167,13 +1178,9 @@ private fun TypingMorphBubbleV2(message: Message?, reduced: Boolean) {
             Modifier.widthIn(min = 54.dp, max = 330.dp).clip(shape)
                 .background(if (config.isDark) Color.White.copy(alpha = .07f) else Color.White.copy(alpha = .68f))
                 .border(1.dp, Color.White.copy(alpha = if (config.isDark) .10f else .58f), shape)
-                .animateContentSize(if (reduced) tween(0) else spring(dampingRatio = .72f, stiffness = 360f))
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
-            if (message == null) TypingDotsV2(reduced) else Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(message.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-                Text(SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(message.createdAt)), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.align(Alignment.End))
-            }
+            TypingDotsV2(reduced)
         }
     }
 }
