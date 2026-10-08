@@ -130,8 +130,8 @@ fun MessageBubbleV2(
     val bg = if (isMe) {
         com.example.ui.theme.BubbleOutgoingGradientStart.copy(alpha = if (config.isDark) .82f else .72f)
     } else {
-        if (config.isDark) Color(0xFFB8D9FF).copy(alpha = .075f)
-        else Color.White.copy(alpha = .56f)
+        if (config.isDark) Color(0xFF8BDFFF).copy(alpha = .12f)
+        else Color(0xFFEFF9FC).copy(alpha = .72f)
     }
     val contentColor = if (isMe) Color.White else MaterialTheme.colorScheme.onSurface
     val metaColor = if (isMe) Color.White.copy(alpha = .76f) else MaterialTheme.colorScheme.onSurfaceVariant
@@ -301,7 +301,7 @@ fun MessageBubbleV2(
                     Modifier
                         .padding(top = 2.dp)
                         .clip(reactionShape)
-                        .background(if (config.isDark) Color(0xFF142A31).copy(alpha = .82f) else Color.White.copy(alpha = .76f))
+                        .background(if (config.isDark) Color(0xFF17313B).copy(alpha = .82f) else Color(0xFFEFF9FC).copy(alpha = .78f))
                         .border(
                             0.5.dp,
                             if (config.isDark) Color.White.copy(alpha = .08f) else Color.White.copy(alpha = .42f),

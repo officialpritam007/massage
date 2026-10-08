@@ -81,9 +81,9 @@ fun MessageActionSheetV3(
                 modifier = Modifier.fillMaxWidth().widthIn(max = 370.dp),
                 shape = liquidRoundedShape(28f),
                 backgroundColor = if (glass.isDark) {
-                    Color(0xFF08131E).copy(alpha = .72f)
+                    Color(0xFF17313B).copy(alpha = .82f)
                 } else {
-                    Color(0xFFEAF4FF).copy(alpha = .56f)
+                    Color(0xFFEFF9FC).copy(alpha = .82f)
                 },
                 elevation = 18.dp
             ) {

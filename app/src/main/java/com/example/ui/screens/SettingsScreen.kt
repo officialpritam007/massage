@@ -190,8 +190,8 @@ fun SettingsScreen(
         GlassCard(
           modifier = Modifier.fillMaxWidth(),
           shape = liquidRoundedShape(28f),
-          backgroundColor = if (glass.isDark) Color(0xFF142C34).copy(alpha = .82f) else Color.White.copy(alpha = .70f),
-          borderColor = if (glass.isDark) Color(0xFF142C34).copy(alpha = .82f) else Color.White.copy(alpha = .70f),
+          backgroundColor = if (glass.isDark) Color(0xFF17313B).copy(alpha = .68f) else Color(0xFFEFF9FC).copy(alpha = .64f),
+          borderColor = if (glass.isDark) Color.White.copy(alpha = .18f) else Color.White.copy(alpha = .76f),
           elevation = 1.dp
         ) {
           Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -210,7 +210,7 @@ fun SettingsScreen(
                   "Change photo",
                   { photo.launch("image/*") },
                   size = 32.dp,
-                  tint = Color.White,
+                  tint = MaterialTheme.colorScheme.onPrimary,
                   backgroundColor = glass.accentColor.copy(alpha = .88f)
                 )
               }
@@ -580,8 +580,8 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
     GlassCard(
       modifier = Modifier.fillMaxWidth(),
       shape = liquidRoundedShape(24f),
-      backgroundColor = if (glass.isDark) Color(0xFF11262E).copy(alpha = .62f) else Color.White.copy(alpha = .60f),
-      borderColor = Color.White.copy(alpha = if (glass.isDark) .13f else .62f),
+      backgroundColor = if (glass.isDark) Color(0xFF17313B).copy(alpha = .58f) else Color(0xFFEFF9FC).copy(alpha = .55f),
+      borderColor = if (glass.isDark) Color.White.copy(alpha = .16f) else Color.White.copy(alpha = .72f),
       elevation = 4.dp
     ) {
       Column(Modifier.padding(vertical = 4.dp), content = content)

@@ -34,9 +34,9 @@ fun GlassDialog(
 ) {
   val config = LocalLiquidGlass.current
   val denseGlass = if (config.isDark) {
-    Color(0xFF08131E).copy(alpha = 0.70f)
+    Color(0xFF17313B).copy(alpha = 0.82f)
   } else {
-    Color(0xFFEAF4FF).copy(alpha = 0.56f)
+    Color(0xFFEFF9FC).copy(alpha = 0.82f)
   }
 
   Dialog(

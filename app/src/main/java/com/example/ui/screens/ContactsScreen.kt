@@ -101,12 +101,11 @@ fun ContactsScreen(
         modifier = Modifier
           .fillMaxSize()
           .padding(padding),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(9.dp)
       ) {
         item(key = "contacts-header") {
           Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            // iOS WhatsApp Header
             Row(
               Modifier.fillMaxWidth(),
               verticalAlignment = Alignment.CenterVertically
@@ -130,7 +129,7 @@ fun ContactsScreen(
                 "New contact",
                 onNavigateToSearch,
                 size = 46.dp,
-                tint = Color.White,
+                tint = MaterialTheme.colorScheme.onPrimary,
                 backgroundColor = glass.accentColor.copy(alpha = .86f)
               )
             }
@@ -155,13 +154,12 @@ fun ContactsScreen(
           }
         }
 
-        // WhatsApp-style "New Contact" quick action item
         item(key = "new-contact-row") {
           GlassCard(
             modifier = Modifier.fillMaxWidth(),
             shape = liquidRoundedShape(24f),
-            backgroundColor = if (glass.isDark) Color(0xFF142A31).copy(alpha = .72f) else Color.White.copy(alpha = .58f),
-            borderColor = Color.White.copy(alpha = if (glass.isDark) .16f else .58f),
+            backgroundColor = if (glass.isDark) Color(0xFF17313B).copy(alpha = .58f) else Color(0xFFEFF9FC).copy(alpha = .55f),
+            borderColor = if (glass.isDark) Color.White.copy(alpha = .16f) else Color.White.copy(alpha = .72f),
             elevation = 2.dp,
             onClick = onNavigateToSearch
           ) {
@@ -176,7 +174,7 @@ fun ContactsScreen(
                 "New contact",
                 onNavigateToSearch,
                 size = 44.dp,
-                tint = Color.White,
+                tint = MaterialTheme.colorScheme.onPrimary,
                 backgroundColor = glass.accentColor.copy(alpha = .85f)
               )
               Spacer(Modifier.width(14.dp))
@@ -210,7 +208,7 @@ fun ContactsScreen(
                 .fillMaxWidth()
                 .padding(top = 20.dp),
               shape = liquidRoundedShape(28f),
-              backgroundColor = if (glass.isDark) Color(0xFF142A31).copy(alpha = .72f) else Color.White.copy(alpha = .60f)
+              backgroundColor = if (glass.isDark) Color(0xFF17313B).copy(alpha = .58f) else Color(0xFFEFF9FC).copy(alpha = .55f)
             ) {
               Column(
                 Modifier
@@ -238,11 +236,10 @@ fun ContactsScreen(
               GlassCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = liquidRoundedShape(26f),
-                backgroundColor = if (glass.isDark) Color(0xFF142A31).copy(alpha = .70f) else Color.White.copy(alpha = .56f),
-                borderColor = Color.White.copy(alpha = if (glass.isDark) .16f else .58f),
+                backgroundColor = if (glass.isDark) Color(0xFF17313B).copy(alpha = .58f) else Color(0xFFEFF9FC).copy(alpha = .55f),
+                borderColor = if (glass.isDark) Color.White.copy(alpha = .16f) else Color.White.copy(alpha = .72f),
                 elevation = 3.dp,
                 onClick = {
-                  // Direct 1-to-1 conversation launch like iOS WhatsApp
                   val convId = viewModel.getOrCreateConversationId(user.uid)
                   onNavigateToConversation(convId)
                 }

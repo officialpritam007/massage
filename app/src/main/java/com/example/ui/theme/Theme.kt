@@ -26,19 +26,19 @@ data class LiquidGlassConfig(
 val LocalLiquidGlass = compositionLocalOf { LiquidGlassConfig() }
 
 private val DarkColorScheme = darkColorScheme(
-  primary = Color(0xFF00E39C),
+  primary = CyanAccent,
   onPrimary = Color(0xFF001B14),
   primaryContainer = Color(0xFF005F49),
   onPrimaryContainer = Color(0xFFB6FFE7),
   secondary = Color(0xFF72D8FF),
   onSecondary = Color(0xFF00151C),
   tertiary = Color(0xFFA98CFF),
-  background = Color(0xFF020508),
-  onBackground = Color(0xFFF8FFFE),
+  background = Color(0xFF02070B),
+  onBackground = Color(0xFFF7FCFF),
   surface = Color(0xFF0B171D),
-  onSurface = Color(0xFFF8FFFE),
+  onSurface = Color(0xFFF7FCFF),
   surfaceVariant = Color(0xFF172930),
-  onSurfaceVariant = Color(0xFFB3C2C9),
+  onSurfaceVariant = Color(0xFFB4C8D0),
   outline = Color(0xFF5D7A82),
   error = Color(0xFFFF8D9B),
   onError = Color(0xFF35050D)
@@ -52,13 +52,13 @@ private val LightColorScheme = lightColorScheme(
   secondary = Color(0xFF0A7FA4),
   onSecondary = Color.White,
   tertiary = VioletAccent,
-  background = Color(0xFFF3F8F8),
-  onBackground = Color(0xFF0A191C),
-  surface = Color(0xFFF8FCFC),
-  onSurface = Color(0xFF0A191C),
-  surfaceVariant = Color(0xFFE5F0F0),
-  onSurfaceVariant = Color(0xFF496168),
-  outline = Color(0xFF82969C)
+  background = Color(0xFFF0F7F9),
+  onBackground = Color(0xFF0B1A20),
+  surface = Color(0xFFF8FCFD),
+  onSurface = Color(0xFF0B1A20),
+  surfaceVariant = Color(0xFFE2EFF2),
+  onSurfaceVariant = Color(0xFF4F6871),
+  outline = Color(0xFF8299A1)
 )
 
 @Composable

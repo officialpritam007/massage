@@ -572,9 +572,9 @@ private fun AuthPrimaryButton(
     shape = RoundedCornerShape(18.dp),
     colors = ButtonDefaults.buttonColors(
       containerColor = LocalLiquidGlass.current.accentColor,
-      contentColor = Color.White,
+      contentColor = MaterialTheme.colorScheme.onPrimary,
       disabledContainerColor = LocalLiquidGlass.current.accentColor.copy(alpha = 0.35f),
-      disabledContentColor = Color.White.copy(alpha = 0.72f)
+      disabledContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.72f)
     )
   ) {
     if (loading) {

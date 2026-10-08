@@ -33,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -66,9 +67,9 @@ fun GlassBottomBar(
     GlassCard(
       Modifier.fillMaxWidth(),
       shape = liquidRoundedShape(32f),
-      backgroundColor = if (config.isDark) Color(0xFF12262D).copy(alpha = .62f)
-      else Color.White.copy(alpha = .48f),
-      borderColor = Color.White.copy(alpha = if (config.isDark) .17f else .56f),
+      backgroundColor = if (config.isDark) Color(0xFF16323D).copy(alpha = .68f)
+      else Color(0xFFEAF7FB).copy(alpha = .70f),
+      borderColor = if (config.isDark) Color.White.copy(alpha = .20f) else Color.White.copy(alpha = .78f),
       elevation = 12.dp
     ) {
       BoxWithConstraints(Modifier.fillMaxWidth().padding(5.dp)) {
@@ -76,7 +77,7 @@ fun GlassBottomBar(
         val selectedOffset by animateDpAsState(
           targetValue = itemWidth * selectedIndex.coerceAtLeast(0),
           animationSpec = if (config.isReducedMotion) tween(0)
-          else spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+          else spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
           label = "tab_glass_pill"
         )
         if (selectedIndex >= 0) {
@@ -86,14 +87,21 @@ fun GlassBottomBar(
               .width(itemWidth)
               .height(54.dp)
               .clip(tabShape)
-              .background(config.accentColor.copy(alpha = if (config.isDark) .78f else .22f))
+              .background(
+                Brush.linearGradient(
+                  listOf(
+                    config.accentColor.copy(alpha = if (config.isDark) .38f else .24f),
+                    Color(0xFF69BFFF).copy(alpha = if (config.isDark) .20f else .14f)
+                  )
+                )
+              )
           )
         }
         Row(Modifier.fillMaxWidth().selectableGroup()) {
           items.forEachIndexed { index, (route, label, icon) ->
             val selected = index == selectedIndex
             val color = if (selected) {
-              if (config.isDark) Color.White else config.accentColor
+              if (config.isDark) config.accentColor else MaterialTheme.colorScheme.onSurface
             } else MaterialTheme.colorScheme.onSurfaceVariant
             val unread = if (route == "chats") unreadChatsCount.coerceAtLeast(0) else 0
             Column(

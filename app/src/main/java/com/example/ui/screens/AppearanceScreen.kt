@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import com.example.data.model.AppearanceSettings
 import com.example.ui.components.GlassButton
 import com.example.ui.components.GlassCard
+import com.example.ui.components.GlassHeader
 import com.example.ui.components.LiquidBackground
 import com.example.ui.components.liquidRoundedShape
 import com.example.ui.theme.LocalLiquidGlass
@@ -71,6 +72,8 @@ fun AppearanceScreen(viewModel: LiquidChatViewModel, onBackClick: () -> Unit) {
         .padding(horizontal = 18.dp, vertical = 16.dp),
       verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+      GlassHeader("Appearance", onBackClick = onBackClick)
+
       AppearanceToggleCard(
         title = "Dark appearance",
         checked = appearance.isDarkMode,

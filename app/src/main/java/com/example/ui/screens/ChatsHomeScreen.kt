@@ -51,6 +51,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.data.model.Conversation
 import com.example.data.repository.deleteChatForMeAwait
 import com.example.ui.components.GlassAvatar
@@ -138,25 +139,33 @@ fun ChatsHomeScreen(
                 Modifier
                     .fillMaxSize()
                     .padding(padding),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 item(key = "messages-header", contentType = "header") {
                     Column(
                         Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(13.dp)
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         Row(
                             Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                "Chats",
-                                style = MaterialTheme.typography.headlineLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.weight(1f)
-                            )
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    "YOUR SPACE",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = glass.accentColor,
+                                    letterSpacing = 1.4.sp
+                                )
+                                Text(
+                                    "Chats",
+                                    style = MaterialTheme.typography.headlineLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+                            }
                             GlassIconButton(
                                 Icons.Default.Add,
                                 "New chat",
@@ -190,14 +199,14 @@ fun ChatsHomeScreen(
 
                         Surface(
                             modifier = Modifier.fillMaxWidth().testTag("chats_search"),
-                            shape = RoundedCornerShape(16.dp),
+                            shape = RoundedCornerShape(20.dp),
                             color = MaterialTheme.colorScheme.surfaceVariant,
                             onClick = onNavigateToSearch
                         ) {
                             Row(
                                 Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 13.dp),
+                                    .padding(horizontal = 16.dp, vertical = 15.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
@@ -224,7 +233,11 @@ fun ChatsHomeScreen(
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.surface,
+                            color = if (glass.isDark) {
+                                MaterialTheme.colorScheme.surface.copy(alpha = .72f)
+                            } else {
+                                MaterialTheme.colorScheme.surface.copy(alpha = .66f)
+                            },
                             onClick = {
                                 tab = if (tab == "Archived") "All" else "Archived"
                                 onHomeTabSelected(tab)
@@ -272,15 +285,19 @@ fun ChatsHomeScreen(
                         modifier = Modifier
                             .then(if (glass.isReducedMotion) Modifier else Modifier.animateItem())
                             .fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp),
-                        color = MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(22.dp),
+                        color = if (glass.isDark) {
+                            MaterialTheme.colorScheme.surface.copy(alpha = .66f)
+                        } else {
+                            MaterialTheme.colorScheme.surface.copy(alpha = .72f)
+                        },
                         enabled = deletingId != conversation.id,
                         onClick = { onNavigateToConversation(conversation.id) }
                     ) {
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 13.dp, vertical = 11.dp),
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             GlassAvatar(
@@ -413,8 +430,8 @@ fun ChatsHomeScreen(
                             Modifier
                                 .fillMaxWidth()
                                 .padding(top = 28.dp),
-                            shape = RoundedCornerShape(18.dp),
-                            color = MaterialTheme.colorScheme.surface
+                            shape = RoundedCornerShape(24.dp),
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = .72f)
                         ) {
                             Column(
                                 Modifier
