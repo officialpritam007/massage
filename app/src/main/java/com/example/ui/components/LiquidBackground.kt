@@ -45,19 +45,37 @@ fun LiquidBackground(
           .drawWithCache {
             val tint = Brush.radialGradient(
               colors = listOf(
-                accent.copy(alpha = if (dark) .10f else .06f),
+                accent.copy(alpha = if (dark) .16f else .10f),
                 Color.Transparent
               ),
-              center = Offset(size.width * .85f, 0f),
-              radius = size.maxDimension
+              center = Offset(size.width * .9f, size.height * .08f),
+              radius = size.maxDimension * .88f
+            )
+            val coolTint = Brush.radialGradient(
+              colors = listOf(
+                Color(0xFF58B9FF).copy(alpha = if (dark) .11f else .075f),
+                Color.Transparent
+              ),
+              center = Offset(size.width * .12f, size.height * .72f),
+              radius = size.maxDimension * .78f
+            )
+            val violetTint = Brush.radialGradient(
+              colors = listOf(
+                Color(0xFFA78BFA).copy(alpha = if (crystal) .075f else .035f),
+                Color.Transparent
+              ),
+              center = Offset(size.width * .98f, size.height * .62f),
+              radius = size.maxDimension * .7f
             )
             val lowerTint = Brush.verticalGradient(
-              listOf(Color.Transparent, accent.copy(alpha = if (dark) .025f else .015f))
+              listOf(Color.Transparent, accent.copy(alpha = if (dark) .07f else .035f))
             )
             onDrawBehind {
               if (showTint) {
                 drawRect(tint)
-                if (crystal) drawRect(lowerTint)
+                drawRect(coolTint)
+                drawRect(violetTint)
+                drawRect(lowerTint)
               }
             }
           }

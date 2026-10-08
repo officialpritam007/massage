@@ -664,9 +664,9 @@ fun ConversationScreenV2(
                             modifier = Modifier.weight(1f),
                             shape = liquidRoundedShape(24f),
                             backgroundColor = if (config.isDark) {
-                                Color(0xFF142A31).copy(alpha = .74f)
+                                Color(0xFF17313B).copy(alpha = .62f)
                             } else {
-                                Color.White.copy(alpha = .60f)
+                                Color(0xFFEFF9FC).copy(alpha = .56f)
                             },
                             elevation = 4.dp,
                             onClick = { onNavigateToProfile(other.uid) }
@@ -821,9 +821,9 @@ fun ConversationScreenV2(
                         Modifier.fillMaxWidth(),
                         shape = liquidRoundedShape(27f),
                         backgroundColor = if (config.isDark) {
-                            Color(0xFF12262D).copy(alpha = .84f)
+                            Color(0xFF17313B).copy(alpha = .72f)
                         } else {
-                            Color.White.copy(alpha = .62f)
+                            Color(0xFFEFF9FC).copy(alpha = .64f)
                         },
                         elevation = 7.dp
                     ) {

@@ -121,9 +121,9 @@ fun ContactProfileScreen(
                 modifier = Modifier.fillMaxWidth(),
                 shape = liquidRoundedShape(32f),
                 backgroundColor = if (glass.isDark) {
-                    Color(0xFF142A31).copy(alpha = .76f)
+                    Color(0xFF17313B).copy(alpha = .62f)
                 } else {
-                    Color.White.copy(alpha = .58f)
+                    Color(0xFFEFF9FC).copy(alpha = .58f)
                 },
                 elevation = 7.dp
             ) {
@@ -453,8 +453,8 @@ private fun SharedMediaCard(
             else -> Modifier.size(116.dp)
         },
         shape = liquidRoundedShape(24f),
-        backgroundColor = if (glass.isDark) Color(0xFF142A31).copy(alpha = .70f)
-        else Color.White.copy(alpha = .58f),
+        backgroundColor = if (glass.isDark) Color(0xFF17313B).copy(alpha = .56f)
+        else Color(0xFFEFF9FC).copy(alpha = .52f),
         elevation = 1.dp,
         onClick = onClick
     ) {

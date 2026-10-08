@@ -119,9 +119,9 @@ fun GlassCard(
     label = "glass_card_press"
   )
   val surface = if (config.isDark) {
-    Color(0xFF19323B).copy(alpha = (0.46f + config.blurAlpha * 0.12f + config.glassIntensity * 0.08f).coerceIn(0.50f, 0.76f))
+    Color(0xFF17313B).copy(alpha = (0.48f + config.glassIntensity * 0.10f).coerceIn(0.50f, 0.72f))
   } else {
-    Color.White.copy(alpha = (0.36f + config.blurAlpha * 0.14f + config.glassIntensity * 0.06f).coerceIn(0.38f, 0.64f))
+    Color(0xFFEFF9FC).copy(alpha = (0.38f + config.glassIntensity * 0.12f).coerceIn(0.40f, 0.66f))
   }
   val glassBackground = if (config.isReducedTransparency) {
     MaterialTheme.colorScheme.surface
@@ -129,18 +129,18 @@ fun GlassCard(
     backgroundColor ?: surface
   }
   val backdrop = LocalGlassBackdrop.current
-  val border = borderColor ?: if (config.isDark) GlassBorderStrokeDark else Color.White.copy(alpha = 0.38f)
+  val border = borderColor ?: if (config.isDark) GlassBorderStrokeDark else GlassBorderStrokeLight
   val resolvedShape: Shape = shape ?: liquidRoundedShape(30f)
-  val specularHighlight = if (config.isDark) Color(0xFFD8FFFF).copy(alpha = 0.40f) else Color.White.copy(alpha = 0.95f)
-  val shadow = if (config.isDark) Color.Black.copy(alpha = 0.56f) else Color.Black.copy(alpha = 0.10f)
+  val specularHighlight = if (config.isDark) Color(0xFFD8FFFF).copy(alpha = 0.40f) else Color.White.copy(alpha = 0.88f)
+  val shadow = if (config.isDark) Color.Black.copy(alpha = 0.48f) else Color(0xFF12354A).copy(alpha = 0.12f)
 
   val specularRimBrush = remember(specularHighlight, border, config.borderStrength, config.isDark) {
     Brush.linearGradient(
       colors = listOf(
         specularHighlight,
-        specularHighlight.copy(alpha = if (config.isDark) 0.22f else 0.55f),
-        border.copy(alpha = (border.alpha * config.borderStrength).coerceIn(0.10f, 1f)),
-        border.copy(alpha = (border.alpha * config.borderStrength * 0.30f).coerceIn(0.04f, 0.40f))
+        AzureBlue.copy(alpha = if (config.isDark) 0.38f else 0.62f),
+        config.accentColor.copy(alpha = if (config.isDark) 0.25f else 0.34f),
+        border.copy(alpha = (border.alpha * config.borderStrength).coerceIn(0.10f, 1f))
       ),
       start = Offset.Zero,
       end = Offset.Infinite
@@ -173,8 +173,8 @@ fun GlassCard(
       .drawWithCache {
         val topSheen = Brush.horizontalGradient(
           colors = listOf(
-            specularHighlight.copy(alpha = if (config.isDark) 0.48f else 0.70f),
-            specularHighlight.copy(alpha = if (config.isDark) 0.16f else 0.28f),
+            specularHighlight.copy(alpha = if (config.isDark) 0.48f else 0.72f),
+            specularHighlight.copy(alpha = if (config.isDark) 0.16f else 0.30f),
             Color.Transparent
           )
         )
@@ -236,8 +236,24 @@ fun GlassButton(
     modifier = modifier
       .graphicsLayer { scaleX = buttonScale; scaleY = buttonScale }
       .defaultMinSize(minHeight = 50.dp)
+      .shadow(
+        elevation = if (isPrimary) 12.dp else 4.dp,
+        shape = resolvedShape,
+        ambientColor = config.accentColor.copy(alpha = if (isPrimary) .24f else .08f),
+        spotColor = config.accentColor.copy(alpha = if (isPrimary) .30f else .10f)
+      )
       .clip(resolvedShape)
-      .background(accent)
+      .background(
+        if (isPrimary) {
+          Brush.linearGradient(
+            listOf(
+              config.accentColor.copy(alpha = .96f),
+              AzureBlue.copy(alpha = .82f),
+              config.accentColor.copy(alpha = .90f)
+            )
+          )
+        } else Brush.linearGradient(listOf(accent, accent.copy(alpha = .80f)))
+      )
       .border(1.dp, if (config.isDark) GlassHighlight.copy(alpha = 0.32f) else GlassBorderStrokeLight, resolvedShape)
       .clickable(enabled = enabled && !isLoading, interactionSource = pressedSource, indication = null, onClick = onClick)
       .padding(horizontal = 22.dp, vertical = 14.dp)
@@ -269,7 +285,7 @@ fun GlassIconButton(
   testTag: String = "glass_icon_button"
 ) {
   val config = LocalLiquidGlass.current
-  val bg = backgroundColor ?: if (config.isDark) Color(0xFF9AC9D6).copy(alpha = 0.12f) else Color.White.copy(alpha = 0.54f)
+  val bg = backgroundColor ?: if (config.isDark) Color.White.copy(alpha = 0.055f) else Color(0xFF17211C).copy(alpha = 0.045f)
   val iconTint = if (tint == TextPrimary && !config.isDark) TextPrimaryLight else tint
   val interactions = remember { MutableInteractionSource() }
   val pressed by interactions.collectIsPressedAsState()
@@ -290,12 +306,28 @@ fun GlassIconButton(
       modifier = Modifier
         .graphicsLayer { scaleX = pressScale; scaleY = pressScale }
         .size(size)
+        .shadow(
+          elevation = 5.dp,
+          shape = CircleShape,
+          ambientColor = config.accentColor.copy(alpha = .14f),
+          spotColor = config.accentColor.copy(alpha = .18f)
+        )
         .clip(CircleShape)
         .background(
           if (config.isReducedTransparency) MaterialTheme.colorScheme.surface
           else bg
         )
-        .border(1.dp, if (config.isDark) GlassBorderStrokeDark else GlassBorderStrokeLight, CircleShape),
+        .border(
+          1.dp,
+          Brush.linearGradient(
+            listOf(
+              GlassHighlight.copy(alpha = if (config.isDark) .62f else .86f),
+              config.accentColor.copy(alpha = .20f),
+              if (config.isDark) GlassBorderStrokeDark else GlassBorderStrokeLight
+            )
+          ),
+          CircleShape
+        ),
       contentAlignment = Alignment.Center
     ) {
       Icon(icon, contentDescription = contentDescription, tint = iconTint, modifier = Modifier.size(22.dp))
@@ -326,11 +358,30 @@ fun GlassTextField(
   val primaryText = if (config.isDark) TextPrimary else TextPrimaryLight
   val secondaryText = if (config.isDark) Color(0xFFB7CBE2) else TextSecondaryLight
   val resolvedShape = shape ?: liquidRoundedShape(22f)
+  val backdrop = LocalGlassBackdrop.current
   Box(
     modifier = modifier
       .defaultMinSize(minHeight = minHeight)
       .clip(resolvedShape)
-      .background(if (config.isDark) Color(0xFF18343C).copy(alpha = 0.62f) else Color.White.copy(alpha = 0.48f))
+      .then(
+        if (
+          backdrop != null &&
+          config.isGlassEnabled &&
+          !config.isReducedTransparency &&
+          Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+        ) {
+          Modifier.hazeEffect(backdrop) {
+            blurRadius = (12f + config.blurAlpha.coerceIn(0f, 0.65f) * 30f).dp
+            noiseFactor = 0.025f
+            backgroundColor = if (config.isDark) {
+              Color(0xFF17313B).copy(alpha = 0.48f)
+            } else {
+              Color(0xFFEFF9FC).copy(alpha = 0.42f)
+            }
+          }
+        } else Modifier
+      )
+      .background(if (config.isDark) Color(0xFF17313B).copy(alpha = 0.56f) else Color(0xFFEFF9FC).copy(alpha = 0.53f))
       .border(1.dp, if (config.isDark) GlassBorderStrokeDark else GlassBorderStrokeLight, resolvedShape)
       .padding(horizontal = horizontalPadding, vertical = verticalPadding)
       .testTag(testTag),
@@ -372,11 +423,13 @@ fun GlassAvatar(
   onClick: (() -> Unit)? = null
 ) {
   val config = LocalLiquidGlass.current
-  val borderBrush = Brush.linearGradient(listOf(config.accentColor, AzureBlue))
+  val borderBrush = Brush.linearGradient(
+    listOf(config.accentColor.copy(alpha = 0.72f), AzureBlue.copy(alpha = 0.45f))
+  )
   Box(modifier = modifier.size(size).then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)) {
     Box(
       modifier = Modifier.fillMaxSize().clip(CircleShape).border(1.5.dp, borderBrush, CircleShape)
-        .background(if (config.isDark) Color(0xFFB8D8D8).copy(alpha = 0.12f) else Color.White.copy(alpha = 0.75f)),
+        .background(if (config.isDark) Color(0xFF26332D) else Color(0xFFE8EEE7)),
       contentAlignment = Alignment.Center
     ) {
       if (!photoUrl.isNullOrBlank()) {
