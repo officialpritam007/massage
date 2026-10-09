@@ -78,11 +78,13 @@ fun ContactsScreen(
       .sortedBy { it.displayName.ifBlank { "Contact" }.lowercase() }
     merged
   }
-  val grouped = contacts.groupBy {
-    it.displayName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "#"
+  val grouped = remember(contacts) {
+    contacts.groupBy {
+      it.displayName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "#"
+    }
   }
 
-  val totalUnread = conversations.sumOf { it.unreadCount }
+  val totalUnread = remember(conversations) { conversations.sumOf { it.unreadCount } }
 
   LiquidBackground(modifier = modifier, crystal = true) {
     Scaffold(
@@ -110,13 +112,20 @@ fun ContactsScreen(
               Modifier.fillMaxWidth(),
               verticalAlignment = Alignment.CenterVertically
             ) {
-              Text(
-                "Contacts",
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.weight(1f)
-              )
+              Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                  "LIQUID CHAT",
+                  style = MaterialTheme.typography.labelSmall,
+                  fontWeight = FontWeight.Bold,
+                  color = glass.accentColor
+                )
+                Text(
+                  "Contacts",
+                  style = MaterialTheme.typography.headlineLarge,
+                  fontWeight = FontWeight.Bold,
+                  color = MaterialTheme.colorScheme.onBackground
+                )
+              }
               GlassIconButton(
                 Icons.Default.Search,
                 "Search directory",
@@ -148,8 +157,8 @@ fun ContactsScreen(
                   modifier = Modifier.size(22.dp)
                 )
               },
-              shape = liquidRoundedShape(28f),
-              minHeight = 52.dp
+              shape = liquidRoundedShape(30f),
+              minHeight = 54.dp
             )
           }
         }
@@ -157,8 +166,8 @@ fun ContactsScreen(
         item(key = "new-contact-row") {
           GlassCard(
             modifier = Modifier.fillMaxWidth(),
-            shape = liquidRoundedShape(24f),
-            backgroundColor = if (glass.isDark) Color(0xFF17313B).copy(alpha = .58f) else Color(0xFFEFF9FC).copy(alpha = .55f),
+            shape = liquidRoundedShape(30f),
+            backgroundColor = if (glass.isDark) Color(0xFF17313B).copy(alpha = .58f) else Color.White.copy(alpha = .68f),
             borderColor = if (glass.isDark) Color.White.copy(alpha = .16f) else Color.White.copy(alpha = .72f),
             elevation = 2.dp,
             onClick = onNavigateToSearch
@@ -208,7 +217,7 @@ fun ContactsScreen(
                 .fillMaxWidth()
                 .padding(top = 20.dp),
               shape = liquidRoundedShape(28f),
-              backgroundColor = if (glass.isDark) Color(0xFF17313B).copy(alpha = .58f) else Color(0xFFEFF9FC).copy(alpha = .55f)
+              backgroundColor = if (glass.isDark) Color(0xFF17313B).copy(alpha = .58f) else Color.White.copy(alpha = .68f)
             ) {
               Column(
                 Modifier
@@ -235,10 +244,10 @@ fun ContactsScreen(
             items(people, key = { it.uid }) { user ->
               GlassCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = liquidRoundedShape(26f),
-                backgroundColor = if (glass.isDark) Color(0xFF17313B).copy(alpha = .58f) else Color(0xFFEFF9FC).copy(alpha = .55f),
+                shape = liquidRoundedShape(30f),
+                backgroundColor = if (glass.isDark) Color(0xFF17313B).copy(alpha = .58f) else Color.White.copy(alpha = .68f),
                 borderColor = if (glass.isDark) Color.White.copy(alpha = .16f) else Color.White.copy(alpha = .72f),
-                elevation = 3.dp,
+                elevation = 2.dp,
                 onClick = {
                   val convId = viewModel.getOrCreateConversationId(user.uid)
                   onNavigateToConversation(convId)
