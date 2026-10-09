@@ -25,7 +25,6 @@ import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -153,7 +152,7 @@ fun ChatsHomeScreen(
                         ) {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(
-                                    "YOUR SPACE",
+                                    "LIQUID CHAT",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = glass.accentColor,
@@ -199,8 +198,8 @@ fun ChatsHomeScreen(
 
                         Surface(
                             modifier = Modifier.fillMaxWidth().testTag("chats_search"),
-                            shape = RoundedCornerShape(20.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(30.dp),
+                            color = if (glass.isDark) Color.White.copy(alpha = .07f) else Color.White.copy(alpha = .68f),
                             onClick = onNavigateToSearch
                         ) {
                             Row(
@@ -232,7 +231,7 @@ fun ChatsHomeScreen(
                     item(key = "archived-row", contentType = "archive") {
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(16.dp),
+                            shape = RoundedCornerShape(28.dp),
                             color = if (glass.isDark) {
                                 MaterialTheme.colorScheme.surface.copy(alpha = .72f)
                             } else {
@@ -285,11 +284,11 @@ fun ChatsHomeScreen(
                         modifier = Modifier
                             .then(if (glass.isReducedMotion) Modifier else Modifier.animateItem())
                             .fillMaxWidth(),
-                        shape = RoundedCornerShape(22.dp),
+                        shape = RoundedCornerShape(28.dp),
                         color = if (glass.isDark) {
-                            MaterialTheme.colorScheme.surface.copy(alpha = .66f)
+                            Color.White.copy(alpha = .065f)
                         } else {
-                            MaterialTheme.colorScheme.surface.copy(alpha = .72f)
+                            Color.White.copy(alpha = .70f)
                         },
                         enabled = deletingId != conversation.id,
                         onClick = { onNavigateToConversation(conversation.id) }
@@ -430,8 +429,8 @@ fun ChatsHomeScreen(
                             Modifier
                                 .fillMaxWidth()
                                 .padding(top = 28.dp),
-                            shape = RoundedCornerShape(24.dp),
-                            color = MaterialTheme.colorScheme.surface.copy(alpha = .72f)
+                            shape = RoundedCornerShape(30.dp),
+                            color = if (glass.isDark) Color.White.copy(alpha = .065f) else Color.White.copy(alpha = .70f)
                         ) {
                             Column(
                                 Modifier
@@ -518,9 +517,23 @@ private fun ChatFilter(
     selected: Boolean,
     onClick: () -> Unit
 ) {
-    FilterChip(
-        selected = selected,
+    val glass = LocalLiquidGlass.current
+    Surface(
         onClick = onClick,
-        label = { Text(label) }
-    )
+        shape = RoundedCornerShape(999.dp),
+        color = if (selected) {
+            glass.accentColor.copy(alpha = if (glass.isDark) .26f else .16f)
+        } else {
+            if (glass.isDark) Color.White.copy(alpha = .055f)
+            else Color.White.copy(alpha = .60f)
+        }
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            color = if (selected) glass.accentColor else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }
