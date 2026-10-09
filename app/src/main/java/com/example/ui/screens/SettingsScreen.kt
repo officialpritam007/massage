@@ -553,7 +553,7 @@ private fun ProfileGlassAction(
   val foreground = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
   Box(
     modifier
-      .clip(liquidRoundedShape(18f))
+      .clip(liquidRoundedShape(22f))
       .background(if (glass.isDark) Color.White.copy(alpha = .08f) else Color.White.copy(alpha = .55f))
       .clickable(enabled = enabled, onClick = onClick)
       .padding(horizontal = 12.dp, vertical = 11.dp),
@@ -579,10 +579,10 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
     )
     GlassCard(
       modifier = Modifier.fillMaxWidth(),
-      shape = liquidRoundedShape(24f),
-      backgroundColor = if (glass.isDark) Color(0xFF17313B).copy(alpha = .58f) else Color(0xFFEFF9FC).copy(alpha = .55f),
+      shape = liquidRoundedShape(30f),
+      backgroundColor = if (glass.isDark) Color(0xFF17313B).copy(alpha = .58f) else Color.White.copy(alpha = .68f),
       borderColor = if (glass.isDark) Color.White.copy(alpha = .16f) else Color.White.copy(alpha = .72f),
-      elevation = 4.dp
+      elevation = 2.dp
     ) {
       Column(Modifier.padding(vertical = 4.dp), content = content)
     }
