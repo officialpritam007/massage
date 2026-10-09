@@ -247,7 +247,8 @@ fun ContactsScreen(
                 shape = liquidRoundedShape(30f),
                 backgroundColor = if (glass.isDark) Color(0xFF17313B).copy(alpha = .58f) else Color.White.copy(alpha = .68f),
                 borderColor = if (glass.isDark) Color.White.copy(alpha = .16f) else Color.White.copy(alpha = .72f),
-                elevation = 2.dp,
+                elevation = 1.dp,
+                useBackdropBlur = false,
                 onClick = {
                   val convId = viewModel.getOrCreateConversationId(user.uid)
                   onNavigateToConversation(convId)
