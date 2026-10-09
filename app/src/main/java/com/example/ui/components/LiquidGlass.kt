@@ -107,6 +107,7 @@ fun GlassCard(
   backgroundColor: Color? = null,
   borderColor: Color? = null,
   elevation: Dp = 3.dp,
+  useBackdropBlur: Boolean = true,
   onClick: (() -> Unit)? = null,
   content: @Composable () -> Unit
 ) {
@@ -154,6 +155,7 @@ fun GlassCard(
       .clip(resolvedShape)
       .then(
         if (
+          useBackdropBlur &&
           backdrop != null &&
           config.isGlassEnabled &&
           !config.isReducedTransparency &&
