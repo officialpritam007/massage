@@ -662,13 +662,13 @@ fun ConversationScreenV2(
                         )
                         GlassCard(
                             modifier = Modifier.weight(1f),
-                            shape = liquidRoundedShape(24f),
+                            shape = liquidRoundedShape(30f),
                             backgroundColor = if (config.isDark) {
-                                Color(0xFF17313B).copy(alpha = .62f)
+                                Color.White.copy(alpha = .07f)
                             } else {
-                                Color(0xFFEFF9FC).copy(alpha = .56f)
+                                Color.White.copy(alpha = .68f)
                             },
-                            elevation = 4.dp,
+                            elevation = 2.dp,
                             onClick = { onNavigateToProfile(other.uid) }
                         ) {
                             Row(
@@ -819,13 +819,13 @@ fun ConversationScreenV2(
 
                     GlassCard(
                         Modifier.fillMaxWidth(),
-                        shape = liquidRoundedShape(27f),
+                        shape = liquidRoundedShape(30f),
                         backgroundColor = if (config.isDark) {
-                            Color(0xFF17313B).copy(alpha = .72f)
+                            Color.White.copy(alpha = .075f)
                         } else {
-                            Color(0xFFEFF9FC).copy(alpha = .64f)
+                            Color.White.copy(alpha = .70f)
                         },
-                        elevation = 7.dp
+                        elevation = 2.dp
                     ) {
                         Column(
                             Modifier
@@ -890,10 +890,10 @@ fun ConversationScreenV2(
                                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
                                     singleLine = false,
                                     maxLines = 5,
-                                    shape = liquidRoundedShape(22f),
-                                    minHeight = 48.dp,
-                                    horizontalPadding = 11.dp,
-                                    verticalPadding = 7.dp
+                                    shape = liquidRoundedShape(24f),
+                                    minHeight = 50.dp,
+                                    horizontalPadding = 12.dp,
+                                    verticalPadding = 8.dp
                                 )
                                 Spacer(Modifier.width(3.dp))
                                 AnimatedContent(
@@ -918,7 +918,7 @@ fun ConversationScreenV2(
                                                     .clip(CircleShape)
                                                     .background(
                                                         if (config.isDark) Color.White.copy(alpha = .08f)
-                                                        else Color.White.copy(alpha = .50f)
+                                                        else Color.White.copy(alpha = .66f)
                                                     )
                                                     .then(
                                                         if (recordPermissionGranted) {
