@@ -125,22 +125,27 @@ fun MessageBubbleV2(
         animationSpec = if (reduced) tween(0) else spring(dampingRatio = .55f, stiffness = 360f),
         label = "reply_target_highlight"
     )
-    val shape = if (isMe) RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp)
-    else RoundedCornerShape(22.dp, 22.dp, 22.dp, 6.dp)
+    val shape = if (isMe) RoundedCornerShape(24.dp, 24.dp, 8.dp, 24.dp)
+    else RoundedCornerShape(24.dp, 24.dp, 24.dp, 8.dp)
     val bg = if (isMe) {
-        com.example.ui.theme.BubbleOutgoingGradientStart.copy(alpha = if (config.isDark) .82f else .72f)
+        if (config.isDark) Color(0xFF163E3A).copy(alpha = .86f)
+        else Color(0xFFD9F4EE).copy(alpha = .94f)
     } else {
-        if (config.isDark) Color(0xFF8BDFFF).copy(alpha = .12f)
-        else Color(0xFFEFF9FC).copy(alpha = .72f)
+        if (config.isDark) Color.White.copy(alpha = .075f)
+        else Color.White.copy(alpha = .74f)
     }
-    val contentColor = if (isMe) Color.White else MaterialTheme.colorScheme.onSurface
-    val metaColor = if (isMe) Color.White.copy(alpha = .76f) else MaterialTheme.colorScheme.onSurfaceVariant
+    val contentColor = if (isMe && config.isDark) Color.White else MaterialTheme.colorScheme.onSurface
+    val metaColor = if (isMe && config.isDark) {
+        Color.White.copy(alpha = .72f)
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
     val caption = remember(message.text) {
         message.text.trim().takeUnless { it in genericMediaLabelsV2 }.orEmpty()
     }
     val borderColor = when {
         highlightAmount > .01f -> config.accentColor.copy(alpha = .32f + highlightAmount * .62f)
-        isMe -> Color.White.copy(alpha = if (config.isDark) .24f else .42f)
+        isMe -> if (config.isDark) Color.White.copy(alpha = .18f) else Color.White.copy(alpha = .76f)
         config.isDark -> Color.White.copy(alpha = .10f)
         else -> Color.White.copy(alpha = .72f)
     }
@@ -178,7 +183,7 @@ fun MessageBubbleV2(
             Box(
                 Modifier
                     .shadow(
-                        elevation = if (highlighted) 6.dp else 0.dp,
+                        elevation = if (highlighted) 6.dp else 1.dp,
                         shape = shape,
                         clip = false
                     )
@@ -187,21 +192,29 @@ fun MessageBubbleV2(
                     .border(0.5.dp, borderColor.copy(alpha = borderColor.alpha * .72f), shape)
             ) {
                 Column(
-                    Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
+                    Modifier.padding(horizontal = 13.dp, vertical = 9.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     if (message.replyToText != null) {
                         Row(
                             Modifier
                                 .widthIn(max = 260.dp)
-                                .background(if (isMe) Color.White.copy(alpha = .10f) else config.accentColor.copy(alpha = .08f), RoundedCornerShape(13.dp))
+                                .background(
+                                    if (isMe && config.isDark) Color.White.copy(alpha = .10f)
+                                    else Color.White.copy(alpha = .42f),
+                                    RoundedCornerShape(15.dp)
+                                )
                                 .clickable {
                                     message.replyToId?.let(onReplyPreviewClick)
                                 }
                                 .padding(horizontal = 8.dp, vertical = 5.dp)
                         ) {
                             Column {
-                                Text(message.replyToSender.orEmpty().ifBlank { "Reply" }, style = MaterialTheme.typography.labelSmall, color = if (isMe) Color.White else config.accentColor)
+                                Text(
+                                    message.replyToSender.orEmpty().ifBlank { "Reply" },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (isMe && config.isDark) Color.White else config.accentColor
+                                )
                                 Text(message.replyToText.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = contentColor.copy(alpha = .82f))
                             }
                         }
@@ -267,7 +280,7 @@ fun MessageBubbleV2(
                             if (collapsedOverflow || expanded) {
                                 Text(
                                     if (expanded) "Read less" else "Read more",
-                                    color = if (isMe) Color.White.copy(alpha = .92f) else config.accentColor,
+                                    color = if (isMe && config.isDark) Color.White.copy(alpha = .92f) else config.accentColor,
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.SemiBold,
                                     modifier = Modifier
@@ -288,7 +301,7 @@ fun MessageBubbleV2(
                     if (message.status == MessageDeliveryStatus.FAILED) {
                         Text(
                             "Failed • tap to retry",
-                            color = if (isMe) Color.White else MaterialTheme.colorScheme.error,
+                            color = if (isMe && config.isDark) Color.White else MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier.align(Alignment.End).clickable(onClick = onRetrySend)
                         )
@@ -386,7 +399,7 @@ private fun MessageMetaV2(
                     status.name,
                     Modifier.size(14.dp),
                     tint = if (status == MessageDeliveryStatus.READ) {
-                        Color(0xFF73E4FF)
+                        Color(0xFF27A6D1)
                     } else {
                         metaColor
                     }
