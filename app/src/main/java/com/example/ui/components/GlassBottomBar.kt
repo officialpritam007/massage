@@ -66,11 +66,11 @@ fun GlassBottomBar(
   Box(modifier.navigationBarsPadding().padding(horizontal = 14.dp, vertical = 7.dp)) {
     GlassCard(
       Modifier.fillMaxWidth(),
-      shape = liquidRoundedShape(32f),
-      backgroundColor = if (config.isDark) Color(0xFF16323D).copy(alpha = .68f)
-      else Color(0xFFEAF7FB).copy(alpha = .70f),
+      shape = liquidRoundedShape(30f),
+      backgroundColor = if (config.isDark) Color.White.copy(alpha = .075f)
+      else Color.White.copy(alpha = .72f),
       borderColor = if (config.isDark) Color.White.copy(alpha = .20f) else Color.White.copy(alpha = .78f),
-      elevation = 12.dp
+      elevation = 4.dp
     ) {
       BoxWithConstraints(Modifier.fillMaxWidth().padding(5.dp)) {
         val itemWidth = maxWidth / items.size
@@ -90,8 +90,8 @@ fun GlassBottomBar(
               .background(
                 Brush.linearGradient(
                   listOf(
-                    config.accentColor.copy(alpha = if (config.isDark) .38f else .24f),
-                    Color(0xFF69BFFF).copy(alpha = if (config.isDark) .20f else .14f)
+                    config.accentColor.copy(alpha = if (config.isDark) .30f else .16f),
+                    Color.White.copy(alpha = if (config.isDark) .08f else .34f)
                   )
                 )
               )
