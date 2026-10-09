@@ -1,0 +1,14 @@
+{
+  "name": "storage-gateway",
+  "version": "1.0.0",
+  "description": "Appwrite Storage Gateway for Liquid Chat",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node src/main.js"
+  },
+  "dependencies": {
+    "node-appwrite": "^14.1.0",
+    "firebase-admin": "^12.0.0",
+    "aws-sdk": "^2.1500.0"
+  }
+}

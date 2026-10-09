@@ -1,72 +1,157 @@
-# Liquid Chat 4.3.1
+<div align="center">
 
-A Kotlin/Jetpack Compose **1-to-1 realtime messaging app** using a zero-paid-backend architecture.
+<img src="https://via.placeholder.com/150/000000/FFFFFF?text=LC+Logo" width="120" style="border-radius: 20%; box-shadow: 0 8px 24px rgba(0,0,0,0.2); margin-bottom: 20px;" />
 
-**Developer:** Pritam Pal · **Support:** officialpritam07@gmail.com  
-© 2026 Pritam Pal
+# 💧 Liquid Chat
 
-## Architecture
+**A native Android real-time messaging masterpiece inspired by the iOS 26 Liquid Glass design language.**
 
-- **Firebase Authentication** — account/session identity.
-- **Cloud Firestore** — private profiles, privacy-filtered directory data, 1-to-1 conversations, messages, typing, per-conversation presence, settings and delivery/read state.
-- **Cloudinary Free** — direct unsigned media uploads. Firestore stores the returned `secure_url`.
-- **Firebase App Check** — Play Integrity is initialized by default (`APP_CHECK_PROVIDER=auto`); enforcement is enabled separately in Firebase Console after registration and metrics validation.
-- **No Firebase Functions, Firebase Storage or paid custom backend.**
+[![Build Status](https://github.com/PritamPal07/Liquid-Chat/actions/workflows/build-apk.yml/badge.svg)](https://github.com/PritamPal07/Liquid-Chat/actions/workflows/build-apk.yml)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.0-7F52FF.svg?logo=kotlin&logoColor=white)](http://kotlinlang.org)
+[![Jetpack Compose](https://img.shields.io/badge/Compose-Material_3-4CAF50.svg?logo=android&logoColor=white)](https://developer.android.com/jetpack/compose)
+[![Platform](https://img.shields.io/badge/Platform-Android_8.0+-3DDC84?logo=android&logoColor=white)](#)
+[![Architecture](https://img.shields.io/badge/Architecture-MVVM_%2B_Clean-blue)](#)
+[![License](https://img.shields.io/badge/License-MIT-gray.svg)](#)
 
-## Messaging
+<br>
 
-- Optimistic send queue with retry.
-- Realtime Firestore receive.
-- Sending → Sent → Delivered → Read state.
-- Reply, edit, pin, star, reactions, delete-for-me and sender-only delete-for-everyone.
-- Favorites, archive, mute, disappearing timer and chat wallpaper.
-- Text messages are stored as plaintext Firestore fields and protected by Firebase Authentication plus participant-only Firestore rules.
-- Chat-list previews and notifications use the same plaintext message fields; FCM carries IDs and the app re-checks authenticated server state before displaying notifications.
-- Room provides a persistent local message cache for instant chat reopen/offline viewing. Cloudinary returns HTTPS delivery URLs for media.
+<img src="https://via.placeholder.com/250x500/121212/FFFFFF?text=Conversation" width="220" style="border-radius: 16px; margin: 0 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.15);" />
+<img src="https://via.placeholder.com/250x500/121212/FFFFFF?text=Settings" width="220" style="border-radius: 16px; margin: 0 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.15);" />
+<img src="https://via.placeholder.com/250x500/121212/FFFFFF?text=Chats+List" width="220" style="border-radius: 16px; margin: 0 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.15);" />
 
-## Cloudinary
+<br><br>
 
-Android uploads directly to `https://api.cloudinary.com/v1_1/<cloud-name>/auto/upload`
-with an **unsigned upload preset**. The APK contains only the public cloud name and preset name,
-never a Cloudinary API secret.
+*Built by **Pritam Pal** using Kotlin, Jetpack Compose, Material 3, Clean Architecture, and a Zero-Cost Serverless Backend.*
 
-Current defaults:
+</div>
 
-- Cloud name: `mthzgqhv`
-- Upload preset: `liquid_chat_owned_v1`
-- Client attachment cap: 9 MB
+---
 
-See [CLOUDINARY_SETUP.md](CLOUDINARY_SETUP.md).
+## 🌟 Identity & Highlights
 
-## Free-mode limitations
+| | |
+|---|---|
+| 📱 **Platform** | Native Android (API 26+) |
+| 🛠 **Language** | Kotlin 2.0 |
+| 🎨 **UI Framework** | Jetpack Compose + Material 3 |
+| 📐 **Architecture** | Clean Architecture + MVVM + Repository Pattern |
+| 💎 **Design Language**| iOS 26-inspired Liquid Glass (Frosted Translucency, Specular Highlights) |
+| ☁️ **Backend** | Firebase (Auth, Firestore) + Appwrite Cloud (Edge Functions & S3 Gateway) |
 
-- Reliable push delivery while the Android process is fully killed requires a trusted sender/backend. FCM HTTP v1 credentials are never embedded in the APK; this backendless build does not claim killed-app FCM push.
-- Delete-for-everyone removes the Firestore message and local cache. Without a trusted Cloudinary Admin backend, the uploaded Cloudinary object cannot be guaranteed to be remotely destroyed.
-- Removing/replacing a profile photo removes its Firestore reference but may leave the old Cloudinary object orphaned.
-- Anyone who obtains a direct Cloudinary media URL can fetch that asset.
-- Free operation depends on remaining inside Firebase and Cloudinary free quotas.
+---
 
-## CI
+## 💎 Liquid Glass Design System
 
-GitHub Actions validates free-tier configuration, runs Firestore security-rule emulator tests, Android unit tests and trusted cleanup-worker tests, builds the debug APK and uploads the artifact.
+The application features a custom, high-performance **Liquid Glass design system** engineered natively for Android:
 
-Firestore rules deploy independently; Firebase Functions are not part of this architecture.
+- 🪟 **Translucent Frosted Surfaces:** Dynamic multi-layered alpha overlays with gradient refraction borders.
+- 🌫️ **Backdrop Blur & Fallbacks:** Hardware-accelerated `RenderEffect` on Android 12+ (API 31+) with graceful tint and specular fallbacks on older devices.
+- 🔲 **Squircle Geometry:** Smooth rounded squircle corners (`LiquidTheme.shapes`) across cards, bubbles, and floating navigation bars.
+- 🌀 **Fluid Spring Animations:** Physics-driven spring transitions (`LiquidMotion`) for navigation, button press deformations, and real-time message arrivals.
+- 🌗 **Dynamic Themes:** Full native support for both Light and Dark Liquid themes (`LightLiquidColors`, `DarkLiquidColors`).
 
-## Session logout / account deletion
+### 🧩 Reusable Glass Components
+> *A fully customized, production-ready design library replacing standard Material components.*
 
-Log out ends only the current device session: it removes local message cache, pending work, notifications and the device FCM registration while preserving the cloud account and conversations for a later sign-in. Delete account remains the irreversible path that erases the account, one-to-one conversation trees and owned uploads after trusted cleanup. Permanent deletion requires recent authentication and never reports success before cloud verification.
+*   `LiquidGlassSurface` — Foundational frosted-glass surface with specular edge border and shadow.
+*   `LiquidGlassCard` — Interactive glass container with elevation and ripple.
+*   `LiquidGlassButton` — Primary filled and secondary glass button with spring-press deformation.
+*   `LiquidGlassTextField` — Translucent glass input field with integrated validation.
+*   `LiquidGlassNavigationBar` — Floating squircle bottom navigation bar with animated tab selection.
+*   `LiquidGlassSearchBar` — Translucent search bar with instant query clearing.
+*   `LiquidGlassMessageBubble` — Adaptive squircle bubble with outgoing/incoming glass refraction.
+*   `LiquidGlassFloatingButton` — Circular glass floating action button.
+*   `LiquidGlassDialog` & `LiquidGlassBottomSheet` — Liquid glass dialogs/sheets with blur scrim overlay and gesture dismiss.
 
-Final verification includes a **70-minute wait after Auth deletion**, plus worker scheduling, so tokens on other devices expire before the UID gate is removed. A random status proof without a UID allows the app to resume without the deleted Auth account. Keep the app installed until the local wipe is confirmed.
+---
 
-A trusted GitHub Actions worker checks deletion requests every 15 minutes. The owner-authorized one-time inventory reset disables the old unsigned preset, erases existing app data/uploads and Auth users, and creates a server-only inventory certificate. New accounts use the owned upload preset and automatically qualify for verified deletion. Scoped orphan uploads are discovered even if a receipt was not saved. No administrator credentials are shipped in Android. See [PERMANENT_DELETION_SETUP.md](PERMANENT_DELETION_SETUP.md).
+## 🏛 Cutting-Edge Tech Stack
 
-Android does not run the removed application on uninstall. Uninstall clears its local sandbox, but cannot by itself trigger remote deletion. Complete the in-app permanent deletion before uninstalling. OS backup/transfer is disabled for this application.
+Liquid Chat achieves a highly secure, scalable, and **zero-cost operation** by leveraging a hybrid cloud architecture designed to run safely within free-tier limits:
 
-FCM data-only reception and private token registration are implemented. Fully killed-app push still needs a trusted sender; no push server has been deployed. See the [4.2.3 change report](PRIVACY_AND_NOTIFICATION_FIXES.md) for activation and acceptance checks.
+*   **Frontend Core:** Kotlin, Jetpack Compose, Material 3, Hilt (Dependency Injection), Coroutines & StateFlow.
+*   **Local Persistence (Offline-First):** Room (account-isolated local database for unbreakable offline reliability) and Coil (advanced image caching).
+*   **Identity & Authentication:** Firebase Authentication (Secure Email/Password & Google Sign-In integrations).
+*   **Real-Time Database:** Cloud Firestore. Strictly enforced with bulletproof, participant-only security rules.
+*   **Storage Gateway:** Appwrite Cloud (Free Tier) Serverless Edge Functions dynamically generating AWS S3-compatible pre-signed URLs to strictly protect private attachments.
+*   **Smart Push Notifications:** Appwrite Serverless Function acting as a secure HTTP v1 FCM dispatcher, resolving tokens securely on the server.
+*   **App Integrity:** Firebase App Check with Play Integrity (`APP_CHECK_PROVIDER=auto`) prevents unauthorized API abuse.
 
-## Privacy hardening in 4.3.1
+---
 
-- Profile-photo visibility is enforced at the Firestore boundary: switching to **Nobody** atomically removes the public directory photo while retaining the owner's private profile reference.
-- A modified client cannot republish a directory photo while the private profile says the photo is hidden.
-- App Check `auto` initializes Play Integrity for installed APKs. Register the signing SHA-256 and configure App Check for your distribution channel before enabling enforcement.
-- See `APP_CHECK_SETUP.md` and `TRUSTED_PUSH_SETUP.md`.
+## ✨ Core Messaging Features
+
+- ⚡ **Fluid Real-Time Engine:** Instant messaging with hyper-accurate typing indicators and per-conversation presence.
+- 🚥 **Micro-Interaction States:** Full cycle visibility (Sending → Sent → Delivered → Read) with beautiful transitions.
+- 💬 **Advanced Message Handling:** Seamlessly reply, edit, pin, star, and react to messages on the fly.
+- 🛡️ **Granular Privacy Controls:** Sender-only "delete for everyone", local "delete for me", and customizable disappearing message timers.
+- 📎 **Rich Media Support:** Share high-resolution images, HD videos, voice notes, and documents instantly.
+- 🎨 **Immersive Customization:** Chat-specific wallpapers, favorites, archive, and granular mute capabilities tailored to your workflow.
+
+---
+
+## ⚙️ Quick Setup & Deployment
+
+### 1. Firebase Provisioning
+1. Create a project in the [Firebase Console](https://console.firebase.google.com).
+2. Enable **Authentication** (Email/Password & Google) and **Firestore**.
+3. Download the `google-services.json` file and place it exactly in the `app/` directory.
+
+### 2. Appwrite Backend Configuration
+Liquid Chat utilizes two serverless functions deployed to an Appwrite Cloud Free project to securely dispatch notifications and handle S3-compatible media uploads.
+
+👉 **Follow the comprehensive [Appwrite Setup Guide](APPWRITE_SETUP.md) for deployment instructions.**
+
+### 3. Environment Injection
+Copy the `.env.example` to a new `.env` file in the project root and provide your edge endpoints:
+```env
+APPWRITE_FUNCTION_FCM_ENDPOINT=https://<your-fcm-domain>.appwrite.global/
+APPWRITE_FUNCTION_STORAGE_ENDPOINT=https://<your-storage-domain>.appwrite.global/
+```
+*(⚠️ **Security Notice**: Never place Firebase Service Account keys or Appwrite API keys in this file).*
+
+---
+
+## 🔐 Security, Privacy & CI/CD
+
+- **Ironclad Data Isolation:** The local Room database completely clears and isolates data per authenticated user (`uid`), preventing data leakage.
+- **Zero Secrets in APK:** Administrative SDK keys remain securely locked in the Appwrite backend functions. 
+- **Irreversible Deletion:** "Delete Account" initiates a comprehensive workflow that completely erases all personal data, conversation trees, and media assets.
+- **Automated CI/CD:** GitHub Actions workflow (`build-apk.yml`) handles Android Lint, Firestore Emulator testing, and automated Debug APK generation on every commit.
+
+---
+
+## 👨‍💻 About the Developer
+
+<div align="center">
+  
+**Pritam Pal**  
+*Senior Android & Backend Engineer*
+
+Passionate about crafting fluid, modern, and privacy-centric mobile applications using the latest Android technologies and scalable cloud architectures.
+
+<br>
+
+[![Email](https://img.shields.io/badge/Email-officialpritam07%40gmail.com-D14836?style=for-the-badge&logo=gmail&logoColor=white)](mailto:officialpritam07@gmail.com)
+[![GitHub](https://img.shields.io/badge/GitHub-PritamPal07-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/PritamPal07)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Pritam_Pal-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/pritam-pal-240a6b252/)
+[![X](https://img.shields.io/badge/X-PritamPal__07-000000?style=for-the-badge&logo=x&logoColor=white)](https://x.com/PritamPal_07)
+[![Instagram](https://img.shields.io/badge/Instagram-officialpritam.07-E4405F?style=for-the-badge&logo=instagram&logoColor=white)](https://instagram.com/officialpritam.07)
+[![Facebook](https://img.shields.io/badge/Facebook-officialpritam.007-1877F2?style=for-the-badge&logo=facebook&logoColor=white)](https://facebook.com/officialpritam.007)
+
+<br>
+
+*© 2026 Pritam Pal. All Rights Reserved.*
+
+</div>
+
+---
+
+## 📚 Additional Documentation
+
+Deep dive into the internals of Liquid Chat:
+- [Appwrite Setup & Configuration](APPWRITE_SETUP.md)
+- [Architecture Invariants](ARCHITECTURE_INVARIANTS.md)
+- [Permanent Deletion Workflow](PERMANENT_DELETION_SETUP.md)
+- [Trusted Push Notifications](TRUSTED_PUSH_SETUP.md)
+- [App Check Verification](APP_CHECK_SETUP.md)

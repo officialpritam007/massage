@@ -1,0 +1,13 @@
+{
+  "name": "fcm-sender",
+  "version": "1.0.0",
+  "description": "Send FCM notifications on new messages",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node src/main.js"
+  },
+  "dependencies": {
+    "node-appwrite": "^14.1.0",
+    "firebase-admin": "^12.0.0"
+  }
+}
