@@ -41,9 +41,10 @@ object ChatNotificationState {
   }
 
   fun shouldSuppressSystemNotification(senderId: String?, conversationId: String): Boolean {
-    if (!appInForeground || currentConversationId != conversationId) return false
-    val activeUser = currentActiveChatUserId
-    return senderId.isNullOrBlank() || activeUser.isNullOrBlank() || senderId == activeUser
+    // Missing sender identity is not proof that the FCM belongs to the open chat.
+    // Let the authenticated worker verify it rather than silently dropping alerts.
+    if (!appInForeground || currentConversationId != conversationId || senderId.isNullOrBlank()) return false
+    return currentActiveChatUserId == senderId
   }
 
   fun dispatchForegroundMessage(senderId: String?, conversationId: String, messageId: String) {
