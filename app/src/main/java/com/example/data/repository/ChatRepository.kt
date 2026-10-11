@@ -1853,7 +1853,10 @@ class ChatRepository(
       // before clearing the durable outbox entry.
       db.waitForPendingWrites().await()
       val confirmed = mref.get(Source.SERVER).await()
-      if (confirmed.exists() && confirmed.getString("senderId") == uid) return true
+      if (confirmed.exists()) {
+        check(confirmed.getString("senderId") == uid) { "Message ID is already in use" }
+        return true
+      }
     }
 
     val disappearingSeconds = _conversations.value.firstOrNull { it.id == cid }?.disappearingSeconds
