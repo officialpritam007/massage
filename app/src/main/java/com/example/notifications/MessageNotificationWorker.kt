@@ -72,21 +72,33 @@ class MessageNotificationWorker(context: Context, params: WorkerParameters) : Co
       if (prefs.getBoolean("appResumed", false) && prefs.getString("visibleConversation", null) == cid) return Result.success()
       if (!current()) return Result.success()
       if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return Result.success()
-      val manager = applicationContext.getSystemService(NotificationManager::class.java)
-      if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(NotificationChannel("messages", "Messages", NotificationManager.IMPORTANCE_HIGH))
+      val vibrationEnabled = settings?.get("vibration") != false
+      val channelId = MessageAlertPolicy.channelId(vibrationEnabled)
+      if (Build.VERSION.SDK_INT >= 26) {
+        val manager = applicationContext.getSystemService(NotificationManager::class.java)
+        val channel = NotificationChannel(
+          channelId,
+          if (vibrationEnabled) "Messages" else "Messages (no vibration)",
+          NotificationManager.IMPORTANCE_HIGH
+        )
+        if (!vibrationEnabled) channel.enableVibration(false)
+        manager.createNotificationChannel(channel)
+      }
       val intent = Intent(applicationContext, MainActivity::class.java)
         .putExtra("conversation_id", cid)
         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
       val number = "$account:$cid:$id".hashCode()
       val pending = PendingIntent.getActivity(applicationContext, number, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
       val text = NotificationText.body(message.getString("type") ?: "TEXT", messageText, preview)
-      val notification = NotificationCompat.Builder(applicationContext, "messages")
+      val builder = NotificationCompat.Builder(applicationContext, channelId)
         .setSmallIcon(R.drawable.ic_stat_message)
         .setContentTitle(if (preview) peer.getString("displayName").orEmpty().ifBlank { "Liquid Chat" } else "Liquid Chat")
         .setContentText(text).setStyle(NotificationCompat.BigTextStyle().bigText(text))
         .setContentIntent(pending).setAutoCancel(true).setOnlyAlertOnce(true)
         .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-        .setSilent(settings?.get("vibration") == false).build()
+      // Pre-Oreo devices have no channels; preserve sound even if vibration is disabled.
+      if (Build.VERSION.SDK_INT < 26) builder.setDefaults(MessageAlertPolicy.legacyDefaults(vibrationEnabled))
+      val notification = builder.build()
       if (current()) {
         NotificationManagerCompat.from(applicationContext).notify(number, notification)
         prefs.edit().putString(done, revision).commit()
