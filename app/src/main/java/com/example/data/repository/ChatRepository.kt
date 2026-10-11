@@ -1848,9 +1848,12 @@ class ChatRepository(
 
     val cachedExisting = runCatching { mref.get(Source.CACHE).await() }.getOrNull()
     if (cachedExisting?.exists() == true) {
+      // A cached document is not delivery proof. It may be a stale snapshot after a
+      // server-side delete or a write that never committed. Confirm with the server
+      // before clearing the durable outbox entry.
       db.waitForPendingWrites().await()
-      val confirmed = runCatching { mref.get(Source.CACHE).await() }.getOrNull()
-      if (confirmed?.exists() == true) return true
+      val confirmed = mref.get(Source.SERVER).await()
+      if (confirmed.exists() && confirmed.getString("senderId") == uid) return true
     }
 
     val disappearingSeconds = _conversations.value.firstOrNull { it.id == cid }?.disappearingSeconds
