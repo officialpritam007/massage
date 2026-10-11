@@ -13,5 +13,5 @@ internal object MessageAlertPolicy {
 
   /** Notification channels control alerts on Android O+; older devices use notification defaults. */
   fun legacyDefaults(vibrationEnabled: Boolean): Int =
-    Notification.DEFAULT_SOUND or if (vibrationEnabled) Notification.DEFAULT_VIBRATE else 0
+    Notification.DEFAULT_SOUND or (if (vibrationEnabled) Notification.DEFAULT_VIBRATE else 0)
 }
